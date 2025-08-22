@@ -188,4 +188,4 @@ Si vas a soportar tipos de visualización distintos (p.ej., línea/heatmap), pue
 - Context Isolation activo y comunicación solo vía IPC seguro.
 
 ## Licencia
-MIT
+Apache License 2.0
