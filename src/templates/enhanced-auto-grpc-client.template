@@ -1,0 +1,147 @@
+// Enhanced Auto-generated gRPC client with Unified Worker Thread API
+// DO NOT EDIT - This file is auto-generated
+
+import { ipcRenderer } from 'electron';
+import { UnifiedWorkerRouter } from '../helpers/unified-worker-router';
+import { WorkerThreadOptions, WorkerThreadResult, WorkerThreadCapabilities } from '../types/worker-thread-types';
+{{DYNAMIC_IMPORTS}}
+
+{{TYPE_DEFINITION}}
+
+export class EnhancedAutoGrpcClient {
+  private unifiedRouter: UnifiedWorkerRouter;
+
+  constructor() {
+    this.unifiedRouter = UnifiedWorkerRouter.getInstance();
+  }
+
+  // ==================================================================================
+  // CORE EXECUTION METHODS
+  // ==================================================================================
+
+  private async callMethod<T, R>(methodName: string, request: T): Promise<R> {
+    const channel = `grpc-${methodName.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase()}`;
+    return ipcRenderer.invoke(channel, request);
+  }
+  
+  private async callStreamingMethod<T, R>(methodName: string, request: T, onData?: (data: R) => void): Promise<R[]> {
+    return new Promise((resolve, reject) => {
+      const requestId = `stream-${Date.now()}-${Math.random()}`;
+      const results: R[] = [];
+      
+      const handleData = (event: any, data: any) => {
+        if (data.requestId !== requestId) return;
+        
+        if (data.type === 'data') {
+          results.push(data.payload);
+          if (onData) onData(data.payload);
+        } else if (data.type === 'complete') {
+          ipcRenderer.off('grpc-stream-data', handleData);
+          ipcRenderer.off('grpc-stream-error', handleError);
+          resolve(results);
+        }
+      };
+      
+      const handleError = (event: any, data: any) => {
+        if (data.requestId !== requestId) return;
+        ipcRenderer.off('grpc-stream-data', handleData);
+        ipcRenderer.off('grpc-stream-error', handleError);
+        reject(new Error(data.error));
+      };
+      
+      ipcRenderer.on('grpc-stream-data', handleData);
+      ipcRenderer.on('grpc-stream-error', handleError);
+      
+      const channel = `grpc-${methodName.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase()}`;
+      ipcRenderer.send(channel, { requestId, ...request });
+    });
+  }
+
+  /**
+   * Execute method with unified worker thread support
+   */
+  private async callUnifiedMethod<TRequest, TResponse>(
+    methodName: string,
+    request: TRequest,
+    requestType: string,
+    responseType: string,
+    isStreaming: boolean,
+    options?: WorkerThreadOptions
+  ): Promise<WorkerThreadResult<TResponse> | TResponse> {
+    // If no options provided, use regular execution
+    if (!options) {
+      if (isStreaming) {
+        return this.callStreamingMethod(methodName, request) as unknown as TResponse;
+      } else {
+        return this.callMethod(methodName, request);
+      }
+    }
+
+    // Use unified router for enhanced execution
+    const regularExecutor = (req: TRequest) => this.callMethod<TRequest, TResponse>(methodName, req);
+    const streamingExecutor = isStreaming 
+      ? (req: TRequest, onData?: (data: any) => void) => 
+          this.callStreamingMethod(methodName, req, onData) as unknown as Promise<TResponse[]>
+      : undefined;
+
+    return this.unifiedRouter.executeMethod(
+      methodName,
+      request,
+      regularExecutor,
+      streamingExecutor,
+      options
+    );
+  }
+
+  /**
+   * Get capabilities for a specific method
+   */
+  getMethodCapabilities(
+    methodName: string,
+    requestType: string,
+    responseType: string,
+    isStreaming: boolean
+  ): WorkerThreadCapabilities {
+    return this.unifiedRouter.detectWorkerCapabilities(
+      methodName,
+      requestType,
+      responseType,
+      isStreaming
+    );
+  }
+
+  /**
+   * Cancel an active operation
+   */
+  cancelOperation(operationId: string): boolean {
+    return this.unifiedRouter.cancelOperation(operationId);
+  }
+
+  /**
+   * Get list of active operations
+   */
+  getActiveOperations(): string[] {
+    return this.unifiedRouter.getActiveOperations();
+  }
+
+  // ==================================================================================
+  // AUTO-GENERATED METHODS WITH UNIFIED API
+  // ==================================================================================
+
+{{ENHANCED_METHODS}}
+
+  // ==================================================================================
+  // LEGACY METHODS (for backward compatibility)
+  // ==================================================================================
+
+{{LEGACY_METHODS}}
+}
+
+export const enhancedAutoGrpcClient = new EnhancedAutoGrpcClient();
+
+// Export legacy client for backward compatibility
+export class AutoGrpcClient {
+{{LEGACY_CLASS_METHODS}}
+}
+
+export const autoGrpcClient = new AutoGrpcClient();

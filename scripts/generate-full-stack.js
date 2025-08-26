@@ -186,28 +186,217 @@ function generateAutoGrpcClient(services) {
   
   const dynamicImports = generateDynamicImports();
   
-  const methods = service.methods.map(method => {
+  // Generate enhanced methods with unified API
+  const enhancedMethods = service.methods.map(method => {
     const methodName = method.name;
     const camelCaseMethod = methodName.charAt(0).toLowerCase() + methodName.slice(1);
     
     if (method.isStreaming) {
-      return `  async ${camelCaseMethod}(request: ${method.requestType}, onData?: (data: ${method.responseType}) => void): Promise<${method.responseType}[]> {
+      return `  /**
+   * ${methodName} - Enhanced with unified worker thread support
+   * @param request - The request parameters
+   * @param options - Optional worker thread configuration
+   */
+  async ${camelCaseMethod}(
+    request: ${method.requestType},
+    options?: WorkerThreadOptions & {
+      onData?: (data: ${method.responseType}) => void;
+    }
+  ): Promise<WorkerThreadResult<${method.responseType}[]> | ${method.responseType}[]> {
+    if (options && (options.useWorkerThread || options.onProgress)) {
+      // Extract onData from options for streaming
+      const { onData, ...workerOptions } = options;
+      return this.callUnifiedMethod(
+        '${methodName}',
+        request,
+        '${method.requestType}',
+        '${method.responseType}[]',
+        true,
+        { ...workerOptions, onChunk: onData }
+      );
+    }
+    
+    // Regular streaming execution
+    return this.callStreamingMethod('${methodName}', request, options?.onData);
+  }`;
+    } else {
+      return `  /**
+   * ${methodName} - Enhanced with unified worker thread support
+   * @param request - The request parameters
+   * @param options - Optional worker thread configuration
+   */
+  async ${camelCaseMethod}(
+    request: ${method.requestType},
+    options?: WorkerThreadOptions
+  ): Promise<WorkerThreadResult<${method.responseType}> | ${method.responseType}> {
+    return this.callUnifiedMethod(
+      '${methodName}',
+      request,
+      '${method.requestType}',
+      '${method.responseType}',
+      false,
+      options
+    );
+  }`;
+    }
+  }).join('\n\n');
+
+  // Generate legacy methods for backward compatibility
+  const legacyMethods = service.methods.map(method => {
+    const methodName = method.name;
+    const camelCaseMethod = methodName.charAt(0).toLowerCase() + methodName.slice(1);
+    
+    if (method.isStreaming) {
+      return `  /** @deprecated Use enhanced client for better performance */
+  async ${camelCaseMethod}(request: ${method.requestType}, onData?: (data: ${method.responseType}) => void): Promise<${method.responseType}[]> {
     return this.callStreamingMethod('${methodName}', request, onData);
   }`;
     } else {
-      return `  async ${camelCaseMethod}(request: ${method.requestType}): Promise<${method.responseType}> {
+      return `  /** @deprecated Use enhanced client for better performance */
+  async ${camelCaseMethod}(request: ${method.requestType}): Promise<${method.responseType}> {
     return this.callMethod('${methodName}', request);
   }`;
     }
   }).join('\n\n');
   
-  return `// Auto-generated gRPC client from ${PROTO_DIR}/*
+  return `// Enhanced Auto-generated gRPC client with Unified Worker Thread API
 // DO NOT EDIT - This file is auto-generated
 
 import { ipcRenderer } from 'electron';
+import { UnifiedWorkerRouter } from '../helpers/unified-worker-router';
+import { WorkerThreadOptions, WorkerThreadResult, WorkerThreadCapabilities } from '../types/worker-thread-types';
 ${dynamicImports.imports}
 
 ${dynamicImports.typeDefinition}
+
+export class EnhancedAutoGrpcClient {
+  private unifiedRouter: UnifiedWorkerRouter;
+
+  constructor() {
+    this.unifiedRouter = UnifiedWorkerRouter.getInstance();
+  }
+
+  // ==================================================================================
+  // CORE EXECUTION METHODS
+  // ==================================================================================
+
+  private async callMethod<T, R>(methodName: string, request: T): Promise<R> {
+    const channel = \`grpc-\${methodName.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase()}\`;
+    return ipcRenderer.invoke(channel, request);
+  }
+  
+  private async callStreamingMethod<T, R>(methodName: string, request: T, onData?: (data: R) => void): Promise<R[]> {
+    return new Promise((resolve, reject) => {
+      const requestId = \`stream-\${Date.now()}-\${Math.random()}\`;
+      const results: R[] = [];
+      
+      const handleData = (event: any, data: any) => {
+        if (data.requestId !== requestId) return;
+        
+        if (data.type === 'data') {
+          results.push(data.payload);
+          if (onData) onData(data.payload);
+        } else if (data.type === 'complete') {
+          ipcRenderer.off('grpc-stream-data', handleData);
+          ipcRenderer.off('grpc-stream-error', handleError);
+          resolve(results);
+        }
+      };
+      
+      const handleError = (event: any, data: any) => {
+        if (data.requestId !== requestId) return;
+        ipcRenderer.off('grpc-stream-data', handleData);
+        ipcRenderer.off('grpc-stream-error', handleError);
+        reject(new Error(data.error));
+      };
+      
+      ipcRenderer.on('grpc-stream-data', handleData);
+      ipcRenderer.on('grpc-stream-error', handleError);
+      
+      const channel = \`grpc-\${methodName.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase()}\`;
+      ipcRenderer.send(channel, { requestId, ...request });
+    });
+  }
+
+  /**
+   * Execute method with unified worker thread support
+   */
+  private async callUnifiedMethod<TRequest, TResponse>(
+    methodName: string,
+    request: TRequest,
+    requestType: string,
+    responseType: string,
+    isStreaming: boolean,
+    options?: WorkerThreadOptions
+  ): Promise<WorkerThreadResult<TResponse> | TResponse> {
+    // If no options provided, use regular execution
+    if (!options) {
+      if (isStreaming) {
+        return this.callStreamingMethod(methodName, request) as unknown as TResponse;
+      } else {
+        return this.callMethod(methodName, request);
+      }
+    }
+
+    // Use unified router for enhanced execution
+    const regularExecutor = (req: TRequest) => this.callMethod<TRequest, TResponse>(methodName, req);
+    const streamingExecutor = isStreaming 
+      ? (req: TRequest, onData?: (data: any) => void) => 
+          this.callStreamingMethod(methodName, req, onData) as unknown as Promise<TResponse[]>
+      : undefined;
+
+    return this.unifiedRouter.executeMethod(
+      methodName,
+      request,
+      regularExecutor,
+      streamingExecutor,
+      options
+    );
+  }
+
+  /**
+   * Get capabilities for a specific method
+   */
+  getMethodCapabilities(
+    methodName: string,
+    requestType: string,
+    responseType: string,
+    isStreaming: boolean
+  ): WorkerThreadCapabilities {
+    return this.unifiedRouter.detectWorkerCapabilities(
+      methodName,
+      requestType,
+      responseType,
+      isStreaming
+    );
+  }
+
+  /**
+   * Cancel an active operation
+   */
+  cancelOperation(operationId: string): boolean {
+    return this.unifiedRouter.cancelOperation(operationId);
+  }
+
+  /**
+   * Get list of active operations
+   */
+  getActiveOperations(): string[] {
+    return this.unifiedRouter.getActiveOperations();
+  }
+
+  // ==================================================================================
+  // ENHANCED METHODS WITH UNIFIED API
+  // ==================================================================================
+
+${enhancedMethods}
+}
+
+export const enhancedAutoGrpcClient = new EnhancedAutoGrpcClient();
+
+// ==================================================================================
+// LEGACY CLIENT (for backward compatibility)
+// ==================================================================================
 
 export class AutoGrpcClient {
   private async callMethod<T, R>(methodName: string, request: T): Promise<R> {
@@ -248,7 +437,7 @@ export class AutoGrpcClient {
     });
   }
 
-${methods}
+${legacyMethods}
 }
 
 export const autoGrpcClient = new AutoGrpcClient();
@@ -265,33 +454,107 @@ function generateIpcHandlers(services) {
     const channel = `grpc-${methodName.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase()}`;
     
     if (method.isStreaming) {
-      return `  // Streaming method: ${methodName}
+      return `  // Enhanced streaming method: ${methodName}
   ipcMain.on('${channel}', async (event, request) => {
+    const operationId = request.requestId || \`${methodName}-\${Date.now()}\`;
+    
     try {
-      const results = await autoMainGrpcClient.${camelCaseMethod}(request);
-      results.forEach(data => {
+      // Check if this should use worker thread processing
+      const shouldUseWorkerThread = request._workerThread || 
+        (request.max_points && request.max_points > 100000);
+      
+      if (shouldUseWorkerThread) {
+        // Use unified worker router for heavy processing
+        const router = UnifiedWorkerRouter.getInstance();
+        const regularExecutor = (req) => autoMainGrpcClient.${camelCaseMethod}(req);
+        
+        const result = await router.executeMethod(
+          '${methodName}',
+          request,
+          regularExecutor,
+          regularExecutor,
+          {
+            useWorkerThread: true,
+            onProgress: (progress) => {
+              event.sender.send('grpc-worker-progress', {
+                requestId: request.requestId,
+                operationId,
+                ...progress
+              });
+            },
+            onChunk: (chunk) => {
+              event.sender.send('grpc-stream-data', {
+                requestId: request.requestId,
+                type: 'data',
+                payload: chunk
+              });
+            }
+          }
+        );
+        
         event.sender.send('grpc-stream-data', {
           requestId: request.requestId,
-          type: 'data',
-          payload: data
+          type: 'complete',
+          result: result
         });
-      });
-      event.sender.send('grpc-stream-data', {
-        requestId: request.requestId,
-        type: 'complete'
-      });
+      } else {
+        // Regular streaming execution
+        const results = await autoMainGrpcClient.${camelCaseMethod}(request);
+        results.forEach(data => {
+          event.sender.send('grpc-stream-data', {
+            requestId: request.requestId,
+            type: 'data',
+            payload: data
+          });
+        });
+        event.sender.send('grpc-stream-data', {
+          requestId: request.requestId,
+          type: 'complete'
+        });
+      }
     } catch (error) {
       event.sender.send('grpc-stream-error', {
         requestId: request.requestId,
+        operationId,
         error: error.message
       });
     }
   });`;
     } else {
-      return `  // Unary method: ${methodName}
+      return `  // Enhanced unary method: ${methodName}
   ipcMain.handle('${channel}', async (event, request) => {
+    const operationId = \`${methodName}-\${Date.now()}\`;
+    
     try {
-      return await autoMainGrpcClient.${camelCaseMethod}(request);
+      // Check if this should use worker thread processing
+      const shouldUseWorkerThread = request._workerThread || 
+        (request.max_points && request.max_points > 100000) ||
+        (request.dataset_id && request.include_correlations);
+      
+      if (shouldUseWorkerThread) {
+        // Use unified worker router for heavy processing
+        const router = UnifiedWorkerRouter.getInstance();
+        const regularExecutor = (req) => autoMainGrpcClient.${camelCaseMethod}(req);
+        
+        return await router.executeMethod(
+          '${methodName}',
+          request,
+          regularExecutor,
+          undefined,
+          {
+            useWorkerThread: true,
+            onProgress: (progress) => {
+              event.sender.send('grpc-worker-progress', {
+                operationId,
+                ...progress
+              });
+            }
+          }
+        );
+      } else {
+        // Regular execution
+        return await autoMainGrpcClient.${camelCaseMethod}(request);
+      }
     } catch (error) {
       console.error('gRPC ${camelCaseMethod} failed:', error);
       throw error;
@@ -300,18 +563,53 @@ function generateIpcHandlers(services) {
     }
   }).join('\n\n');
   
-  return `// Auto-generated IPC handlers from ${PROTO_DIR}/*
+  // Add utility handlers for worker thread management
+  const utilityHandlers = `
+  // Utility handlers for worker thread management
+  ipcMain.handle('grpc-cancel-operation', async (event, operationId) => {
+    try {
+      const router = UnifiedWorkerRouter.getInstance();
+      return router.cancelOperation(operationId);
+    } catch (error) {
+      console.error('Failed to cancel operation:', error);
+      return false;
+    }
+  });
+  
+  ipcMain.handle('grpc-get-active-operations', async (event) => {
+    try {
+      const router = UnifiedWorkerRouter.getInstance();
+      return router.getActiveOperations();
+    } catch (error) {
+      console.error('Failed to get active operations:', error);
+      return [];
+    }
+  });
+  
+  ipcMain.handle('grpc-get-method-capabilities', async (event, { methodName, requestType, responseType, isStreaming }) => {
+    try {
+      const router = UnifiedWorkerRouter.getInstance();
+      return router.detectWorkerCapabilities(methodName, requestType, responseType, isStreaming);
+    } catch (error) {
+      console.error('Failed to get method capabilities:', error);
+      return { supportsWorkerThread: false, supportsStreaming: false, supportsProgress: false, supportsCancellation: false, memoryCategory: 'low' };
+    }
+  });`;
+  
+  return `// Enhanced Auto-generated IPC handlers with Unified Worker Thread support
 // DO NOT EDIT - This file is auto-generated
 
 import { ipcMain } from 'electron';
 import { autoMainGrpcClient } from './auto-main-client';
+import { UnifiedWorkerRouter } from '../helpers/unified-worker-router';
 
 export function registerAutoGrpcHandlers() {
-  console.log('🔌 Registering auto-generated gRPC IPC handlers...');
+  console.log('🔌 Registering enhanced auto-generated gRPC IPC handlers...');
 
 ${handlers}
+${utilityHandlers}
 
-  console.log('✅ Auto-generated gRPC IPC handlers registered successfully');
+  console.log('✅ Enhanced auto-generated gRPC IPC handlers with worker thread support registered successfully');
 }
 `;
 }
@@ -320,19 +618,51 @@ function generateContextProvider(services) {
   const service = services[0];
   if (!service) return '';
   
-  const methods = service.methods.map(method => {
+  const enhancedMethods = service.methods.map(method => {
+    const methodName = method.name;
+    const camelCaseMethod = methodName.charAt(0).toLowerCase() + methodName.slice(1);
+    
+    return `  ${camelCaseMethod}: enhancedAutoGrpcClient.${camelCaseMethod}.bind(enhancedAutoGrpcClient),`;
+  }).join('\n');
+  
+  const legacyMethods = service.methods.map(method => {
     const methodName = method.name;
     const camelCaseMethod = methodName.charAt(0).toLowerCase() + methodName.slice(1);
     
     return `  ${camelCaseMethod}: autoGrpcClient.${camelCaseMethod}.bind(autoGrpcClient),`;
   }).join('\n');
   
-  return `// Auto-generated context provider from ${PROTO_DIR}/*
+  return `// Enhanced Auto-generated context provider with Unified Worker Thread API
 // DO NOT EDIT - This file is auto-generated
 
 import { contextBridge } from 'electron';
-import { autoGrpcClient } from './auto-grpc-client';
+import { enhancedAutoGrpcClient, autoGrpcClient } from './auto-grpc-client';
+import { WorkerThreadOptions, WorkerThreadResult, WorkerThreadCapabilities } from '../types/worker-thread-types';
 
+// Enhanced context with unified worker thread support
+export interface EnhancedAutoGrpcContext {
+${service.methods.map(method => {
+  const camelCaseMethod = method.name.charAt(0).toLowerCase() + method.name.slice(1);
+  if (method.isStreaming) {
+    return `  ${camelCaseMethod}: (
+    request: ${method.requestType},
+    options?: WorkerThreadOptions & { onData?: (data: ${method.responseType}) => void }
+  ) => Promise<WorkerThreadResult<${method.responseType}[]> | ${method.responseType}[]>;`;
+  } else {
+    return `  ${camelCaseMethod}: (
+    request: ${method.requestType},
+    options?: WorkerThreadOptions
+  ) => Promise<WorkerThreadResult<${method.responseType}> | ${method.responseType}>;`;
+  }
+}).join('\n')}
+  
+  // Utility methods
+  getMethodCapabilities: (methodName: string, requestType: string, responseType: string, isStreaming: boolean) => WorkerThreadCapabilities;
+  cancelOperation: (operationId: string) => boolean;
+  getActiveOperations: () => string[];
+}
+
+// Legacy context for backward compatibility
 export interface AutoGrpcContext {
 ${service.methods.map(method => {
   const camelCaseMethod = method.name.charAt(0).toLowerCase() + method.name.slice(1);
@@ -344,12 +674,27 @@ ${service.methods.map(method => {
 }).join('\n')}
 }
 
+const enhancedAutoGrpcContext: EnhancedAutoGrpcContext = {
+${enhancedMethods}
+  
+  // Utility methods
+  getMethodCapabilities: enhancedAutoGrpcClient.getMethodCapabilities.bind(enhancedAutoGrpcClient),
+  cancelOperation: enhancedAutoGrpcClient.cancelOperation.bind(enhancedAutoGrpcClient),
+  getActiveOperations: enhancedAutoGrpcClient.getActiveOperations.bind(enhancedAutoGrpcClient)
+};
+
 const autoGrpcContext: AutoGrpcContext = {
-${methods}
+${legacyMethods}
 };
 
 export function exposeAutoGrpcContext() {
-  contextBridge.exposeInMainWorld('autoGrpc', autoGrpcContext);
+  // Expose enhanced client as primary interface
+  contextBridge.exposeInMainWorld('autoGrpc', enhancedAutoGrpcContext);
+  
+  // Expose legacy client for backward compatibility
+  contextBridge.exposeInMainWorld('legacyGrpc', autoGrpcContext);
+  
+  console.log('✅ Enhanced Auto-gRPC context exposed with unified worker thread support');
 }
 `;
 }
