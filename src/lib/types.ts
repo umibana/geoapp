@@ -12,23 +12,8 @@ export type GrpcProgress = {
   phase: string;
 };
 
-export type WorkerStreamSummary = {
-  avgValue?: number;
-  minValue?: number;
-  maxValue?: number;
-  [key: string]: unknown;
-};
-
-export type WorkerStreamResult = {
-  totalProcessed: number;
-  processingTime: number;
-  generationMethod: string;
-  summary: WorkerStreamSummary;
-  dataSample?: any[];
-  receivedChunks?: any[];
-};
-
-export type WorkerThreadsStats = {
+// Simplified result types
+export type ProcessingStats = {
   totalProcessed: number;
   avgValue: number;
   minValue: number;
@@ -38,7 +23,7 @@ export type WorkerThreadsStats = {
   pointsPerSecond: number;
 };
 
-export type WorkerThreadsChartConfig = {
+export type ChartConfig = {
   type: string;
   data: Array<[number, number, number]>;
   metadata: {
@@ -53,35 +38,23 @@ export type WorkerThreadsChartConfig = {
   };
 };
 
-export type WorkerThreadsResult = {
-  stats: WorkerThreadsStats;
-  chartConfig: WorkerThreadsChartConfig;
+export type ProcessingResult = {
+  stats: ProcessingStats;
+  chartConfig: ChartConfig;
   message?: string;
 };
 
-export type OptimizedResult =
-  | ({ strategy: 'worker_stream' } & WorkerStreamResult)
-  | ({ strategy: 'worker_threads' } & WorkerThreadsResult);
-
-// Type guards and helpers for unified handling in renderer
-export function isWorkerThreads(result: OptimizedResult): result is ({ strategy: 'worker_threads' } & WorkerThreadsResult) {
-  return result.strategy === 'worker_threads';
-}
-
-export function isWorkerStream(result: OptimizedResult): result is ({ strategy: 'worker_stream' } & WorkerStreamResult) {
-  return result.strategy === 'worker_stream';
-}
-
-export function extractTotalProcessed(result: OptimizedResult): number {
-  return isWorkerThreads(result) ? result.stats.totalProcessed : result.totalProcessed;
-}
-
-export function extractProcessingTimeSeconds(result: OptimizedResult): number {
-  return isWorkerThreads(result) ? result.stats.processingTime : result.processingTime;
-}
-
-export function extractPointsPerSecond(result: OptimizedResult): number {
-  return isWorkerThreads(result) ? result.stats.pointsPerSecond : Math.round(result.totalProcessed / Math.max(1e-6, result.processingTime));
-}
-
 export type StandardProgressEvent = GrpcProgress & { requestId?: string; type?: 'progress' | 'complete' | 'batch_complete' };
+
+// Helper functions for processing results
+export function extractTotalProcessed(result: ProcessingResult): number {
+  return result.stats.totalProcessed;
+}
+
+export function extractProcessingTimeSeconds(result: ProcessingResult): number {
+  return result.stats.processingTime;
+}
+
+export function extractPointsPerSecond(result: ProcessingResult): number {
+  return result.stats.pointsPerSecond;
+}

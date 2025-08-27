@@ -9,7 +9,7 @@ const electronAPI = {
     ipcRenderer.invoke('dialog:openFile', options),
   showSaveDialog: (options: Electron.SaveDialogOptions) => 
     ipcRenderer.invoke('dialog:saveFile', options),
-  // IPC communication methods for worker thread processing
+  // IPC communication methods
   send: (channel: string, data: any) => 
     ipcRenderer.send(channel, data),
   on: (channel: string, listener: (event: any, data: any) => void) => 

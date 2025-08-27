@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
 import { ChildProcessVisualization } from './ChildProcessVisualization';
-import { WorkerThreadVisualization } from './WorkerThreadVisualization';
 
 /**
  * Característica geoespacial
@@ -781,13 +780,6 @@ export function GrpcDemo() {
         />
       </div>
 
-      {/* 🚀 TRUE: Worker Thread Visualization for Ultra-Large Datasets */}
-      <div className="mt-8 border-t pt-6">
-        <WorkerThreadVisualization 
-          title="🚀 Verdaderos Worker Threads de Node.js - Datasets Ultra Grandes"
-          maxPoints={5000000}
-        />
-      </div>
     </div>
   );
 } 

@@ -1,7 +1,7 @@
 import { exposeThemeContext } from "./theme/theme-context";
 import { exposeWindowContext } from "./window/window-context";
 import { exposeBackendContext } from "./backend/backend-context";
-import { exposeAutoGrpcContext } from "../../grpc-auto/auto-context";
+import { exposeAutoGrpcContext } from "../../grpc-auto/auto-grpc-context";
 
 /**
  * Expone todos los contextos IPC al proceso renderer

@@ -1,18 +1,14 @@
-// Enhanced Auto-generated gRPC client with Unified Worker Thread API
+// Auto-generated gRPC client
 // DO NOT EDIT - This file is auto-generated
 
 import { ipcRenderer } from 'electron';
-import { UnifiedWorkerRouter } from '../helpers/unified-worker-router';
-import { WorkerThreadOptions, WorkerThreadResult, WorkerThreadCapabilities } from '../types/worker-thread-types';
 {{DYNAMIC_IMPORTS}}
 
 {{TYPE_DEFINITION}}
 
-export class EnhancedAutoGrpcClient {
-  private unifiedRouter: UnifiedWorkerRouter;
-
+export class AutoGrpcClient {
   constructor() {
-    this.unifiedRouter = UnifiedWorkerRouter.getInstance();
+    // Simple auto-generated gRPC client
   }
 
   // ==================================================================================
@@ -57,91 +53,12 @@ export class EnhancedAutoGrpcClient {
     });
   }
 
-  /**
-   * Execute method with unified worker thread support
-   */
-  private async callUnifiedMethod<TRequest, TResponse>(
-    methodName: string,
-    request: TRequest,
-    requestType: string,
-    responseType: string,
-    isStreaming: boolean,
-    options?: WorkerThreadOptions
-  ): Promise<WorkerThreadResult<TResponse> | TResponse> {
-    // If no options provided, use regular execution
-    if (!options) {
-      if (isStreaming) {
-        return this.callStreamingMethod(methodName, request) as unknown as TResponse;
-      } else {
-        return this.callMethod(methodName, request);
-      }
-    }
-
-    // Use unified router for enhanced execution
-    const regularExecutor = (req: TRequest) => this.callMethod<TRequest, TResponse>(methodName, req);
-    const streamingExecutor = isStreaming 
-      ? (req: TRequest, onData?: (data: any) => void) => 
-          this.callStreamingMethod(methodName, req, onData) as unknown as Promise<TResponse[]>
-      : undefined;
-
-    return this.unifiedRouter.executeMethod(
-      methodName,
-      request,
-      regularExecutor,
-      streamingExecutor,
-      options
-    );
-  }
-
-  /**
-   * Get capabilities for a specific method
-   */
-  getMethodCapabilities(
-    methodName: string,
-    requestType: string,
-    responseType: string,
-    isStreaming: boolean
-  ): WorkerThreadCapabilities {
-    return this.unifiedRouter.detectWorkerCapabilities(
-      methodName,
-      requestType,
-      responseType,
-      isStreaming
-    );
-  }
-
-  /**
-   * Cancel an active operation
-   */
-  cancelOperation(operationId: string): boolean {
-    return this.unifiedRouter.cancelOperation(operationId);
-  }
-
-  /**
-   * Get list of active operations
-   */
-  getActiveOperations(): string[] {
-    return this.unifiedRouter.getActiveOperations();
-  }
 
   // ==================================================================================
-  // AUTO-GENERATED METHODS WITH UNIFIED API
+  // AUTO-GENERATED METHODS
   // ==================================================================================
 
-{{ENHANCED_METHODS}}
-
-  // ==================================================================================
-  // LEGACY METHODS (for backward compatibility)
-  // ==================================================================================
-
-{{LEGACY_METHODS}}
-}
-
-export const enhancedAutoGrpcClient = new EnhancedAutoGrpcClient();
-
-// Export legacy client for backward compatibility
-export class AutoGrpcClient {
-{{LEGACY_CLASS_METHODS}}
+{{METHODS}}
 }
 
 export const autoGrpcClient = new AutoGrpcClient();

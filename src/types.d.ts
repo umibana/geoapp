@@ -29,7 +29,7 @@ interface ElectronAPI {
   showOpenDialog: (options: Electron.OpenDialogOptions) => Promise<Electron.OpenDialogReturnValue>;
   showSaveDialog: (options: Electron.SaveDialogOptions) => Promise<Electron.SaveDialogReturnValue>;
   readCsvPreview: (filePath: string, numRows?: number) => Promise<{ headers: string[]; rows: string[][]; delimiter: string }>;
-  // IPC communication methods for worker thread processing
+  // IPC communication methods
   send: (channel: string, data: any) => void;
   on: (channel: string, listener: (event: any, data: any) => void) => void;
   off: (channel: string, listener: (event: any, data: any) => void) => void;
@@ -104,25 +104,22 @@ interface GrpcAPI {
 
   // getBatchDataWorkerStreamed removed - use getBatchDataOptimized instead
 
-  getBatchDataChildProcessStreamed: (
-    bounds: { northeast: { latitude: number; longitude: number }; southwest: { latitude: number; longitude: number } },
-    dataTypes: string[],
-    maxPoints: number,
-    resolution?: number,
-    onProgress?: (progress: { processed: number; total: number; percentage: number; phase: string }) => void
-  ) => Promise<{ stats?: Record<string, unknown>; chartConfig?: Record<string, unknown>; message?: string }>;
-
-  getBatchDataOptimized: (
-    bounds: { northeast: { latitude: number; longitude: number }; southwest: { latitude: number; longitude: number } },
-    dataTypes: string[],
-    maxPoints: number,
-    resolution?: number,
-    onProgress?: (progress: { processed: number; total: number; percentage: number; phase: string }) => void,
-    onChunkData?: (chunk: unknown) => void,
-    options?: { threshold?: number }
-  ) => Promise<Record<string, unknown>>;
-
-  fetchChartDataInChunks: (requestId: string) => Promise<Array<[number, number, number]>>;
-  stopStream: (requestId?: string) => Promise<{ success: boolean; cancelled?: boolean }>;
+  // Streaming data methods
+  getBatchDataColumnar: (request: {
+    bounds: { northeast: { latitude: number; longitude: number }; southwest: { latitude: number; longitude: number } };
+    data_types: string[];
+    max_points: number;
+    resolution?: number;
+  }) => Promise<Record<string, unknown>>;
+  
+  getBatchDataColumnarStreamed: (
+    request: {
+      bounds: { northeast: { latitude: number; longitude: number }; southwest: { latitude: number; longitude: number } };
+      data_types: string[];
+      max_points: number;
+      resolution?: number;
+    },
+    onData?: (chunk: unknown) => void
+  ) => Promise<unknown[]>;
   aggregateCsvSeries: (xAxis: 'x'|'y'|'z', yAxis: 'x'|'y'|'z', metrics: string[], sampleCap?: number) => Promise<{ success: boolean; series?: Record<string, Array<[number, number, number, string | undefined]>>; ranges?: Record<string, { min: number; max: number }>; total?: number; error?: string }>;
 }
