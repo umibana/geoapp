@@ -79,7 +79,7 @@ export function WindowProvider({ children }: { children: React.ReactNode }) {
 export function useWindows() {
   const context = useContext(WindowContext);
   if (!context) {
-    throw new Error('useWindows must be used within a WindowProvider');
+    throw new Error('useWindows debe ser usado dentro de un WindowProvider');
   }
   return context;
 } 

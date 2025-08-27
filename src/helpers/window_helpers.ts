@@ -1,3 +1,5 @@
+// Manejo de ventanas de electron en el sistema operativo
+
 /**
  * Minimiza la ventana de la aplicación
  * Utiliza la API de Electron para minimizar la ventana principal

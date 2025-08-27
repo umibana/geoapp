@@ -22,7 +22,6 @@
 2. **✅ Formato de Datos Columnar**: Estructura de arrays eficiente que reduce el uso de memoria en 70% comparado con formato de objetos
 3. **✅ Arquitectura de Procesamiento Dual**:
    - **Streaming Columnar**: Para 100K-2M puntos con API `getBatchDataColumnar/Streamed`
-   - **Worker Threads**: Para 3M-5M+ puntos con procesamiento aislado y caché de datos de gráfico
 4. **✅ Comunicación IPC Modular**: Sistema IPC organizado por dominios (backend, theme, window) con context bridges seguros
 5. **✅ Integración Protocol Buffer**: Definiciones `.proto` como fuente única de verdad para TypeScript y Python
 6. **✅ Gestión de Procesos Desktop**: Servidor gRPC como ejecutable PyInstaller gestionado por el proceso principal de Electron
@@ -35,7 +34,6 @@ Componentes React (Proceso Renderer)
         ↓ IPC Seguro con Tipos Auto-generados
 Proceso Principal (Handlers IPC Auto-generados)
         ├── Streaming Columnar (100K-2M puntos)
-        └── Worker Thread + Caché de Gráficos (3M-5M+ puntos)
         ↓ Cliente gRPC Auto-generado (@grpc/grpc-js)
 Servidor Python gRPC (puerto 50077)
         ├── Generador de Datos Numpy (columnar)
@@ -99,12 +97,6 @@ await window.autoGrpc.sendFile({
 - **UI**: Tema verde, "Columnar Data Streaming"
 - **Ideal para**: Datasets medianos a grandes con eficiencia garantizada
 
-#### 2. **Worker Threads** (3M-5M+ puntos) 🟣 ULTRA-RENDIMIENTO
-- **Componente**: `WorkerThreadVisualization` 
-- **Tecnología**: Worker threads reales de Node.js + caché de datos de gráfico
-- **Ventajas**: Procesamiento completamente aislado, maneja datasets ultra-grandes sin bloquear UI
-- **UI**: Tema morado, "True Node.js Worker Threads"
-- **Ideal para**: Datasets masivos que requieren máximo rendimiento
 
 ### Tipos de Datos en el Sistema
 
@@ -121,306 +113,6 @@ El flujo principal del proyecto trabaja con **archivos CSV reales**:
 2. **Implementa Backend**: Añade método en `backend/grpc_server.py`
 3. **Regenera Código**: Ejecuta `npm run generate:full-stack`
 4. **Usa Inmediatamente**: `const result = await window.autoGrpc.nuevoMetodo({ params })`
-
-**Ventajas**: Cero código manual, tipos TypeScript automáticos, seguridad completa
-
-#### Opción B: Integración con Worker Threads (Solo para datasets masivos)
-1. Usa formato de streaming por chunks
-2. Integra con `MainProcessWorker` para procesamiento pesado
-3. Implementa progreso y cancelación
-4. Caché de datos de gráfico para UI responsive
-
-**Cuándo usar cada opción**:
-- **Opción A**: Para cualquier método nuevo, datasets pequeños/medianos, prototipado rápido
-- **Opción B**: Solo para datasets de 3M+ puntos que requieren UI 100% responsive
-
-## 🔧 **Ejemplo: Implementar Worker Threads para una Función**
-
-### Caso Práctico: Procesamiento de Análisis Estadístico de CSV
-
-Supongamos que queremos agregar un método que calcule estadísticas avanzadas de un dataset CSV cargado:
-
-#### 1. **Definir Protocol Buffer** (`protos/geospatial.proto`)
-```protobuf
-// Nuevo método para análisis estadístico
-rpc AnalyzeDatasetStats(AnalyzeDatasetStatsRequest) returns (stream DatasetStatsChunk);
-
-message AnalyzeDatasetStatsRequest {
-  string dataset_id = 1;
-  repeated string columns = 2;        // Columnas a analizar
-  bool include_correlations = 3;      // Incluir correlaciones
-  int32 chunk_size = 4;              // Tamaño de chunk para processing
-}
-
-message DatasetStatsChunk {
-  int32 chunk_number = 1;
-  int32 total_chunks = 2;
-  repeated ColumnStats column_stats = 3;
-  repeated CorrelationPair correlations = 4;
-  int32 processed_rows = 5;
-  bool is_final_chunk = 6;
-}
-
-message ColumnStats {
-  string column_name = 1;
-  double mean = 2;
-  double std_dev = 3;
-  double min_value = 4;
-  double max_value = 5;
-  int32 valid_count = 6;
-}
-
-message CorrelationPair {
-  string column_a = 1;
-  string column_b = 2;
-  double correlation = 3;
-}
-```
-
-#### 2. **Implementar Backend gRPC** (`backend/grpc_server.py`)
-```python
-def AnalyzeDatasetStats(self, request, context):
-    """Análisis estadístico con streaming por chunks"""
-    try:
-        import pandas as pd
-        import numpy as np
-        
-        dataset = self.db.get_dataset_by_id(request.dataset_id)
-        if not dataset:
-            context.set_code(grpc.StatusCode.NOT_FOUND)
-            return
-            
-        # Obtener datos del dataset
-        all_data = self.db.get_dataset_data_all(request.dataset_id)
-        df = pd.DataFrame(all_data)
-        
-        # Procesar por chunks para datasets grandes
-        chunk_size = request.chunk_size or 10000
-        total_rows = len(df)
-        total_chunks = (total_rows + chunk_size - 1) // chunk_size
-        
-        for chunk_idx in range(total_chunks):
-            start_idx = chunk_idx * chunk_size
-            end_idx = min(start_idx + chunk_size, total_rows)
-            chunk_df = df.iloc[start_idx:end_idx]
-            
-            # Calcular estadísticas para este chunk
-            chunk_stats = []
-            for col in request.columns:
-                if col in chunk_df.columns:
-                    col_data = pd.to_numeric(chunk_df[col], errors='coerce')
-                    stats = geospatial_pb2.ColumnStats(
-                        column_name=col,
-                        mean=col_data.mean(),
-                        std_dev=col_data.std(),
-                        min_value=col_data.min(),
-                        max_value=col_data.max(),
-                        valid_count=col_data.count()
-                    )
-                    chunk_stats.append(stats)
-            
-            # Calcular correlaciones si se solicita
-            correlations = []
-            if request.include_correlations and chunk_idx == total_chunks - 1:
-                # Solo en el último chunk calculamos correlaciones totales
-                corr_matrix = df[request.columns].corr()
-                for i, col_a in enumerate(request.columns):
-                    for j, col_b in enumerate(request.columns):
-                        if i < j:  # Evitar duplicados
-                            corr = geospatial_pb2.CorrelationPair(
-                                column_a=col_a,
-                                column_b=col_b,
-                                correlation=corr_matrix.loc[col_a, col_b]
-                            )
-                            correlations.append(corr)
-            
-            # Enviar chunk
-            chunk_response = geospatial_pb2.DatasetStatsChunk(
-                chunk_number=chunk_idx,
-                total_chunks=total_chunks,
-                column_stats=chunk_stats,
-                correlations=correlations,
-                processed_rows=end_idx,
-                is_final_chunk=(chunk_idx == total_chunks - 1)
-            )
-            
-            yield chunk_response
-            
-    except Exception as e:
-        context.set_code(grpc.StatusCode.INTERNAL)
-        context.set_details(str(e))
-```
-
-#### 3. **Regenerar Código Auto-generado**
-```bash
-npm run generate:full-stack
-```
-
-#### 4. **Implementar Handler con Worker Threads** (`src/helpers/ipc/backend/backend-listeners.ts`)
-```typescript
-import { MainProcessWorker } from '../../mainProcessWorker';
-
-// Añadir handler para análisis estadístico
-ipcMain.handle('grpc-analyze-dataset-stats', async (event, request) => {
-  const requestId = `stats-${Date.now()}-${Math.random()}`;
-  
-  try {
-    // Crear worker para procesamiento pesado
-    const worker = MainProcessWorker.getInstance();
-    const processor = worker.startStreamingProcessor(requestId, (progress) => {
-      // Enviar progreso al renderer
-      event.sender.send('grpc-stats-progress', { requestId, ...progress });
-    });
-    
-    // Configurar procesamiento de estadísticas
-    const statsAccumulator = {
-      columnStats: new Map(),
-      correlations: [],
-      totalProcessed: 0
-    };
-    
-    // Procesar stream desde backend
-    await autoMainGrpcClient.analyzeDatasetStats(request, (chunk) => {
-      // Procesar chunk en worker thread
-      processor.postChunk({
-        chunk_data: chunk,
-        processing_type: 'statistics',
-        metadata: {
-          chunk_number: chunk.chunk_number,
-          total_chunks: chunk.total_chunks,
-          processed_rows: chunk.processed_rows
-        }
-      });
-      
-      // Acumular estadísticas
-      chunk.column_stats.forEach(stat => {
-        const existing = statsAccumulator.columnStats.get(stat.column_name);
-        if (existing) {
-          // Combinar estadísticas de múltiples chunks
-          statsAccumulator.columnStats.set(stat.column_name, {
-            ...existing,
-            mean: (existing.mean * existing.valid_count + stat.mean * stat.valid_count) / (existing.valid_count + stat.valid_count),
-            valid_count: existing.valid_count + stat.valid_count,
-            min_value: Math.min(existing.min_value, stat.min_value),
-            max_value: Math.max(existing.max_value, stat.max_value)
-          });
-        } else {
-          statsAccumulator.columnStats.set(stat.column_name, stat);
-        }
-      });
-      
-      // Agregar correlaciones del último chunk
-      if (chunk.is_final_chunk && chunk.correlations.length > 0) {
-        statsAccumulator.correlations = chunk.correlations;
-      }
-      
-      statsAccumulator.totalProcessed = chunk.processed_rows;
-    });
-    
-    // Finalizar procesamiento
-    const result = await processor.finalize();
-    
-    return {
-      success: true,
-      statistics: {
-        columnStats: Array.from(statsAccumulator.columnStats.values()),
-        correlations: statsAccumulator.correlations,
-        totalProcessed: statsAccumulator.totalProcessed,
-        processingTime: result.processingTime,
-        performanceMetrics: result.performanceMetrics
-      }
-    };
-    
-  } catch (error) {
-    console.error('❌ Error in stats analysis:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-});
-```
-
-#### 5. **Exponer en Context Bridge** (`src/preload.ts`)
-```typescript
-// Añadir al context bridge existente
-contextBridge.exposeInMainWorld('grpc', {
-  // ... métodos existentes
-  
-  analyzeDatasetStats: async (
-    datasetId: string, 
-    columns: string[], 
-    options?: { includeCorrelations?: boolean; chunkSize?: number }
-  ) => {
-    return ipcRenderer.invoke('grpc-analyze-dataset-stats', {
-      dataset_id: datasetId,
-      columns,
-      include_correlations: options?.includeCorrelations || false,
-      chunk_size: options?.chunkSize || 10000
-    });
-  }
-});
-```
-
-#### 6. **Usar en el Frontend** 
-```typescript
-// En un componente React (ej: DatasetViewer.tsx)
-const runStatisticalAnalysis = async (datasetId: string, columns: string[]) => {
-  setLoading(true);
-  setProgress(0);
-  
-  // Configurar listener de progreso
-  const progressListener = (event: any, data: any) => {
-    if (data.requestId.startsWith('stats-')) {
-      setProgress(data.percentage);
-      console.log(`Análisis estadístico: ${data.phase} - ${data.percentage.toFixed(1)}%`);
-    }
-  };
-  
-  window.electronAPI.on('grpc-stats-progress', progressListener);
-  
-  try {
-    // Ejecutar análisis con worker threads
-    const result = await window.grpc.analyzeDatasetStats(datasetId, columns, {
-      includeCorrelations: true,
-      chunkSize: 25000
-    });
-    
-    if (result.success) {
-      console.log('📊 Análisis estadístico completado:');
-      console.log('Estadísticas por columna:', result.statistics.columnStats);
-      console.log('Correlaciones:', result.statistics.correlations);
-      console.log(`Procesados ${result.statistics.totalProcessed} filas en ${result.statistics.processingTime}s`);
-      
-      // Actualizar UI con resultados
-      setStatistics(result.statistics);
-    } else {
-      console.error('Error en análisis:', result.error);
-    }
-    
-  } catch (error) {
-    console.error('Error ejecutando análisis:', error);
-  } finally {
-    setLoading(false);
-    window.electronAPI.removeListener('grpc-stats-progress', progressListener);
-  }
-};
-```
-
-### 🎯 **Ventajas de este Enfoque**
-
-1. **✅ Worker Threads Reales**: Procesamiento completamente aislado, UI nunca se bloquea
-2. **✅ Streaming Incremental**: Progreso en tiempo real y cancelación posible
-3. **✅ Escalable**: Maneja datasets de millones de filas sin problemas de memoria
-4. **✅ Type Safety**: Todo auto-generado desde Protocol Buffers
-5. **✅ Reutilizable**: El patrón se puede aplicar a cualquier procesamiento pesado
-6. **✅ Memoria Eficiente**: Procesamiento por chunks evita cargar todo en memoria
-
-### 📋 **Cuándo Usar Worker Threads**
-- Datasets > 100K filas
-- Cálculos que toman > 2 segundos
-- Operaciones que requieren progreso en tiempo real
-- Funcionalidades que usuarios pueden querer cancelar
 
 ## 📁 Estructura del Proyecto
 
@@ -440,19 +132,17 @@ const runStatisticalAnalysis = async (datasetId: string, columns: string[]) => {
 │   ├── App.tsx                    # Componente React principal
 │   ├── 🗂️ components/             # Componentes React
 │   │   ├── GrpcDemo.tsx           # Demo principal con todos los ejemplos
-│   │   ├── ChildProcessVisualization.tsx   # Streaming columnar (verde)
-│   │   ├── WorkerThreadVisualization.tsx   # Worker threads (morado)
+│   │   ├── ChildProcessVisualization.tsx   # Streaming columnar
 │   │   ├── ProjectManager.tsx     # Gestión de proyectos
 │   │   ├── EnhancedCsvProcessor.tsx # Procesamiento CSV avanzado
 │   │   └── ui/                    # Componentes shadcn/ui
-│   ├── 🗂️ grpc-auto/             # 🔥 Sistema auto-generado (NO EDITAR)
+│   ├── 🗂️ grpc-auto/             # Sistema auto-generado (Link Electron main <-> renderer)
 │   │   ├── auto-grpc-client.ts    # Cliente gRPC para renderer
 │   │   ├── auto-ipc-handlers.ts   # Handlers IPC para main process
 │   │   ├── auto-main-client.ts    # Cliente gRPC para main process
 │   │   └── auto-context.ts        # Context bridge auto-generado
 │   ├── 🗂️ helpers/               # Utilidades y helpers
 │   │   ├── backend_helpers.ts     # Gestión del proceso backend Python
-│   │   ├── mainProcessWorker.ts   # Worker threads para datasets masivos
 │   │   └── ipc/                   # Sistema IPC modular por dominios
 │   │       ├── backend/           # IPC para backend
 │   │       ├── theme/             # IPC para temas
@@ -591,7 +281,6 @@ npm run make                     # 2. Crea distributables de Electron (incluye b
 ### Optimizaciones Implementadas
 - **✅ Formato Columnar**: 70% menos uso de memoria vs formato de objetos
 - **✅ Streaming por Chunks**: Procesa 5M+ puntos sin bloquear UI
-- **✅ Worker Threads Reales**: Procesamiento completamente aislado
 - **✅ Caché de Gráficos**: Transferencia eficiente de datos de visualización
 - **✅ Compresión gRPC**: Transferencia optimizada de datos
 - **✅ Sampling Inteligente**: Máximo 10K puntos para gráficos manteniendo representatividad
@@ -599,8 +288,6 @@ npm run make                     # 2. Crea distributables de Electron (incluye b
 ### Benchmarks Típicos
 - **100K puntos**: ~0.5s (streaming columnar)
 - **1M puntos**: ~2-3s (streaming columnar)
-- **5M puntos**: ~8-12s (worker threads + caché)
-- **UI Responsividad**: 100% mantenida en todos los casos
 
 ## 🛡️ Seguridad
 
@@ -642,7 +329,6 @@ npm run test:e2e
 - **Backend**: Logs detallados en consola con emojis
 - **Frontend**: DevTools de Electron con logs estructurados
 - **gRPC**: Logs de conectividad y rendimiento
-- **Worker Threads**: Logs de progreso y estadísticas
 
 ## 📚 Recursos Adicionales
 

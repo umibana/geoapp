@@ -1,5 +1,6 @@
 import * as React from "react"
 
+// Esto no se deberia utilizar nunca, pero viene de shadcn asi que se deja aquí
 const MOBILE_BREAKPOINT = 768
 
 export function useIsMobile() {

@@ -4,10 +4,6 @@ import { backendManager } from "./helpers/backend_helpers";
 import { autoMainGrpcClient } from "./grpc-auto/auto-main-client";
 // removed unused imports
 import * as path from "path";
-
-
-// "electron-squirrel-startup" seems broken when packaging with vite
-//import started from "electron-squirrel-startup";
 import {
   installExtension,
   REACT_DEVELOPER_TOOLS,
@@ -45,21 +41,21 @@ async function createWindow() {
   // Show window immediately
   mainWindow.show();
 
-  // Start gRPC backend in background (non-blocking)
-  console.log('Starting gRPC backend in background...');
+  // Iniciar el backend gRPC en segundo plano
+  console.log('Iniciando backend gRPC...');
   backendManager.startBackend()
     .then(() => {
-      console.log('gRPC backend started successfully');
+      console.log('gRPC backend iniciado!');
       // Initialize gRPC client after backend is ready
       return autoMainGrpcClient.initialize();
     })
     .then(() => {
-      console.log('Main process gRPC client initialized');
-      // Note: Auto-generated gRPC handlers are registered by listeners-register.ts
+      console.log('gRPC cliente inicializado');
+      // Nota: Los manejadores gRPC auto-generados se registran en listeners-register.ts
     })
     .catch((error) => {
-      console.error('Failed to start gRPC backend or initialize client:', error);
-      // Backend will show as unhealthy in the UI, which is fine
+      console.error('Error al iniciar el backend gRPC o inicializar el cliente:', error);
+      // El backend se mostrará como inutilizable en la UI, lo cual es normal
     });
 }
 

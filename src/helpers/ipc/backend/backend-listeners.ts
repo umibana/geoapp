@@ -25,7 +25,7 @@ export function registerBackendListeners() {
   ipcMain.handle(BACKEND_CHANNELS.RESTART_BACKEND, async () => {
     await backendManager.stopBackend();
     await backendManager.startBackend();
-    // Re-initialize gRPC client after restart (retry once if needed)
+    // Reiniciar el cliente gRPC después de reiniciar el backend
     try {
       await autoMainGrpcClient.initialize();
     } catch {
