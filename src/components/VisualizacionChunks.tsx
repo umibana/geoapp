@@ -218,34 +218,38 @@ export function ChildProcessVisualization({
 
       console.log('🎉 Columnar streaming completed:', result);
       
-      // Process all chunks to collect data and calculate stats
+      // Process all chunks to collect ALL points without sampling
       let totalProcessed = 0;
       let allChartData: Array<[number, number, number]> = [];
       let values: number[] = [];
       
-      // Combine data from all chunks with memory-efficient processing
-      const maxChartPoints = 10000; // Limit chart points early to prevent stack overflow
-      let samplingRatio = 1;
+      console.log(`📊 Processing ${result.length} chunks for full million-point visualization...`);
       
-      result.forEach((chunk: any) => {
+      // Combine data from ALL chunks - no sampling, full million points!
+      result.forEach((chunk: any, chunkIndex: number) => {
         if (chunk.x && chunk.y && chunk.z) {
-          totalProcessed += chunk.x.length;
+          const chunkSize = chunk.x.length;
+          totalProcessed += chunkSize;
           
-          // Calculate sampling ratio if we have too many points
-          const estimatedTotalPoints = totalProcessed * result.length / (result.indexOf(chunk) + 1);
-          if (estimatedTotalPoints > maxChartPoints) {
-            samplingRatio = Math.ceil(estimatedTotalPoints / maxChartPoints);
-          }
+          console.log(`📊 Processing chunk ${chunkIndex + 1}/${result.length}: ${chunkSize.toLocaleString()} points`);
           
-          // Convert to chart format with sampling and collect values for stats
-          for (let i = 0; i < chunk.x.length; i += samplingRatio) {
-            if (allChartData.length < maxChartPoints) {
-              allChartData.push([chunk.x[i], chunk.y[i], chunk.z[i]]);
-            }
+          // Add ALL points to chart - no sampling!
+          for (let i = 0; i < chunk.x.length; i++) {
+            allChartData.push([chunk.x[i], chunk.y[i], chunk.z[i]]);
             values.push(chunk.z[i]);
           }
+          
+          // Update progress during chunk processing
+          setProgress({
+            processed: totalProcessed,
+            total: testMaxPoints,
+            percentage: (totalProcessed / testMaxPoints) * 100,
+            phase: `processing_chunk_${chunkIndex + 1}_of_${result.length}`
+          });
         }
       });
+      
+      console.log(`🎉 Final result: ${totalProcessed.toLocaleString()} total points, ${allChartData.length.toLocaleString()} chart points (no sampling!)`);
       
       const endTime = performance.now();
       const duration = (endTime - Date.now() + 5000) / 1000; // Rough estimate
@@ -267,14 +271,14 @@ export function ChildProcessVisualization({
         pointsPerSecond
       });
       
-      // Create chart config with already sampled data
+      // Create chart config with ALL points (no sampling)
       const chartConfig: ChartConfig = {
         type: 'scatter',
         data: allChartData,
         metadata: {
           totalPoints: totalProcessed,
           chartPoints: allChartData.length,
-          samplingRatio: allChartData.length / totalProcessed,
+          samplingRatio: 1.0, // No sampling - showing all points!
           bounds: {
             lng: allChartData.length > 0 ? [
               allChartData.reduce((min, p) => Math.min(min, p[0]), allChartData[0][0]),
@@ -299,8 +303,8 @@ export function ChildProcessVisualization({
         phase: 'complete' 
       });
 
-      toast.success('🎉 Columnar Streaming Complete!', {
-        description: `Processed ${totalProcessed.toLocaleString()} points at ${pointsPerSecond.toLocaleString()} points/sec using columnar format`
+      toast.success('🎉 Million Point Visualization Complete!', {
+        description: `${totalProcessed.toLocaleString()} points displayed in chart (NO sampling!) at ${pointsPerSecond.toLocaleString()} points/sec`
       });
 
     } catch (error) {
@@ -315,16 +319,16 @@ export function ChildProcessVisualization({
   }, [updateChart]);
 
   // Test sizes for child process
-  const testSizes = [100000, 500000, 1000000, 2000000];
+  const testSizes = [10000, 30000, 50000, 100000, 200000];
 
   return (
     <div className="w-full space-y-4">
       {/* Controls */}
       <div className="flex flex-wrap gap-3 items-center justify-between p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border">
         <div>
-          <h3 className="text-lg font-semibold text-gray-800">🚀 Columnar Data Streaming</h3>
+          <h3 className="text-lg font-semibold text-gray-800">🚀 Million Point Chart Visualization</h3>
           <p className="text-sm text-gray-600">
-            High-performance columnar format with chunked streaming - zero UI blocking guaranteed
+            Million-point visualization with NO sampling - all points displayed in chart via efficient streaming
           </p>
         </div>
         
