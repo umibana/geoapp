@@ -24,7 +24,7 @@ This is a **desktop geospatial application** built with Electron that combines a
 
 1. **✅ Auto-Generated gRPC API**: Complete type safety with auto-generated clients, handlers, and contexts
 2. **✅ Columnar Data Format**: Efficient array-based data structure for large datasets
-3. **✅ Dual Processing Strategy**: Columnar streaming + Worker threads for different dataset sizes
+3. **✅ Dual Processing Strategy**: Columnar streaming + 
 4. **✅ Secure IPC Communication**: Renderer ↔ Main process via secure context isolation
 5. **✅ Protocol Buffer Integration**: Shared `.proto` definitions ensure type safety across TypeScript and Python
 6. **✅ Desktop Process Management**: gRPC server runs as bundled executable managed by Electron main process
@@ -36,7 +36,6 @@ React Components (Renderer Process)
         ↓ Secure IPC with Type Safety
 Main Process (Auto-Generated Handlers)
         ├── Columnar Streaming API (< 2M points)
-        └── Worker Thread Processing (≥ 2M points)
         ↓ gRPC (@grpc/grpc-js with compression)
 Python gRPC Server (numpy columnar data generation)
         ↓ Efficient columnar format
@@ -90,21 +89,15 @@ type ColumnarData = {
 
 ### **Dual Processing Strategy**
 
-The application implements **two complementary processing approaches**:
+The application implements one processing approach:
 
-#### **1. Columnar Streaming API** (`ChildProcessVisualization`)
+#### **1. Columnar Streaming API** (`VisualizacionChunks.tsx`)
 - **Best for**: 100K - 2M points
 - **Technology**: Auto-generated `getBatchDataColumnarStreamed`
 - **Benefits**: Simple, reliable, efficient columnar format
 - **UI**: Green theme, "Columnar Data Streaming"
 - **Memory**: Efficient sampling to prevent stack overflow
 
-#### **2. Worker Thread Processing** (`WorkerThreadVisualization`)
-- **Best for**: 3M - 5M+ points  
-- **Technology**: Complex IPC with worker threads + chart data caching
-- **Benefits**: Maximum performance, isolated processing, handles ultra-large datasets
-- **UI**: Purple theme, "True Node.js Worker Threads"
-- **Memory**: Chart data caching with chunked IPC transfer
 
 ### **IPC Architecture** (`src/helpers/ipc/`)
 
@@ -380,8 +373,7 @@ npm run test:simplified    # Test the simplified gRPC system
 - `components/ui/` - shadcn/ui components  
 - `components/BackendStatus.tsx` - gRPC backend health monitoring
 - `components/GrpcDemo.tsx` - gRPC API demonstration with performance testing
-- `components/ChildProcessVisualization.tsx` - Columnar streaming visualization (100K-2M points)
-- `components/WorkerThreadVisualization.tsx` - Worker thread visualization (3M-5M+ points)
+- `components/VisualizacionChunks.tsx` - Columnar streaming visualization (100K-2M points)
 - `components/CsvProcessor.tsx` - CSV file processing and analysis
 - **`grpc-auto/`** - **Auto-generated gRPC system (DO NOT EDIT)**
   - `auto-grpc-client.ts` - Renderer process gRPC client
@@ -390,7 +382,6 @@ npm run test:simplified    # Test the simplified gRPC system
   - `auto-main-client.ts` - Main process gRPC client
 - `helpers/ipc/` - Electron IPC communication helpers
 - `helpers/backend_helpers.ts` - Backend process management
-- `helpers/mainProcessWorker.ts` - Worker thread processing for ultra-large datasets
 - `generated/` - Auto-generated Protocol Buffer files
 - `contexts/` - React contexts for state management
 - `routes/` - TanStack Router configuration
@@ -451,7 +442,6 @@ The application uses an **efficient columnar data format** optimized for large g
 
 3. **🔄 Dual Processing Strategy**: Automatic selection based on dataset size
    - **Columnar Streaming**: 100K-2M points with auto-generated API
-   - **Worker Threads**: 3M-5M+ points with isolated processing
 
 ### Auto-Generated gRPC System
 - **Type Safety**: Complete TypeScript integration across frontend and backend
@@ -512,14 +502,9 @@ The application has been **completely modernized** with a full auto-generation s
 - ✅ **Auto-Generated API**: Complete gRPC system generated from Protocol Buffers
 - ✅ **Columnar Data Format**: Efficient array-based data structure for large datasets
 - ✅ **Type Safety**: Full TypeScript integration across frontend and backend
-- ✅ **Dual Processing**: Columnar streaming + Worker threads for different dataset sizes
+- ✅ **Processing**: Columnar streaming 
 - ✅ **Memory Efficiency**: 70% memory reduction and stack overflow prevention
 
-#### **What Was Removed:**
-- ❌ **Manual gRPC API**: Removed 293 lines of legacy manual API code
-- ❌ **Legacy Processing**: Removed complex multi-strategy comparison system
-- ❌ **Object-Based Format**: Replaced with efficient columnar format
-- ❌ **Web Worker Simulation**: Replaced with real columnar streaming
 
 #### **Key Benefits:**
 1. **Zero Maintenance**: No manual API code - everything auto-generated
