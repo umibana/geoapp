@@ -271,33 +271,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
     return defaultValue;
   };
 
-  const debugProtocolBufferStructure = (rows: any[]) => {
-    console.log('🔍 Protocol Buffer Data Structure Analysis:');
-    
-    if (rows.length === 0) {
-      console.log('No rows available for analysis');
-      return;
-    }
-    
-    const firstRow = rows[0];
-    console.log('First row structure:', {
-      rawStructure: firstRow,
-      hasFields: 'fields' in firstRow,
-      fieldsType: typeof firstRow.fields,
-      directKeys: Object.keys(firstRow),
-      fieldsKeys: firstRow.fields ? Object.keys(firstRow.fields) : null
-    });
-    
-    // Sample multiple rows to understand consistency
-    console.log('Sample of first 3 rows:');
-    rows.slice(0, 3).forEach((row, index) => {
-      const data = row.fields || row;
-      console.log(`Row ${index}:`, {
-        structure: row.fields ? 'Protocol Buffer' : 'Direct Object',
-        sampleValues: Object.entries(data || {}).slice(0, 3)
-      });
-    });
-  };
 
   const prepareChartData = () => {
     if (!dataset || !selectedValueColumn || !selectedXAxis || !selectedYAxis) {
@@ -316,9 +289,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
       selectedValueColumn,
       totalRows: dataset.rows.length
     });
-    
-    // Debug the Protocol Buffer structure
-    debugProtocolBufferStructure(dataset.rows);
     
     // Convert dataset rows to chart format using the pattern from existing components
     const chartPoints = dataset.rows.map((row, index) => {

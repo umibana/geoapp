@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Build script for gRPC server
+
 """
 import os
 import sys
@@ -8,11 +8,11 @@ import subprocess
 from pathlib import Path
 
 def build_server():
-    # Set up paths
+    # Setup de paths
     backend_dir = Path(__file__).parent
     os.chdir(backend_dir)
     
-    # Build command
+    # Se arma imagen con pyinstaller
     cmd = [
         sys.executable, '-m', 'PyInstaller',
         '--onedir',
@@ -26,14 +26,14 @@ def build_server():
         'grpc_server.py'
     ]
     
-    print(f"Running: {' '.join(cmd)}")
+    print(f"Ejecutando {' '.join(cmd)}")
     result = subprocess.run(cmd)
     
     if result.returncode == 0:
-        print("✅ gRPC server built successfully!")
+        print("✅ gRPC server construido correctamente!")
         print(f"📁 Output: {backend_dir}/dist/grpc-server/")
     else:
-        print("❌ Build failed!")
+        print("❌ Error al construir el servidor gRPC!")
         sys.exit(1)
 
 if __name__ == '__main__':

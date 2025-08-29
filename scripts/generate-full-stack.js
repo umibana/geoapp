@@ -53,23 +53,16 @@ function ensureDirectory(dir) {
 
 function parseAllProtoFiles() {
   try {
-    // Read all proto files and combine content
-    const protoFiles = [
-      'common.proto',
-      'core_service.proto', 
-      'geospatial_service.proto',
-      'main_service.proto'
-    ];
+    // Read all proto files under protos directory
+    const protoFiles = fs.readdirSync(PROTO_DIR).filter(f => f.endsWith('.proto'));
     
     let combinedContent = '';
     
     for (const protoFile of protoFiles) {
       const fullPath = path.join(PROTO_DIR, protoFile);
-      if (fs.existsSync(fullPath)) {
-        const content = fs.readFileSync(fullPath, 'utf8');
-        combinedContent += content + '\n';
-        log(`Loaded ${protoFile}`);
-      }
+      const content = fs.readFileSync(fullPath, 'utf8');
+      combinedContent += content + '\n';
+      log(`Loaded ${protoFile}`);
     }
     
     const protoContent = combinedContent;
@@ -145,7 +138,8 @@ function parseAllProtoFiles() {
 }
 
 function generateSimpleClient(services) {
-  const service = services[0];
+  // Find GeospatialService (the main aggregator service)
+  const service = services.find(s => s.name === 'GeospatialService') || services[0];
   if (!service) return '';
   
   const methods = service.methods.map(method => {
@@ -219,7 +213,8 @@ export const autoGrpcClient = new AutoGrpcClient();
 }
 
 function generateSimpleHandlers(services) {
-  const service = services[0];
+  // Find GeospatialService (the main aggregator service)
+  const service = services.find(s => s.name === 'GeospatialService') || services[0];
   if (!service) return '';
   
   const handlers = service.methods.map(method => {
@@ -278,7 +273,8 @@ ${handlers}
 }
 
 function generateSimpleContext(services) {
-  const service = services[0];
+  // Find GeospatialService (the main aggregator service)
+  const service = services.find(s => s.name === 'GeospatialService') || services[0];
   if (!service) return '';
   
   const methods = service.methods.map(method => {
@@ -304,7 +300,8 @@ export function exposeAutoGrpcContext() {
 }
 
 function generateSimpleMainClient(services) {
-  const service = services[0];
+  // Find GeospatialService (the main aggregator service)
+  const service = services.find(s => s.name === 'GeospatialService') || services[0];
   if (!service) return '';
   
   const methods = service.methods.map(method => {

@@ -65,18 +65,13 @@ export function BackendStatus({ className = '' }: BackendStatusProps) {
 
   const testGrpcAPI = async () => {
     try {
-      // Test gRPC GetFeatures call using auto-generated API
-      const result = await window.autoGrpc.getFeatures({
-        bounds: {
-          northeast: { latitude: 40.7829, longitude: -73.9654 },
-          southwest: { latitude: 40.7489, longitude: -73.9904 }
-        },
-        feature_types: ['poi', 'landmark'],
-        limit: 10
+      // Test gRPC HelloWorld call using auto-generated API
+      const result = await window.autoGrpc.helloWorld({
+        message: 'Test from frontend'
       });
       
       console.log('gRPC API response:', result);
-      alert(`gRPC API Test (GetFeatures):\nFound ${result.features.length} features\nTotal: ${result.total_count}`);
+      alert(`gRPC API Test (HelloWorld):\nMessage: ${result.message}`);
     } catch (error) {
       console.error('Failed to test gRPC API:', error);
       alert('Failed to connect to gRPC API');

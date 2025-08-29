@@ -4,9 +4,9 @@
  * Usage: node scripts/generate-protos.js
  */
 
-const { execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+import { execSync } from 'child_process';
+import { existsSync, mkdirSync } from 'fs';
+import path from 'path';
 
 const PROTO_DIR = 'protos';
 const MAIN_PROTO_FILE = 'protos/main_service.proto';
@@ -38,18 +38,18 @@ function runCommand(command, description) {
 }
 
 function ensureDirectory(dir) {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
     log(`Created directory: ${dir}`);
   }
 }
 
 function checkProtoFiles() {
-  if (!fs.existsSync(PROTO_DIR)) {
+  if (!existsSync(PROTO_DIR)) {
     error(`Protocol buffer directory '${PROTO_DIR}' not found!`);
     process.exit(1);
   }
-  if (!fs.existsSync(MAIN_PROTO_FILE)) {
+  if (!existsSync(MAIN_PROTO_FILE)) {
     error(`Main protocol buffer file '${MAIN_PROTO_FILE}' not found!`);
     process.exit(1);
   }
@@ -91,7 +91,7 @@ function checkDependencies() {
   
   // Check if protoc-gen-es is available
   const protocGenEs = './node_modules/.bin/protoc-gen-es';
-  if (!fs.existsSync(protocGenEs)) {
+  if (!existsSync(protocGenEs)) {
     error('protoc-gen-es not found. Install with: npm install @bufbuild/protoc-gen-es');
     process.exit(1);
   }
@@ -134,8 +134,6 @@ function main() {
   }
 }
 
-if (require.main === module) {
   main();
-}
 
-module.exports = { main }; 
+export default { main }; 

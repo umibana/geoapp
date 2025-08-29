@@ -13,6 +13,10 @@ import socket
 import threading
 from pathlib import Path
 from concurrent import futures
+import pandas as pd
+import numpy as np
+from typing import Iterator, List, Tuple, Dict, Any
+import math
 
 # Añadir el directorio actual al path de Python para encontrar archivos generados
 script_dir = Path(__file__).parent.absolute()
@@ -27,8 +31,6 @@ import files_pb2
 import projects_pb2
 import main_service_pb2_grpc
 
-# Importar el generador de datos y el gestor de base de datos
-from data_generator import data_generator
 from database import DatabaseManager
 
 
@@ -42,437 +44,6 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
         self.version = "1.0.0"
         self.db = DatabaseManager()
         print("🌍 GeospatialService inicializado con base de datos")
-    
-    def GetFeatures(self, request, context):
-        """Obtiene características geoespaciales dentro de límites especificados
-        
-        Args:
-            request: Solicitud con límites geográficos y filtros
-            context: Contexto de la llamada gRPC
-            
-        Returns:
-            Lista de características geoespaciales encontradas
-        """
-        try:
-            print(f"📍 GetFeatures request: bounds={request.bounds.northeast.latitude},{request.bounds.northeast.longitude} to {request.bounds.southwest.latitude},{request.bounds.southwest.longitude}, limit={request.limit}")
-            
-            # Generar características de muestra para demostración
-            features = []
-            feature_count = min(request.limit or 10, 50)  # Cap at 50 for demo
-            
-            # Sample area bounds
-            lat_min = request.bounds.southwest.latitude
-            lat_max = request.bounds.northeast.latitude
-            lng_min = request.bounds.southwest.longitude
-            lng_max = request.bounds.northeast.longitude
-            
-            for i in range(feature_count):
-                # Generate random coordinates within bounds
-                lat = random.uniform(lat_min, lat_max)
-                lng = random.uniform(lng_min, lng_max)
-                
-                feature = geospatial_pb2.GeospatialFeature(
-                    id=f"feature_{i}_{int(time.time())}",
-                    name=f"Sample Feature {i+1}",
-                    location=geospatial_pb2.Coordinate(
-                        latitude=lat,
-                        longitude=lng,
-                        altitude=random.uniform(0, 100)
-                    ),
-                    timestamp=int(time.time() * 1000),
-                    properties={
-                        "type": random.choice(["poi", "landmark", "building"]),
-                        "category": random.choice(["restaurant", "park", "shop", "office"]),
-                        "importance": str(random.randint(1, 10))
-                    }
-                )
-                features.append(feature)
-            
-            response = geospatial_pb2.GetFeaturesResponse(
-                features=features,
-                total_count=len(features)
-            )
-            
-            print(f"✅ Returning {len(features)} features")
-            return response
-            
-        except Exception as e:
-            print(f"❌ Error in GetFeatures: {e}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(f"Internal server error: {str(e)}")
-            return geospatial_pb2.GetFeaturesResponse()
-    
-    def StreamData(self, request, context):
-        """Transmite puntos de datos geoespaciales en tiempo real usando generador numpy
-        
-        Proporciona un stream continuo de datos geoespaciales generados dinámicamente.
-        Ideal para demostrar capacidades de streaming y actualizaciones en vivo.
-        
-        Args:
-            request: Solicitud con límites geográficos y configuración de streaming
-            context: Contexto de la llamada gRPC para manejo de conexión
-            
-        Yields:
-            Puntos de datos individuales como DataPoint protobuf messages
-        """
-        try:
-            print(f"🔄 StreamData request: bounds={request.bounds.northeast.latitude},{request.bounds.northeast.longitude} to {request.bounds.southwest.latitude},{request.bounds.southwest.longitude}")
-            print(f"🔄 Data types: {list(request.data_types)}, Max points/sec: {request.max_points_per_second}")
-            
-            # Prepare bounds for data generator
-            bounds = {
-                'lat_min': request.bounds.southwest.latitude,
-                'lat_max': request.bounds.northeast.latitude,
-                'lng_min': request.bounds.southwest.longitude,
-                'lng_max': request.bounds.northeast.longitude
-            }
-            
-            data_types = list(request.data_types) if request.data_types else ['elevation']
-            max_points_per_second = request.max_points_per_second or 5
-            
-            print(f"🎯 Generando datos de streaming {data_types[0]} usando numpy...")
-            
-            # Usar generador de datos para streaming
-            point_count = 0
-            for data_point_dict in data_generator.generate_streaming_data(bounds, data_types, max_points_per_second):
-                if context.is_active():
-                    # Convertir diccionario a DataPoint protobuf
-                    data_point = geospatial_pb2.DataPoint(
-                        id=data_point_dict['id'],
-                        location=geospatial_pb2.Coordinate(
-                            latitude=data_point_dict['latitude'],
-                            longitude=data_point_dict['longitude'],
-                            altitude=data_point_dict['altitude']
-                        ),
-                        value=data_point_dict['value'],
-                        unit=data_point_dict['unit'],
-                        timestamp=data_point_dict['timestamp'],
-                        metadata=data_point_dict['metadata']
-                    )
-                    
-                    yield data_point
-                    point_count += 1
-                else:
-                    print("🛑 Cliente desconectado del stream")
-                    break
-            
-            print(f"✅ StreamData terminado, enviados {point_count} puntos de datos usando generador numpy {data_types[0]}")
-            
-        except Exception as e:
-            print(f"❌ Error in StreamData: {e}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(f"Streaming error: {str(e)}")
-    
-    def GetBatchData(self, request, context):
-        """Obtiene puntos de datos geoespaciales en lotes usando generador numpy
-        
-        Genera grandes cantidades de datos geoespaciales de forma eficiente.
-        Optimizado para datasets grandes con control de resolución y tipos de datos.
-        
-        Args:
-            request: Solicitud con límites, tipos de datos, puntos máximos y resolución
-            context: Contexto de la llamada gRPC
-            
-        Returns:
-            GetBatchDataResponse con lista de puntos de datos y metadatos
-        """
-        try:
-            grpc_start_time = time.time()
-            
-            print(f"📦 GetBatchData request: bounds={request.bounds.northeast.latitude},{request.bounds.northeast.longitude} to {request.bounds.southwest.latitude},{request.bounds.southwest.longitude}")
-            print(f"📦 Data types: {list(request.data_types)}, Max points: {request.max_points}, Resolution: {request.resolution}")
-            
-            # Prepare bounds for data generator
-            bounds = {
-                'lat_min': request.bounds.southwest.latitude,
-                'lat_max': request.bounds.northeast.latitude,
-                'lng_min': request.bounds.southwest.longitude,
-                'lng_max': request.bounds.northeast.longitude
-            }
-            
-            data_types = list(request.data_types) if request.data_types else ['elevation']
-            max_points = request.max_points or 1000
-            resolution = request.resolution or 20
-            
-            print(f"🎯 Generando datos en lotes {data_types[0]} usando numpy (resolución: {resolution})...")
-            
-            # Usar generador de datos para datos en lotes
-            data_generation_start = time.time()
-            data_points_list, generation_method = data_generator.generate_batch_data(
-                bounds, data_types, max_points, resolution
-            )
-            data_generation_time = time.time() - data_generation_start
-            
-            # Convertir a DataPoints protobuf
-            protobuf_conversion_start = time.time()
-            protobuf_data_points = []
-            for data_point_dict in data_points_list:
-                data_point = geospatial_pb2.DataPoint(
-                    id=data_point_dict['id'],
-                    location=geospatial_pb2.Coordinate(
-                        latitude=data_point_dict['latitude'],
-                        longitude=data_point_dict['longitude'],
-                        altitude=data_point_dict['altitude']
-                    ),
-                    value=data_point_dict['value'],
-                    unit=data_point_dict['unit'],
-                    timestamp=data_point_dict['timestamp'],
-                    metadata=data_point_dict['metadata']
-                )
-                protobuf_data_points.append(data_point)
-            
-            protobuf_conversion_time = time.time() - protobuf_conversion_start
-            
-            response = geospatial_pb2.GetBatchDataResponse(
-                data_points=protobuf_data_points,
-                total_count=len(protobuf_data_points),
-                generation_method=generation_method
-            )
-            
-            grpc_total_time = time.time() - grpc_start_time
-            
-            print(f"⏱️  gRPC Server Timing Breakdown:")
-            print(f"   • Data generation: {data_generation_time:.3f}s")
-            print(f"   • Protobuf conversion: {protobuf_conversion_time:.3f}s") 
-            print(f"   • Total gRPC processing: {grpc_total_time:.3f}s")
-            print(f"✅ GetBatchData finished, returning {len(protobuf_data_points)} data points using {generation_method}")
-            
-            return response
-            
-        except Exception as e:
-            print(f"❌ Error in GetBatchData: {e}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(f"Batch data error: {str(e)}")
-            return geospatial_pb2.GetBatchDataResponse()
-    
-    def GetBatchDataCompressed(self, request, context):
-        """Get batch geospatial data points WITH gRPC compression"""
-        try:
-            grpc_start_time = time.time()
-            
-            print(f"🗜️  GetBatchDataCompressed request: Max points: {request.max_points}, Resolution: {request.resolution}")
-            print(f"🗜️  Compression enabled on this call")
-            
-            # Same logic as GetBatchData, but client should use compression
-            bounds = {
-                'lat_min': request.bounds.southwest.latitude,
-                'lat_max': request.bounds.northeast.latitude,
-                'lng_min': request.bounds.southwest.longitude,
-                'lng_max': request.bounds.northeast.longitude
-            }
-            
-            data_types = list(request.data_types) if request.data_types else ['elevation']
-            max_points = request.max_points if request.max_points > 0 else 1000
-            resolution = request.resolution or 20
-            
-            print(f"🎯 Generating compressed batch {data_types[0]} data using numpy (resolution: {resolution})...")
-            
-            # Use data generator for batch data
-            data_generation_start = time.time()
-            data_points_list, generation_method = data_generator.generate_batch_data(
-                bounds, data_types, max_points, resolution
-            )
-            data_generation_time = time.time() - data_generation_start
-            
-            # Convert to protobuf DataPoints (same as regular)
-            protobuf_conversion_start = time.time()
-            protobuf_data_points = []
-            for data_point_dict in data_points_list:
-                data_point = geospatial_pb2.DataPoint(
-                    id=data_point_dict['id'],
-                    location=geospatial_pb2.Coordinate(
-                        latitude=data_point_dict['latitude'],
-                        longitude=data_point_dict['longitude'],
-                        altitude=data_point_dict['altitude']
-                    ),
-                    value=data_point_dict['value'],
-                    unit=data_point_dict['unit'],
-                    timestamp=data_point_dict['timestamp'],
-                    metadata=data_point_dict['metadata']
-                )
-                protobuf_data_points.append(data_point)
-            
-            protobuf_conversion_time = time.time() - protobuf_conversion_start
-            
-            response = geospatial_pb2.GetBatchDataResponse(
-                data_points=protobuf_data_points,
-                total_count=len(protobuf_data_points),
-                generation_method=f"{generation_method}_compressed"
-            )
-            
-            grpc_total_time = time.time() - grpc_start_time
-            
-            print(f"⏱️  gRPC Compressed Server Timing:")
-            print(f"   • Data generation: {data_generation_time:.3f}s")
-            print(f"   • Protobuf conversion: {protobuf_conversion_time:.3f}s") 
-            print(f"   • Total gRPC processing: {grpc_total_time:.3f}s")
-            print(f"✅ GetBatchDataCompressed finished, returning {len(protobuf_data_points)} data points")
-            
-            return response
-            
-        except Exception as e:
-            print(f"❌ Error in GetBatchDataCompressed: {e}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(f"Compressed batch data error: {str(e)}")
-            return geospatial_pb2.GetBatchDataResponse()
-    
-    def GetBatchDataOptimized(self, request, context):
-        """Get batch geospatial data points with OPTIMIZED data format (float32, flattened)"""
-        try:
-            grpc_start_time = time.time()
-            
-            print(f"⚡ GetBatchDataOptimized request: Max points: {request.max_points}, Resolution: {request.resolution}")
-            print(f"⚡ Using optimized float32 format with flattened metadata")
-            
-            bounds = {
-                'lat_min': request.bounds.southwest.latitude,
-                'lat_max': request.bounds.northeast.latitude,
-                'lng_min': request.bounds.southwest.longitude,
-                'lng_max': request.bounds.northeast.longitude
-            }
-            
-            data_types = list(request.data_types) if request.data_types else ['elevation']
-            max_points = request.max_points if request.max_points > 0 else 1000
-            resolution = request.resolution or 20
-            
-            print(f"🎯 Generating optimized batch {data_types[0]} data using numpy (resolution: {resolution})...")
-            
-            # Use data generator for batch data
-            data_generation_start = time.time()
-            data_points_list, generation_method = data_generator.generate_batch_data(
-                bounds, data_types, max_points, resolution
-            )
-            data_generation_time = time.time() - data_generation_start
-            
-            # Convert to OPTIMIZED protobuf format
-            protobuf_conversion_start = time.time()
-            optimized_data_points = []
-            for data_point_dict in data_points_list:
-                # Use OptimizedDataPoint with float32 and flattened metadata
-                optimized_point = geospatial_pb2.OptimizedDataPoint(
-                    id=data_point_dict['id'],
-                    latitude=float(data_point_dict['latitude']),    # Already float32 from generator
-                    longitude=float(data_point_dict['longitude']),  # Already float32 from generator
-                    altitude=float(data_point_dict['altitude']),    # Already float32 from generator
-                    value=float(data_point_dict['value']),          # Already float32 from generator
-                    unit=data_point_dict['unit'],
-                    timestamp=data_point_dict['timestamp'],
-                    generation_method=data_point_dict['metadata'].get('generation_method', data_types[0])
-                )
-                optimized_data_points.append(optimized_point)
-            
-            protobuf_conversion_time = time.time() - protobuf_conversion_start
-            
-            response = geospatial_pb2.GetBatchDataOptimizedResponse(
-                data_points=optimized_data_points,
-                total_count=len(optimized_data_points),
-                generation_method=f"{generation_method}_optimized"
-            )
-            
-            grpc_total_time = time.time() - grpc_start_time
-            
-            print(f"⏱️  gRPC Optimized Server Timing:")
-            print(f"   • Data generation: {data_generation_time:.3f}s")
-            print(f"   • Protobuf conversion: {protobuf_conversion_time:.3f}s") 
-            print(f"   • Total gRPC processing: {grpc_total_time:.3f}s")
-            print(f"✅ GetBatchDataOptimized finished, returning {len(optimized_data_points)} optimized data points")
-            
-            return response
-            
-        except Exception as e:
-            print(f"❌ Error in GetBatchDataOptimized: {e}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(f"Optimized batch data error: {str(e)}")
-            return geospatial_pb2.GetBatchDataOptimizedResponse()
-    
-    def GetBatchDataStreamed(self, request, context):
-        """Get batch geospatial data points via CHUNKED STREAMING (no frontend freeze)"""
-        try:
-            grpc_start_time = time.time()
-            
-            print(f"🔄 GetBatchDataStreamed request: Max points: {request.max_points}, Resolution: {request.resolution}")
-            print(f"🔄 Using chunked streaming to prevent frontend freeze")
-            
-            bounds = {
-                'lat_min': request.bounds.southwest.latitude,
-                'lat_max': request.bounds.northeast.latitude,
-                'lng_min': request.bounds.southwest.longitude,
-                'lng_max': request.bounds.northeast.longitude
-            }
-            
-            data_types = list(request.data_types) if request.data_types else ['elevation']
-            max_points = request.max_points if request.max_points > 0 else 1000
-            resolution = request.resolution or 20
-            
-            print(f"🎯 Generating streamed batch {data_types[0]} data using numpy (resolution: {resolution})...")
-            
-            # Use data generator for batch data
-            data_generation_start = time.time()
-            data_points_list, generation_method = data_generator.generate_batch_data(
-                bounds, data_types, max_points, resolution
-            )
-            data_generation_time = time.time() - data_generation_start
-            
-            # Stream data in chunks to prevent frontend freeze
-            chunk_size = 25000  # 25K points per chunk
-            total_points = len(data_points_list)
-            total_chunks = (total_points + chunk_size - 1) // chunk_size  # Ceiling division
-            
-            print(f"📦 Streaming {total_points} points in {total_chunks} chunks of {chunk_size} points each")
-            
-            chunk_start_time = time.time()
-            
-            for chunk_num in range(total_chunks):
-                start_idx = chunk_num * chunk_size
-                end_idx = min(start_idx + chunk_size, total_points)
-                chunk_data = data_points_list[start_idx:end_idx]
-                
-                # Convert chunk to protobuf DataPoints
-                protobuf_data_points = []
-                for data_point_dict in chunk_data:
-                    data_point = geospatial_pb2.DataPoint(
-                        id=data_point_dict['id'],
-                        location=geospatial_pb2.Coordinate(
-                            latitude=data_point_dict['latitude'],
-                            longitude=data_point_dict['longitude'],
-                            altitude=data_point_dict['altitude']
-                        ),
-                        value=data_point_dict['value'],
-                        unit=data_point_dict['unit'],
-                        timestamp=data_point_dict['timestamp'],
-                        metadata=data_point_dict['metadata']
-                    )
-                    protobuf_data_points.append(data_point)
-                
-                # Create and yield chunk
-                chunk = geospatial_pb2.GetBatchDataChunk(
-                    data_points=protobuf_data_points,
-                    chunk_number=chunk_num + 1,
-                    total_chunks=total_chunks,
-                    points_in_chunk=len(protobuf_data_points),
-                    is_final_chunk=(chunk_num == total_chunks - 1),
-                    generation_method=f"{generation_method}_streamed"
-                )
-                
-                print(f"📡 Sending chunk {chunk_num + 1}/{total_chunks} ({len(protobuf_data_points)} points)")
-                yield chunk
-                
-                # Small delay between chunks to allow frontend processing
-                time.sleep(0.001)  # 1ms delay
-            
-            chunk_streaming_time = time.time() - chunk_start_time
-            grpc_total_time = time.time() - grpc_start_time
-            
-            print(f"⏱️  gRPC Streamed Server Timing:")
-            print(f"   • Data generation: {data_generation_time:.3f}s")
-            print(f"   • Chunk streaming: {chunk_streaming_time:.3f}s")
-            print(f"   • Total gRPC processing: {grpc_total_time:.3f}s")
-            print(f"✅ GetBatchDataStreamed finished, streamed {total_points} data points in {total_chunks} chunks")
-            
-        except Exception as e:
-            print(f"❌ Error in GetBatchDataStreamed: {e}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(f"Streamed batch data error: {str(e)}")
     
     def HealthCheck(self, request, context):
         """Health check endpoint"""
@@ -579,18 +150,13 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
     
     def AnalyzeCsv(self, request, context):
         """
-        Analyze CSV file to detect column names and types from the first two rows
+        Analiza un archivo CSV para detectar nombres de columnas y tipos de datos desde las primeras dos filas
         
         @param request: AnalyzeCsvRequest with file_path, file_name, and rows_to_analyze
         @param context: gRPC context
         @returns: AnalyzeCsvResponse with column info and auto-detected mappings
         """
         try:
-            import pandas as pd
-            import numpy as np
-            
-            print(f"📊 AnalyzeCsv request: {request.file_path}")
-            
             # Read only the first few rows for analysis
             rows_to_analyze = request.rows_to_analyze if request.rows_to_analyze > 0 else 2
             df_sample = pd.read_csv(request.file_path, nrows=rows_to_analyze)
@@ -889,23 +455,9 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
         @returns: GetBatchDataColumnarResponse with columnar data chunks
         """
         try:
-            print(f"📊 GetBatchDataColumnar request: Max points: {request.max_points}, Resolution: {request.resolution}")
-            print(f"   Bounds: NE({request.bounds.northeast.latitude}, {request.bounds.northeast.longitude}) to SW({request.bounds.southwest.latitude}, {request.bounds.southwest.longitude})")
-            print(f"   Data types: {list(request.data_types)}")
-            
-            start_time = time.time()
             
             # Use data generator to create columnar data
-            bounds = {
-                'lat_min': request.bounds.southwest.latitude,
-                'lat_max': request.bounds.northeast.latitude,
-                'lng_min': request.bounds.southwest.longitude,
-                'lng_max': request.bounds.northeast.longitude
-            }
-            
-            columnar_data, generation_method = data_generator.generate_columnar_data(
-                bounds=bounds,
-                data_types=list(request.data_types),
+            columnar_data, generation_method = self.generate_columnar_data(
                 max_points=request.max_points,
                 resolution=request.resolution or 20
             )
@@ -928,13 +480,14 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
             chunk.points_in_chunk = len(columnar_data['x'])
             chunk.is_final_chunk = True
             
-            # Add additional data columns
-            for key, values in columnar_data.get('additional_data', {}).items():
-                double_array = geospatial_pb2.DoubleArray()
-                double_array.values.extend(values)
-                chunk.additional_data[key].CopyFrom(double_array)
+            # Add the additional value columns
+            additional_keys = ['value1', 'value2', 'value3']
+            for key in additional_keys:
+                if key in columnar_data:
+                    double_array = geospatial_pb2.DoubleArray()
+                    double_array.values.extend(columnar_data[key])
+                    chunk.additional_data[key].CopyFrom(double_array)
             
-            print(f"✅ GetBatchDataColumnar finished, returning {response.total_count} points in columnar format")
             return response
             
         except Exception as e:
@@ -943,6 +496,95 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
             context.set_details(f"Columnar batch data error: {str(e)}")
             return geospatial_pb2.GetBatchDataColumnarResponse()
     
+
+    def generate_columnar_data(
+          self, 
+          max_points: int = 1000, 
+          resolution: int = 20
+      ) -> Tuple[Dict[str, Any], str]:
+          """
+          Generate simple geospatial data in columnar format.
+          
+          Args:
+              max_points: Maximum number of points to generate
+              resolution: Grid resolution for data generation
+              
+          Returns:
+              Tuple of (columnar_data_dict, generation_method)
+          """
+          # Auto-generate default bounds (Santiago, Chile area)
+          lat_min, lat_max = -33.6, -33.3
+          lng_min, lng_max = -70.8, -70.5
+          
+          # Calculate resolution to achieve desired point count
+          if max_points <= resolution * resolution:
+              actual_resolution = resolution
+          else:
+              actual_resolution = max(resolution, int(math.sqrt(max_points)) + 1)
+          
+          lat_grid = np.linspace(lat_min, lat_max, actual_resolution, dtype=np.float64)
+          lng_grid = np.linspace(lng_min, lng_max, actual_resolution, dtype=np.float64)
+          lat_mesh, lng_mesh = np.meshgrid(lat_grid, lng_grid)
+          
+          print(f"🔢 Simple columnar data generation: requested={max_points}, resolution={resolution}, actual_resolution={actual_resolution}, max_possible={actual_resolution*actual_resolution}")
+          
+          generation_start = time.time()
+          
+          # Flatten to 1D arrays and limit to max_points
+          flat_lat = lat_mesh.flatten()[:max_points]
+          flat_lng = lng_mesh.flatten()[:max_points]
+          
+          actual_count = len(flat_lat)
+          
+          # Generate simple Z values (basic elevation-like pattern)
+          z_values = []
+          for i in range(actual_count):
+              lat, lng = flat_lat[i], flat_lng[i]
+              # Simple sine wave pattern for elevation
+              z = 100 + 50 * np.sin(lat * 0.1) * np.cos(lng * 0.1)
+              z_values.append(z)
+          
+          # Generate simple additional values
+          value1 = []
+          value2 = []
+          value3 = []
+          
+          for i in range(actual_count):
+              lat, lng = flat_lat[i], flat_lng[i]
+              
+              # Value1: Simple temperature-like pattern
+              temp = 20 + 15 * np.sin(lat * 0.05) + random.uniform(-5, 5)
+              value1.append(temp)
+              
+              # Value2: Simple pressure-like pattern  
+              pressure = 1013 + 50 * np.cos(lng * 0.03) + random.uniform(-10, 10)
+              value2.append(pressure)
+              
+              # Value3: Simple humidity-like pattern
+              humidity = 50 + 30 * np.sin((lat + lng) * 0.02) + random.uniform(-10, 10)
+              value3.append(max(0, min(100, humidity)))  # Clamp to 0-100%
+          
+          # Create columnar data structure with all values at top level
+          columnar_data = {
+              'id': [f'point_{i}' for i in range(actual_count)],
+              'x': flat_lng.tolist(),    # X = longitude
+              'y': flat_lat.tolist(),    # Y = latitude
+              'z': z_values,             # Z = simple elevation
+              'id_value': [f'sensor_{i % 10}' for i in range(actual_count)],
+              'value1': value1,          # Temperature-like values
+              'value2': value2,          # Pressure-like values  
+              'value3': value3           # Humidity-like values
+          }
+          
+          generation_time = time.time() - generation_start
+          
+          print(f"⏱️  Simple columnar data generation took: {generation_time:.3f}s for {actual_count} points")
+          print(f"⏱️  Generation rate: {actual_count/generation_time:.0f} points/second")
+          print(f"📊 Generated columns: id, x, y, z, id_value, value1, value2, value3")
+          
+          return columnar_data, 'simple_columnar_generation'
+
+
     def GetBatchDataColumnarStreamed(self, request, context):
         """
         Stream batch data in columnar format with chunking
@@ -952,21 +594,11 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
         @yields: ColumnarDataChunk messages
         """
         try:
-            print(f"🔄 GetBatchDataColumnarStreamed request: Max points: {request.max_points}, Resolution: {request.resolution}")
             
             start_time = time.time()
             
             # Use data generator to create columnar data
-            bounds = {
-                'lat_min': request.bounds.southwest.latitude,
-                'lat_max': request.bounds.northeast.latitude,
-                'lng_min': request.bounds.southwest.longitude,
-                'lng_max': request.bounds.northeast.longitude
-            }
-            
-            columnar_data, generation_method = data_generator.generate_columnar_data(
-                bounds=bounds,
-                data_types=list(request.data_types),
+            columnar_data, generation_method = self.generate_columnar_data(
                 max_points=request.max_points,
                 resolution=request.resolution or 20
             )
@@ -998,10 +630,12 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
                 chunk.id_value.extend(columnar_data['id_value'][start_idx:end_idx])
                 
                 # Add additional data columns
-                for key, values in columnar_data.get('additional_data', {}).items():
-                    double_array = geospatial_pb2.DoubleArray()
-                    double_array.values.extend(values[start_idx:end_idx])
-                    chunk.additional_data[key].CopyFrom(double_array)
+                additional_keys = ['value1', 'value2', 'value3']
+                for key in additional_keys:
+                    if key in columnar_data:
+                        double_array = geospatial_pb2.DoubleArray()
+                        double_array.values.extend(columnar_data[key][start_idx:end_idx])
+                        chunk.additional_data[key].CopyFrom(double_array)
                 
                 yield chunk
                 

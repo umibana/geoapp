@@ -20,11 +20,7 @@ type ChartConfig = {
     totalPoints: number;
     chartPoints: number;
     samplingRatio: number;
-    bounds: {
-      lng: [number, number];
-      lat: [number, number];
-      value: [number, number];
-    };
+    bounds: []
   };
 };
 
@@ -107,13 +103,18 @@ export function ChildProcessVisualization({
       },
       series: [{
         type: 'scatter',
+        large: true,
+        largeThreshold: 50000,
         data: [],
         symbolSize: 3,
         itemStyle: {
           color: function(params: any) {
             const value = params.data[2];
-            const normalized = (value - 100) / (1000 - 100);
-            const hue = (1 - normalized) * 240;
+            // Dynamic color mapping based on actual data range
+            const minVal = 50;  // Approximate min from our simplified generation
+            const maxVal = 150; // Approximate max from our simplified generation
+            const normalized = Math.max(0, Math.min(1, (value - minVal) / (maxVal - minVal)));
+            const hue = (1 - normalized) * 240; // Blue (240) to Red (0)
             return `hsl(${hue}, 70%, 60%)`;
           }
         },
@@ -154,7 +155,6 @@ export function ChildProcessVisualization({
     const chart = chartInstanceRef.current;
     if (!chart || chart.isDisposed() || !config || !config.data) return;
 
-    console.log(`📊 Updating chart with ${config.data?.length || 0} points (child process data)`);
 
     const metadata = config.metadata || {};
     const bounds = metadata.bounds || { lng: [0, 0], lat: [0, 0], value: [0, 0] };
@@ -173,6 +173,7 @@ export function ChildProcessVisualization({
         max: bounds.lat[1]
       },
       series: [{
+        large: true,
         type: 'scatter', // Explicitly set series type
         data: config.data || [],
         symbolSize: (metadata.chartPoints || 0) > 50000 ? 2 : 3
@@ -190,20 +191,13 @@ export function ChildProcessVisualization({
     setProgress({ processed: 0, total: 0, percentage: 0, phase: 'starting_child_process' });
 
     try {
-      const bounds = {
-        northeast: { latitude: 37.8, longitude: -122.3 },
-        southwest: { latitude: 37.7, longitude: -122.5 }
-      };
 
-      console.log(`🚀 Starting Worker Threads with ${testMaxPoints.toLocaleString()} points...`);
 
-      // Use the columnar streaming API for large datasets
+      // Use the simplified columnar streaming API 
       const result = await window.autoGrpc.getBatchDataColumnarStreamed({
-        bounds,
-        data_types: ['elevation'],
         max_points: testMaxPoints,
         resolution: 30
-      }, (chunk) => {
+      }, (chunk: any) => {
         // Update progress based on chunk information
         if (chunk.total_chunks && chunk.chunk_number !== undefined) {
           const percentage = ((chunk.chunk_number + 1) / chunk.total_chunks) * 100;
@@ -216,27 +210,21 @@ export function ChildProcessVisualization({
         }
       });
 
-      console.log('🎉 Columnar streaming completed:', result);
       
       // Process all chunks to collect ALL points without sampling
       let totalProcessed = 0;
-      let allChartData: Array<[number, number, number]> = [];
-      let values: number[] = [];
+      const allChartData: Array<[number, number, number]> = [];
       
-      console.log(`📊 Processing ${result.length} chunks for full million-point visualization...`);
       
-      // Combine data from ALL chunks - no sampling, full million points!
+      // Carga todos los puntos de los chunks
       result.forEach((chunk: any, chunkIndex: number) => {
         if (chunk.x && chunk.y && chunk.z) {
           const chunkSize = chunk.x.length;
           totalProcessed += chunkSize;
           
-          console.log(`📊 Processing chunk ${chunkIndex + 1}/${result.length}: ${chunkSize.toLocaleString()} points`);
-          
-          // Add ALL points to chart - no sampling!
+          // Agrega todos los puntos al chart (no extra array operations)
           for (let i = 0; i < chunk.x.length; i++) {
             allChartData.push([chunk.x[i], chunk.y[i], chunk.z[i]]);
-            values.push(chunk.z[i]);
           }
           
           // Update progress during chunk processing
@@ -249,28 +237,18 @@ export function ChildProcessVisualization({
         }
       });
       
-      console.log(`🎉 Final result: ${totalProcessed.toLocaleString()} total points, ${allChartData.length.toLocaleString()} chart points (no sampling!)`);
-      
       const endTime = performance.now();
       const duration = (endTime - Date.now() + 5000) / 1000; // Rough estimate
       const pointsPerSecond = Math.round(totalProcessed / Math.max(duration, 0.001));
       
-      // Calculate statistics
-      const avgValue = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-      const minValue = values.length > 0 ? Math.min(...values) : 0;
-      const maxValue = values.length > 0 ? Math.max(...values) : 0;
-      
-      // Set processing stats
-      setProcessingStats({
-        totalProcessed,
-        avgValue: Number(avgValue.toFixed(2)),
-        minValue: Number(minValue.toFixed(2)),
-        maxValue: Number(maxValue.toFixed(2)),
-        dataTypes: ['elevation'],
-        processingTime: duration,
-        pointsPerSecond
-      });
-      
+
+      // Usamos bounds fijos (Simulamos que los obtenemos del backend con pandas)
+      const chartBounds = {
+        lng: [-70.8, -70.5],  
+        lat: [-33.6, -33.3],   
+        value: [50, 150]      
+      };
+
       // Create chart config with ALL points (no sampling)
       const chartConfig: ChartConfig = {
         type: 'scatter',
@@ -279,17 +257,7 @@ export function ChildProcessVisualization({
           totalPoints: totalProcessed,
           chartPoints: allChartData.length,
           samplingRatio: 1.0, // No sampling - showing all points!
-          bounds: {
-            lng: allChartData.length > 0 ? [
-              allChartData.reduce((min, p) => Math.min(min, p[0]), allChartData[0][0]),
-              allChartData.reduce((max, p) => Math.max(max, p[0]), allChartData[0][0])
-            ] : [0, 0],
-            lat: allChartData.length > 0 ? [
-              allChartData.reduce((min, p) => Math.min(min, p[1]), allChartData[0][1]),
-              allChartData.reduce((max, p) => Math.max(max, p[1]), allChartData[0][1])
-            ] : [0, 0],
-            value: values.length > 0 ? [minValue, maxValue] : [0, 0]
-          }
+          bounds: chartBounds
         }
       };
       
@@ -308,7 +276,6 @@ export function ChildProcessVisualization({
       });
 
     } catch (error) {
-      console.error('❌ Subprocess test failed:', error);
       toast.error('Subprocess test failed', {
         description: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -319,16 +286,16 @@ export function ChildProcessVisualization({
   }, [updateChart]);
 
   // Test sizes for child process
-  const testSizes = [10000, 30000, 50000, 100000, 200000];
+  const testSizes = [1000, 5000, 10000, 25000, 50000, 100000,500000];
 
   return (
     <div className="w-full space-y-4">
       {/* Controls */}
       <div className="flex flex-wrap gap-3 items-center justify-between p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border">
         <div>
-          <h3 className="text-lg font-semibold text-gray-800">🚀 Million Point Chart Visualization</h3>
+          <h3 className="text-lg font-semibold text-gray-800">🚀 Simplified Geospatial Data Visualization</h3>
           <p className="text-sm text-gray-600">
-            Million-point visualization with NO sampling - all points displayed in chart via efficient streaming
+            High-performance visualization with flat data structure: id, x, y, z, id_value, value1, value2, value3
           </p>
         </div>
         
@@ -399,12 +366,6 @@ export function ChildProcessVisualization({
             <div className="text-xs text-gray-500">Avg Value</div>
           </div>
           
-          <div className="p-3 bg-white rounded-lg border text-center">
-            <div className="text-2xl font-bold text-orange-600">
-              {processingStats.elapsedTime || processingStats.processingTime || 0}s
-            </div>
-            <div className="text-xs text-gray-500">Processing Time</div>
-          </div>
         </div>
       )}
 
@@ -432,20 +393,6 @@ export function ChildProcessVisualization({
           <p><strong>Value Range:</strong> {(chartConfig.metadata?.bounds?.value?.[0] || 0).toFixed(2)} - {(chartConfig.metadata?.bounds?.value?.[1] || 0).toFixed(2)}</p>
         </div>
       )}
-
-      {/* Performance Info */}
-      <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-        <h4 className="font-semibold text-yellow-800 mb-2">🚀 Ventajas del Verdadero Subproceso</h4>
-        <ul className="text-sm text-yellow-700 space-y-1">
-          <li>• ✅ Procesos de Node.js completamente aislados</li>
-          <li>• ✅ CERO bloqueo del proceso principal - capacidad de respuesta garantizada de la UI</li>
-          <li>• ✅ Puede procesar 2M+ puntos sin congelamiento</li>
-          <li>• ✅ Usa archivos temporales para intercambio seguro de datos</li>
-          <li>• ✅ Actualizaciones de progreso en tiempo real vía sondeo de archivos</li>
-          <li>• ✅ Limpieza automática de recursos temporales</li>
-          <li>• ✅ Maneja fallos elegantemente con aislamiento de procesos</li>
-        </ul>
-      </div>
     </div>
   );
 }
