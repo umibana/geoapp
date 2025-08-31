@@ -12,7 +12,7 @@ This is a **desktop geospatial application** built with Electron that combines a
 
 ### Tech Stack
 - **Frontend**: Electron 36 + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui
-- **Backend**: Pure gRPC server (Python) with numpy data generation - no Django/REST API
+- **Backend**: gRPC server (Python) with SQLite database (SQLModel ORM) + numpy data generation
 - **Communication**: ✅ **Auto-generated gRPC API** via Protocol Buffers with secure Electron IPC
 - **Data Format**: ✅ **Columnar format** for 70% memory reduction and optimal performance
 - **Performance**: ✅ **Streaming architecture** for 1M+ datasets without UI freezing
@@ -126,6 +126,54 @@ src/helpers/ipc/
 - **Domain Separation**: Backend, theme, and window concerns are isolated
 - **Type Safety**: TypeScript definitions for all IPC channels
 - **Auto-Generated Integration**: Works seamlessly with auto-generated gRPC system
+
+### **Database Layer** (`backend/database.py`)
+
+**SQLite Database with SQLModel ORM**:
+- **Type-Safe ORM**: SQLModel provides type safety across Python backend
+- **Project Management**: Full CRUD operations for projects, files, and datasets
+- **Relationship Mapping**: Projects → Files → Datasets → DataRows
+- **Persistent Storage**: SQLite database (`geospatial.db`) for data persistence
+- **Database Models**:
+  - `Project`: Project metadata and configuration
+  - `File`: CSV file records associated with projects
+  - `Dataset`: Processed dataset records with statistics
+  - `DataRow`: Individual data points from processed CSV files
+
+### **Project Management System**
+
+**Complete Project Workflow**:
+- **Project CRUD**: Create, read, update, delete projects via gRPC
+- **File Association**: Link CSV files to specific projects
+- **Dataset Processing**: Enhanced CSV analysis with project context
+- **Database Integration**: All project data stored persistently
+- **UI Components**: Complete project management interface
+- **Auto-Generated API**: All project operations use type-safe gRPC methods
+
+**Project Management Methods**:
+```typescript
+// Create new project
+const project = await window.autoGrpc.createProject({
+  name: "San Francisco Analysis",
+  description: "Geospatial analysis of SF bay area"
+});
+
+// List all projects
+const projects = await window.autoGrpc.getProjects({});
+
+// Get project details
+const projectDetail = await window.autoGrpc.getProject({ id: project.id });
+
+// Update project
+await window.autoGrpc.updateProject({
+  id: project.id,
+  name: "Updated Project Name",
+  description: "Updated description"
+});
+
+// Delete project
+await window.autoGrpc.deleteProject({ id: project.id });
+```
 
 ### **Process Management** (`src/helpers/backend_helpers.ts`)
 
@@ -287,7 +335,7 @@ def GetBatchDataColumnar(self, request, context):
 Located in `/protos/main_service.proto`:
 
 ```protobuf
-service GeospatialService {
+service MainService {
   // Simple examples for testing and learning
   rpc HelloWorld(HelloWorldRequest) returns (HelloWorldResponse);
   rpc EchoParameter(EchoParameterRequest) returns (EchoParameterResponse);
@@ -295,8 +343,6 @@ service GeospatialService {
   // Geospatial data methods
   rpc GetFeatures(GetFeaturesRequest) returns (GetFeaturesResponse);
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
-  
-  // Efficient columnar format for large datasets
   rpc GetBatchDataColumnar(GetBatchDataRequest) returns (GetBatchDataColumnarResponse);
   rpc GetBatchDataColumnarStreamed(GetBatchDataRequest) returns (stream ColumnarDataChunk);
   
@@ -304,6 +350,13 @@ service GeospatialService {
   rpc AnalyzeCsv(AnalyzeCsvRequest) returns (AnalyzeCsvResponse);
   rpc SendFile(SendFileRequest) returns (SendFileResponse);
   rpc GetLoadedDataStats(GetLoadedDataStatsRequest) returns (GetLoadedDataStatsResponse);
+  
+  // Project management methods (NEW)
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+  rpc GetProjects(GetProjectsRequest) returns (GetProjectsResponse);
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse);
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
 }
 ```
 
@@ -320,18 +373,18 @@ service GeospatialService {
 ### Setup & Initial Installation
 ```bash
 npm install                 # Install frontend dependencies
-npm run setup:backend       # Install Python dependencies in pythonvenv
+npm run setup:backend       # Install Python dependencies in venv
 ```
 
 ### Development (Recommended)
 ```bash
-npm run dev                  # Generate protos + start backend + frontend together (uses pythonvenv)
+npm run dev                  # Generate protos + start backend + frontend together (uses venv)
 ```
 
 ### Individual Commands
 ```bash
 npm start                    # Start Electron app only (auto-generates protos first)
-npm run dev:backend         # Start gRPC server only (port 50077, uses pythonvenv)
+npm run dev:backend         # Start gRPC server only (port 50077, uses venv)
 npm run lint                 # ESLint check
 npm run format              # Prettier check  
 npm run format:write        # Prettier format
@@ -375,6 +428,10 @@ npm run test:simplified    # Test the simplified gRPC system
 - `components/GrpcDemo.tsx` - gRPC API demonstration with performance testing
 - `components/VisualizacionChunks.tsx` - Columnar streaming visualization (100K-2M points)
 - `components/CsvProcessor.tsx` - CSV file processing and analysis
+- `components/ProjectManager.tsx` - Project management CRUD operations
+- `components/ProjectWorkflow.tsx` - Complete project workflow interface
+- `components/DatasetViewer.tsx` - Database-stored dataset visualization
+- `components/EnhancedCsvProcessor.tsx` - Project-aware CSV processing
 - **`grpc-auto/`** - **Auto-generated gRPC system (DO NOT EDIT)**
   - `auto-grpc-client.ts` - Renderer process gRPC client
   - `auto-ipc-handlers.ts` - Main process IPC handlers
@@ -389,15 +446,18 @@ npm run test:simplified    # Test the simplified gRPC system
 ### Backend Structure (`/backend/`)
 - `grpc_server.py` - gRPC service implementation with columnar data support
 - `data_generator.py` - Numpy-based synthetic geospatial data generation (columnar format)
+- `database.py` - SQLite database with SQLModel ORM for project/file/dataset management
 - `generated/` - Auto-generated Protocol Buffer files
 - `build_server.py` - PyInstaller build configuration
-- `requirements.txt` - Python dependencies (gRPC, numpy, protobuf)
+- `requirements.txt` - Python dependencies (gRPC, numpy, protobuf, sqlmodel)
+- `geospatial.db` - SQLite database file
 
 ### Configuration Files
 - **`protos/`** - **Protocol Buffer definitions directory**:
   - `main_service.proto` - Main service combining all services (ENTRY POINT)
   - `geospatial.proto` - Geospatial data types and messages (includes columnar format)
   - `files.proto` - File processing service definitions
+  - `projects.proto` - Project management service definitions (NEW)
 - `forge.config.ts` - Electron packaging and distribution settings (includes PyInstaller backend)
 - `backend/requirements.txt` - Python dependencies (grpcio>=1.73.0, numpy>=1.24.0)
 - `scripts/generate-protos.js` - Protocol buffer generation script
@@ -465,7 +525,7 @@ The application uses an **efficient columnar data format** optimized for large g
 - **Fixed Port**: gRPC server always uses port 50077 for consistency
 
 ### Development Environment
-- **Python Environment**: Uses `pythonvenv/` virtual environment with `source pythonvenv/bin/activate`
+- **Python Environment**: Uses `venv/` virtual environment with `source venv/bin/activate`
 - **Protocol Buffers**: Changes to `.proto` files require `npm run generate:full-stack`
 - **Development**: `npm run dev` is the recommended way to start development
 - **Context Isolation**: Enabled for security in Electron configuration
@@ -489,6 +549,7 @@ The application uses an **efficient columnar data format** optimized for large g
 ### Python Dependencies
 - **Core**: grpcio>=1.73.0, grpcio-tools>=1.73.0, protobuf>=6.30.0
 - **Data**: numpy>=1.24.0, pandas>=1.5.0
+- **Database**: sqlmodel>=0.0.21 (SQLite with type-safe ORM)
 
 ---
 
