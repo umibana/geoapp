@@ -109,7 +109,6 @@ export function GrpcDemo() {
         </div>
 
 
-      {/* 🚀 Columnar Data Streaming Visualization */}
       <div className="mt-8 border-t pt-6">
         <ChildProcessVisualization 
           title="🚀 Transmisión de Datos Columnar - Rendimiento Optimizado"

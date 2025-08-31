@@ -6,44 +6,41 @@ import "geospatial.proto";
 import "files.proto";
 import "projects.proto";
 
-// Aggregated service combining all RPC methods from different domains
+// Servicio que combina todos los servicios de los diferentes .protos
+// Para pruebas de comunicación entre frontend y backend
+
 service GeospatialService {
-  // Basic services (from geospatial.proto)
+  // Servicios de prueba
   rpc HelloWorld(HelloWorldRequest) returns (HelloWorldResponse);
   rpc EchoParameter(EchoParameterRequest) returns (EchoParameterResponse);
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
   
-  // Geospatial data methods (from geospatial.proto)
-  rpc GetFeatures(GetFeaturesRequest) returns (GetFeaturesResponse);
-  rpc GetBatchDataStreamed(GetBatchDataRequest) returns (stream GetBatchDataChunk);
-  
-  // New columnar format for efficient large dataset processing
+  // Formato columnar para datos grandes
   rpc GetBatchDataColumnar(GetBatchDataRequest) returns (GetBatchDataColumnarResponse);
-  rpc GetBatchDataColumnarStreamed(GetBatchDataRequest) returns (stream ColumnarDataChunk);
   
-  // CSV file processing methods (from files.proto)
+  // Procesamiento de archivos CSV
   rpc AnalyzeCsv(AnalyzeCsvRequest) returns (AnalyzeCsvResponse);
   rpc SendFile(SendFileRequest) returns (SendFileResponse);
   rpc GetLoadedDataStats(GetLoadedDataStatsRequest) returns (GetLoadedDataStatsResponse);
   rpc GetLoadedDataChunk(GetLoadedDataChunkRequest) returns (GetLoadedDataChunkResponse);
   
-  // Project management methods (from projects.proto)
+  // Gestión de proyectos
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
   rpc GetProjects(GetProjectsRequest) returns (GetProjectsResponse);
   rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
   rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse);
   rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
   
-  // File management methods (from projects.proto)
+  // Gestión de archivos
   rpc CreateFile(CreateFileRequest) returns (CreateFileResponse);
   rpc GetProjectFiles(GetProjectFilesRequest) returns (GetProjectFilesResponse);
   rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
   
-  // Dataset management methods (from projects.proto)
+  // Gestión de datasets
   rpc GetProjectDatasets(GetProjectDatasetsRequest) returns (GetProjectDatasetsResponse);
   rpc DeleteDataset(DeleteDatasetRequest) returns (DeleteDatasetResponse);
   
-  // Enhanced CSV processing for projects (from projects.proto)
+  // Procesamiento de archivos CSV para proyectos
   rpc AnalyzeCsvForProject(AnalyzeCsvForProjectRequest) returns (AnalyzeCsvForProjectResponse);
   rpc ProcessDataset(ProcessDatasetRequest) returns (ProcessDatasetResponse);
   rpc GetDatasetData(GetDatasetDataRequest) returns (GetDatasetDataResponse);

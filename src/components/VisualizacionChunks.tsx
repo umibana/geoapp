@@ -194,9 +194,8 @@ export function ChildProcessVisualization({
 
 
       // Use the simplified columnar streaming API 
-      const result = await window.autoGrpc.getBatchDataColumnarStreamed({
-        max_points: testMaxPoints,
-        resolution: 30
+      const result = await window.autoGrpc.getBatchDataColumnar({
+        max_points: testMaxPoints
       }, (chunk: any) => {
         // Update progress based on chunk information
         if (chunk.total_chunks && chunk.chunk_number !== undefined) {

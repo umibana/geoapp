@@ -19,13 +19,7 @@ message BoundingBox {
   Coordinate southwest = 2;
 }
 
-message GeospatialFeature {
-  string id = 1;
-  string name = 2;
-  Coordinate location = 3;
-  map<string, string> properties = 4;
-  int64 timestamp = 5;
-}
+
 
 message DataPoint {
   string id = 1;
@@ -45,7 +39,6 @@ message OptimizedDataPoint {
   float value = 5;       // float32 en lugar de double
   string unit = 6;
   int64 timestamp = 7;
-  string generation_method = 8; // Metadatos aplanados
 }
 
 // =============================================================================
@@ -86,40 +79,21 @@ message HealthCheckResponse {
 // SOLICITUDES/RESPUESTAS DEL SERVICIO GEOESPACIAL
 // =============================================================================
 
-message GetFeaturesRequest {
-  BoundingBox bounds = 1;
-  repeated string feature_types = 2;
-  int32 limit = 3;
-}
-
-message GetFeaturesResponse {
-  repeated GeospatialFeature features = 1;
-  int32 total_count = 2;
-}
-
-message StreamDataRequest {
-  BoundingBox bounds = 1;
-  repeated string data_types = 2;
-  int32 max_points_per_second = 3;
-}
 
 message GetBatchDataRequest {
   BoundingBox bounds = 1;
   repeated string data_types = 2;
   int32 max_points = 3;
-  int32 resolution = 4; // Resolución de cuadrícula para datos generados
 }
 
 message GetBatchDataResponse {
   repeated DataPoint data_points = 1;
   int32 total_count = 2;
-  string generation_method = 3;
 }
 
 message GetBatchDataOptimizedResponse {
   repeated OptimizedDataPoint data_points = 1;
   int32 total_count = 2;
-  string generation_method = 3;
 }
 
 // =============================================================================
@@ -138,7 +112,6 @@ message ColumnarDataChunk {
   int32 total_chunks = 8;
   int32 points_in_chunk = 9;
   bool is_final_chunk = 10;
-  string generation_method = 11;
 }
 
 // Helper message for dynamic double arrays
@@ -155,15 +128,5 @@ message StringArray {
 message GetBatchDataColumnarResponse {
   ColumnarDataChunk columnar_data = 1;
   int32 total_count = 2;
-  string generation_method = 3;
 }
 
-// Legacy streaming by chunks (DEPRECATED - use columnar format)
-message GetBatchDataChunk {
-  repeated DataPoint data_points = 1;
-  int32 chunk_number = 2;
-  int32 total_chunks = 3;
-  int32 points_in_chunk = 4;
-  bool is_final_chunk = 5;
-  string generation_method = 6;
-}
