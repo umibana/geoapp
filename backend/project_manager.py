@@ -25,49 +25,104 @@ class ProjectManager:
     
     # ========== CSV Processing Methods ==========
     
-    def analyze_csv(self, file_path: str, file_name: str, rows_to_analyze: int = 2) -> files_pb2.AnalyzeCsvResponse:
+    def analyze_csv(self, file_path: str, file_name: str, rows_to_analyze: int = 1000, save_to_sql: bool = False) -> files_pb2.AnalyzeCsvResponse:
         """
-        Analiza un archivo CSV para detectar nombres de columnas y tipos de datos desde las primeras dos filas
+        Enhanced CSV analysis using pandas describe() for comprehensive statistical analysis
+        
+        Args:
+            file_path: Path to the CSV file
+            file_name: Name of the file
+            rows_to_analyze: Number of rows to analyze for statistics (default: 1000 for better stats)
+            save_to_sql: Whether to save the analyzed data to SQL database
         """
         try:
-            # Read only the first few rows for analysis
-            rows_to_analyze = rows_to_analyze if rows_to_analyze > 0 else 2
-            df_sample = pd.read_csv(file_path, nrows=rows_to_analyze)
+            import os
+            from pathlib import Path
+            
+            # Get file size
+            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+            
+            # Read the entire dataset first to get accurate statistics
+            print(f"📊 Reading CSV file: {file_path}")
+            df_full = pd.read_csv(file_path)
+            total_rows = len(df_full)
+            total_columns = len(df_full.columns)
+            
+            # Use a sample for detailed analysis if the file is very large
+            if rows_to_analyze < total_rows and rows_to_analyze > 0:
+                df_sample = df_full.sample(n=min(rows_to_analyze, total_rows), random_state=42)
+                print(f"📊 Using sample of {len(df_sample)} rows for detailed analysis")
+            else:
+                df_sample = df_full
+                print(f"📊 Analyzing all {total_rows} rows")
             
             response = files_pb2.AnalyzeCsvResponse()
             response.success = True
+            response.total_rows = total_rows
+            response.total_columns = total_columns
+            response.file_size_mb = file_size_mb
+            response.encoding = "utf-8"  # Could be enhanced to detect encoding
             
-            # Analyze each column
+            # Get comprehensive statistics using pandas describe()
+            numeric_describe = df_sample.select_dtypes(include=[np.number]).describe()
+            # For categorical data, we'll get basic stats manually below
+            
+            # Track column types
+            numeric_columns = []
+            categorical_columns = []
             auto_mapping = {}
             
-            for col_name in df_sample.columns:
+            # Analyze each column
+            for col_name in df_full.columns:
                 column_info = response.columns.add()
                 column_info.name = str(col_name)
                 
-                # Infer type from the first data row (skip header)
-                if len(df_sample) > 0:
-                    sample_value = df_sample[col_name].iloc[0]
-                    try:
-                        # Try to convert to numeric
-                        pd.to_numeric(sample_value)
-                        column_info.type = "number"
-                    except (ValueError, TypeError):
-                        column_info.type = "string"
+                # Determine if column is numeric or categorical
+                is_numeric = col_name in numeric_describe.columns
+                column_info.type = "number" if is_numeric else "string"
+                
+                if is_numeric:
+                    numeric_columns.append(str(col_name))
+                    
+                    # Add comprehensive statistics from describe()
+                    if col_name in numeric_describe.columns:
+                        col_stats = numeric_describe[col_name]
+                        stats = column_info.stats
+                        stats.count = float(col_stats.get('count', 0))
+                        stats.mean = float(col_stats.get('mean', 0))
+                        stats.std = float(col_stats.get('std', 0))
+                        stats.min = float(col_stats.get('min', 0))
+                        stats.q25 = float(col_stats.get('25%', 0))
+                        stats.q50 = float(col_stats.get('50%', 0))  # median
+                        stats.q75 = float(col_stats.get('75%', 0))
+                        stats.max = float(col_stats.get('max', 0))
+                        stats.null_count = int(df_sample[col_name].isnull().sum())
+                        stats.unique_count = int(df_sample[col_name].nunique())
                 else:
-                    column_info.type = "string"
+                    categorical_columns.append(str(col_name))
+                    
+                    # Add basic statistics for categorical columns
+                    stats = column_info.stats
+                    stats.count = float(df_sample[col_name].count())
+                    stats.null_count = int(df_sample[col_name].isnull().sum())
+                    stats.unique_count = int(df_sample[col_name].nunique())
+                
+                # Add sample values (first 5 non-null unique values)
+                sample_values = df_sample[col_name].dropna().unique()[:5]
+                column_info.sample_values.extend([str(val) for val in sample_values])
                 
                 # Auto-detect mappings based on column names (case-insensitive)
                 col_lower = str(col_name).lower()
-                if any(x in col_lower for x in ['id', 'identifier', 'key']):
+                if any(x in col_lower for x in ['site_id', 'station_id', 'point_id', 'sample_id']) or col_lower.endswith('_id'):
                     auto_mapping['id'] = str(col_name)
                     column_info.is_required = True
-                elif any(x in col_lower for x in ['x', 'longitude', 'lng', 'long']):
+                elif any(x in col_lower for x in ['longitude', 'lng', 'long']) or col_lower in ['x', 'lon']:
                     auto_mapping['x'] = str(col_name)
                     column_info.is_required = True
-                elif any(x in col_lower for x in ['y', 'latitude', 'lat']) and not any(k in col_lower for k in ['year', 'yr']):
+                elif any(x in col_lower for x in ['latitude', 'lat']) and not any(k in col_lower for k in ['year', 'yr']):
                     auto_mapping['y'] = str(col_name)
                     column_info.is_required = True
-                elif any(x in col_lower for x in ['z', 'elevation', 'height', 'altitude']):
+                elif any(x in col_lower for x in ['elevation', 'height', 'altitude', 'elev']) or col_lower in ['z']:
                     auto_mapping['z'] = str(col_name)
                     column_info.is_required = True
                 elif any(x in col_lower for x in ['depth', 'profundidad']):
@@ -76,19 +131,87 @@ class ProjectManager:
                 else:
                     column_info.is_required = False
             
+            # Set column type lists
+            response.numeric_columns.extend(numeric_columns)
+            response.categorical_columns.extend(categorical_columns)
+            
             # Set auto-detected mappings
             for key, value in auto_mapping.items():
                 response.auto_detected_mapping[key] = value
             
-            print(f"📊 AnalyzeCsv found {len(response.columns)} columns, auto-mapped: {auto_mapping}")
+            # Optional: Save to SQL database using pandas to_sql()
+            if save_to_sql:
+                table_name = f"csv_analysis_{Path(file_name).stem}"
+                print(f"💾 Saving CSV data to SQL table: {table_name}")
+                
+                # Use the database manager's engine to save data
+                try:
+                    df_full.to_sql(table_name, self.db.engine, if_exists='replace', index=False)
+                    print(f"✅ Successfully saved {total_rows} rows to SQL table: {table_name}")
+                except Exception as sql_error:
+                    print(f"⚠️ Failed to save to SQL: {sql_error}")
+                    # Don't fail the entire analysis if SQL save fails
+            
+            print(f"📊 Enhanced CSV analysis complete:")
+            print(f"   📁 File: {file_name} ({file_size_mb:.2f} MB)")
+            print(f"   📏 Dimensions: {total_rows:,} rows × {total_columns} columns")
+            print(f"   🔢 Numeric columns: {len(numeric_columns)}")
+            print(f"   📝 Categorical columns: {len(categorical_columns)}")
+            print(f"   🎯 Auto-mapped: {auto_mapping}")
+            
             return response
             
         except Exception as e:
-            print(f"❌ AnalyzeCsv error: {e}")
+            print(f"❌ Enhanced CSV analysis error: {e}")
             response = files_pb2.AnalyzeCsvResponse()
             response.success = False
             response.error_message = str(e)
             return response
+    
+    def create_sample_csv_for_testing(self, file_path: str = "/tmp/sample_geospatial.csv") -> str:
+        """
+        Create a sample CSV file for testing the enhanced analyze_csv functionality
+        
+        Returns:
+            str: Path to the created sample CSV file
+        """
+        try:
+            # Create a sample geospatial dataset with various data types
+            np.random.seed(42)  # For reproducible results
+            n_samples = 1000
+            
+            sample_data = {
+                'site_id': [f'SITE_{i:03d}' for i in range(1, n_samples + 1)],
+                'longitude': np.random.uniform(-74.0, -70.0, n_samples),
+                'latitude': np.random.uniform(-34.0, -32.0, n_samples),
+                'elevation': np.random.normal(1000, 200, n_samples),
+                'temperature': np.random.normal(25, 10, n_samples),
+                'humidity': np.random.uniform(20, 90, n_samples),
+                'pressure': np.random.normal(1013, 30, n_samples),
+                'wind_speed': np.abs(np.random.normal(15, 8, n_samples)),
+                'soil_type': np.random.choice(['Clay', 'Sandy', 'Loam', 'Rocky'], n_samples),
+                'vegetation': np.random.choice(['Forest', 'Grassland', 'Desert', 'Urban'], n_samples),
+                'measurement_date': pd.date_range('2024-01-01', periods=n_samples, freq='h').strftime('%Y-%m-%d %H:%M:%S')
+            }
+            
+            # Add some missing values to test null handling
+            sample_data['temperature'][::50] = np.nan  # Every 50th value is missing
+            sample_data['humidity'][::75] = np.nan     # Every 75th value is missing
+            
+            # Create DataFrame and save to CSV
+            df = pd.DataFrame(sample_data)
+            df.to_csv(file_path, index=False)
+            
+            print(f"✅ Created sample CSV file at: {file_path}")
+            print(f"   📏 Dataset: {len(df)} rows × {len(df.columns)} columns")
+            print(f"   🔢 Numeric columns: {len(df.select_dtypes(include=[np.number]).columns)}")
+            print(f"   📝 Categorical columns: {len(df.select_dtypes(include=['object']).columns)}")
+            
+            return file_path
+            
+        except Exception as e:
+            print(f"❌ Error creating sample CSV: {e}")
+            raise e
 
     def send_file(self, request: files_pb2.SendFileRequest) -> files_pb2.SendFileResponse:
         """
@@ -635,7 +758,7 @@ class ProjectManager:
             return response
     
     def process_dataset(self, request: projects_pb2.ProcessDatasetRequest) -> projects_pb2.ProcessDatasetResponse:
-        """Process dataset with column mappings"""
+        """Process dataset with column mappings using pandas for efficient processing and statistics"""
         try:
             print(f"📊 Processing dataset for file: {request.file_id}")
             
@@ -647,48 +770,97 @@ class ProjectManager:
                 response.error_message = "File not found"
                 return response
             
-            # Process CSV with column mappings
+            # Read CSV directly into pandas DataFrame for efficient processing
             csv_text = file_content.decode('utf-8')
-            csv_reader = csv.reader(io.StringIO(csv_text))
+            df = pd.read_csv(io.StringIO(csv_text))
             
-            headers = next(csv_reader)
+            print(f"📊 Loaded CSV: {len(df)} rows × {len(df.columns)} columns")
             
-            # Create mapping dict
+            # Create mapping dict for column transformations
             column_map = {}
+            numeric_columns = []
+            categorical_columns = []
+            
             for mapping in request.column_mappings:
                 if mapping.column_type != projects_pb2.COLUMN_TYPE_UNUSED:
                     column_map[mapping.column_name] = {
                         'type': mapping.column_type,
-                        'field': mapping.mapped_field,
+                        'field': mapping.mapped_field if mapping.mapped_field else mapping.column_name,
                         'is_coordinate': mapping.is_coordinate
                     }
+                    
+                    # Track column types for statistics
+                    field_name = mapping.mapped_field if mapping.mapped_field else mapping.column_name
+                    if mapping.column_type == projects_pb2.COLUMN_TYPE_NUMERIC:
+                        numeric_columns.append((mapping.column_name, field_name))
+                    else:
+                        categorical_columns.append((mapping.column_name, field_name))
             
-            # Process data rows
-            processed_rows = []
-            row_count = 0
+            # Apply column transformations using pandas
+            processed_df = pd.DataFrame()
             
-            for row in csv_reader:
-                if len(row) != len(headers):
-                    continue  # Skip malformed rows
-                
-                processed_row = {}
-                
-                for i, (header, value) in enumerate(zip(headers, row)):
-                    if header in column_map:
-                        mapping = column_map[header]
-                        field_name = mapping['field'] if mapping['field'] else header
-                        
-                        # Type conversion
-                        if mapping['type'] == projects_pb2.COLUMN_TYPE_NUMERIC:
-                            try:
-                                processed_row[field_name] = str(float(value))
-                            except ValueError:
-                                processed_row[field_name] = "0.0"
-                        else:  # CATEGORICAL
-                            processed_row[field_name] = str(value)
-                
-                processed_rows.append(processed_row)
-                row_count += 1
+            for orig_col, mapping in column_map.items():
+                if orig_col in df.columns:
+                    field_name = mapping['field']
+                    
+                    if mapping['type'] == projects_pb2.COLUMN_TYPE_NUMERIC:
+                        # Convert to numeric, replacing errors with NaN
+                        processed_df[field_name] = pd.to_numeric(df[orig_col], errors='coerce')
+                    else:  # CATEGORICAL
+                        processed_df[field_name] = df[orig_col].astype(str)
+            
+            # Calculate comprehensive statistics using pandas describe()
+            print(f"📈 Calculating statistics using pandas describe()...")
+            column_statistics = {}
+            
+            # Get statistics for numeric columns
+            if numeric_columns:
+                numeric_df = processed_df.select_dtypes(include=[np.number])
+                if not numeric_df.empty:
+                    numeric_stats = numeric_df.describe()
+                    
+                    for col in numeric_df.columns:
+                        if col in numeric_stats.columns:
+                            col_stats = numeric_stats[col]
+                            count = col_stats.get('count', 0)
+                            
+                            # Skip columns with no valid data (all NaN)
+                            if count == 0:
+                                print(f"⚠️  Skipping column '{col}' - no valid numeric data (all NaN)")
+                                continue
+                            
+                            column_statistics[col] = {
+                                'column_type': 'numeric',
+                                'count': float(count),
+                                'mean': float(col_stats.get('mean', 0)) if not pd.isna(col_stats.get('mean')) else None,
+                                'std': float(col_stats.get('std', 0)) if not pd.isna(col_stats.get('std')) else None,
+                                'min': float(col_stats.get('min', 0)) if not pd.isna(col_stats.get('min')) else None,
+                                '25%': float(col_stats.get('25%', 0)) if not pd.isna(col_stats.get('25%')) else None,
+                                '50%': float(col_stats.get('50%', 0)) if not pd.isna(col_stats.get('50%')) else None,  # median
+                                '75%': float(col_stats.get('75%', 0)) if not pd.isna(col_stats.get('75%')) else None,
+                                'max': float(col_stats.get('max', 0)) if not pd.isna(col_stats.get('max')) else None,
+                                'null_count': int(numeric_df[col].isnull().sum()),
+                                'unique_count': int(numeric_df[col].nunique())
+                            }
+            
+            # Get statistics for categorical columns
+            if categorical_columns:
+                categorical_df = processed_df.select_dtypes(include=['object'])
+                for col in categorical_df.columns:
+                    column_statistics[col] = {
+                        'column_type': 'categorical',
+                        'count': float(categorical_df[col].count()),
+                        'null_count': int(categorical_df[col].isnull().sum()),
+                        'unique_count': int(categorical_df[col].nunique())
+                    }
+            
+            print(f"📈 Generated statistics for {len(column_statistics)} columns")
+            
+            # Convert processed DataFrame to list of dictionaries for storage
+            processed_rows = processed_df.to_dict('records')
+            # Convert to string format for JSON storage
+            processed_rows = [{k: str(v) for k, v in row.items()} for row in processed_rows]
+            row_count = len(processed_rows)
             
             # Create dataset record
             column_mappings_list = []
@@ -702,9 +874,14 @@ class ProjectManager:
                 column_mappings_list.append(mapping_dict)
             
             dataset_data = self.db.create_dataset(request.file_id, row_count, column_mappings_list)
+            dataset_id = dataset_data['id']
             
             # Store processed data
-            self.db.store_dataset_data(dataset_data['id'], processed_rows)
+            self.db.store_dataset_data(dataset_id, processed_rows)
+            
+            # Store column statistics in database for fast boundary retrieval
+            print(f"💾 Storing column statistics in database...")
+            self.db.store_column_statistics(dataset_id, column_statistics)
             
             response = projects_pb2.ProcessDatasetResponse()
             response.success = True
@@ -712,7 +889,7 @@ class ProjectManager:
             
             # Populate dataset data
             dataset = response.dataset
-            dataset.id = dataset_data['id']
+            dataset.id = dataset_id
             dataset.file_id = dataset_data['file_id']
             dataset.total_rows = dataset_data['total_rows']
             dataset.current_page = dataset_data['current_page']
@@ -726,7 +903,7 @@ class ProjectManager:
                 mapping.mapped_field = mapping_dict['mapped_field']
                 mapping.is_coordinate = mapping_dict['is_coordinate']
             
-            print(f"✅ Dataset processed: {row_count} rows")
+            print(f"✅ Dataset processed: {row_count} rows with stored statistics")
             return response
             
         except Exception as e:

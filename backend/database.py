@@ -54,6 +54,24 @@ class DatasetDataModel(SQLModel, table=True):
     dataset: Optional[DatasetModel] = Relationship(back_populates="rows")
 
 
+class ColumnStatsModel(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    dataset_id: str = Field(foreign_key="datasetmodel.id")
+    column_name: str
+    column_type: str  # "numeric" or "categorical"
+    count: Optional[float] = None
+    mean: Optional[float] = None
+    std: Optional[float] = None
+    min_value: Optional[float] = None
+    q25: Optional[float] = None  # 25th percentile
+    q50: Optional[float] = None  # 50th percentile (median)  
+    q75: Optional[float] = None  # 75th percentile
+    max_value: Optional[float] = None
+    null_count: Optional[int] = None
+    unique_count: Optional[int] = None
+    created_at: int
+
+
 class DatabaseManager:
     def __init__(self, db_path: str = "geospatial.db"):
         self.db_path = db_path
@@ -298,3 +316,173 @@ class DatabaseManager:
         parsed_rows = [json.loads(r) for r in rows]
         total_pages = (total_rows + page_size - 1) // page_size
         return parsed_rows, int(total_rows), int(total_pages)
+    
+    def get_dataset_boundaries(self, dataset_id: str) -> Dict[str, Dict[str, float]]:
+        """
+        Calculate min/max boundaries for numeric columns in a dataset for chart scaling.
+        Returns a dictionary with column names as keys and boundary info as values.
+        
+        Args:
+            dataset_id: The dataset ID to calculate boundaries for
+            
+        Returns:
+            Dict with structure: {
+                "column_name": {
+                    "min_value": float,
+                    "max_value": float, 
+                    "valid_count": int
+                }
+            }
+        """
+        try:
+            boundaries = {}
+            
+            with Session(self.engine) as session:
+                # Get all data rows for this dataset
+                rows = session.exec(
+                    select(DatasetDataModel.data)
+                    .where(DatasetDataModel.dataset_id == dataset_id)
+                ).all()
+                
+                if not rows:
+                    return boundaries
+                
+                # Parse all JSON data
+                all_data = [json.loads(row_data) for row_data in rows]
+                
+                # Collect all column names that appear in the data
+                all_columns = set()
+                for row in all_data:
+                    all_columns.update(row.keys())
+                
+                # Calculate boundaries for each column
+                for column_name in all_columns:
+                    numeric_values = []
+                    
+                    # Extract numeric values from this column
+                    for row in all_data:
+                        if column_name in row:
+                            value = row[column_name]
+                            try:
+                                # Try to convert to float
+                                if value is not None and str(value).strip() != '':
+                                    numeric_value = float(value)
+                                    # Check if it's a valid number (not NaN or infinite)
+                                    if not (math.isnan(numeric_value) or math.isinf(numeric_value)):
+                                        numeric_values.append(numeric_value)
+                            except (ValueError, TypeError):
+                                # Skip non-numeric values
+                                continue
+                    
+                    # Only create boundaries for columns with numeric data
+                    if numeric_values:
+                        boundaries[column_name] = {
+                            'min_value': float(min(numeric_values)),
+                            'max_value': float(max(numeric_values)),
+                            'valid_count': len(numeric_values)
+                        }
+                
+                print(f"📐 Calculated boundaries for {len(boundaries)} numeric columns")
+                return boundaries
+                
+        except Exception as e:
+            print(f"❌ Error calculating dataset boundaries: {e}")
+            return {}
+    
+    def store_column_statistics(self, dataset_id: str, column_stats: Dict[str, Dict[str, Any]]):
+        """
+        Store pandas describe() statistics for dataset columns in the database
+        
+        Args:
+            dataset_id: The dataset ID to store statistics for
+            column_stats: Dict with structure {column_name: {stat_name: value}}
+        """
+        try:
+            with Session(self.engine) as session:
+                # Delete existing stats for this dataset using SQLModel query
+                existing_stats = session.exec(
+                    select(ColumnStatsModel).where(ColumnStatsModel.dataset_id == dataset_id)
+                ).all()
+                
+                for stat in existing_stats:
+                    session.delete(stat)
+                
+                # Store new statistics
+                for column_name, stats in column_stats.items():
+                    # Skip columns with no valid data or None values for min/max
+                    if stats.get('column_type') == 'numeric':
+                        min_val = stats.get('min')
+                        max_val = stats.get('max')
+                        if min_val is None or max_val is None:
+                            print(f"⚠️  Skipping statistics for '{column_name}' - no valid min/max values")
+                            continue
+                    
+                    stat_record = ColumnStatsModel(
+                        id=self.generate_id(),
+                        dataset_id=dataset_id,
+                        column_name=column_name,
+                        column_type=stats.get('column_type', 'numeric'),
+                        count=stats.get('count'),
+                        mean=stats.get('mean'),
+                        std=stats.get('std'),
+                        min_value=stats.get('min'),
+                        q25=stats.get('25%'),
+                        q50=stats.get('50%'),  # median
+                        q75=stats.get('75%'),
+                        max_value=stats.get('max'),
+                        null_count=stats.get('null_count'),
+                        unique_count=stats.get('unique_count'),
+                        created_at=self.get_timestamp()
+                    )
+                    session.add(stat_record)
+                
+                session.commit()
+                print(f"✅ Stored statistics for {len(column_stats)} columns")
+                
+        except Exception as e:
+            print(f"❌ Error storing column statistics: {e}")
+    
+    def get_dataset_boundaries(self, dataset_id: str) -> Dict[str, Dict[str, float]]:
+        """
+        Get dataset boundaries from stored pandas describe() statistics.
+
+        Args:
+            dataset_id: The dataset ID to get boundaries for
+            
+        Returns:
+            Dict with structure: {
+                "column_name": {
+                    "min_value": float,
+                    "max_value": float, 
+                    "valid_count": int
+                }
+            }
+        """
+        try:
+            boundaries = {}
+            
+            with Session(self.engine) as session:
+                # Get stored statistics for numeric columns
+                stats = session.exec(
+                    select(ColumnStatsModel)
+                    .where(ColumnStatsModel.dataset_id == dataset_id)
+                    .where(ColumnStatsModel.column_type == "numeric")
+                    .where(ColumnStatsModel.min_value.is_not(None))
+                    .where(ColumnStatsModel.max_value.is_not(None))
+                ).all()
+                
+                for stat in stats:
+                    boundaries[stat.column_name] = {
+                        'min_value': float(stat.min_value),
+                        'max_value': float(stat.max_value),
+                        'valid_count': int(stat.count) if stat.count else 0
+                    }
+                
+                print(f"📐 Retrieved boundaries for {len(boundaries)} columns from stored statistics")
+                return boundaries
+                
+        except Exception as e:
+            print(f"❌ Error getting dataset boundaries from stored stats: {e}")
+            # Fallback to the old calculation method if stored stats are not available
+            return self._calculate_boundaries_fallback(dataset_id)
+    

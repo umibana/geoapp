@@ -153,7 +153,15 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
         @returns: AnalyzeCsvResponse with column info and auto-detected mappings
         """
         try:
-            response = self.project_manager.analyze_csv(request.file_path, request.file_name, request.rows_to_analyze)
+            # Enhanced CSV analysis with optional SQL saving
+            save_to_sql = request.save_to_sql if hasattr(request, 'save_to_sql') else False
+            rows_to_analyze = request.rows_to_analyze if request.rows_to_analyze > 0 else 1000
+            response = self.project_manager.analyze_csv(
+                request.file_path, 
+                request.file_name, 
+                rows_to_analyze, 
+                save_to_sql
+            )
             return response
             
         except Exception as e:
