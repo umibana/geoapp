@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 """
-Servidor de Servicio Geoespacial gRPC
-Reemplaza la implementación ConnectRPC con gRPC nativo
-Provee servicios para datos geoespaciales, proyectos y archivos
+Servidor de gRPC
+Contiene la definición de los servicios de la aplicación
 """
 import sys
 import time
@@ -29,20 +28,18 @@ from project_manager import ProjectManager
 
 
 class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
-    """Implementación del servicio GeospatialService
-    Maneja todas las operaciones relacionadas con datos geoespaciales,
-    proyectos y archivos a través de gRPC
-    """
-    
+
+    # Importamos las clases necesarias (Distintos modulos del backend)
     def __init__(self):
         self.version = "1.0.0"
         self.db = DatabaseManager()
         self.data_generator = DataGenerator()
         self.project_manager = ProjectManager(self.db)
-        print("🌍 GeospatialService inicializado con base de datos")
     
+    """
+    -------- Definición de métodos para probar conexión de gRPC -------- 
+    """
     def HealthCheck(self, request, context):
-        """Health check endpoint"""
         try:
             response = geospatial_pb2.HealthCheckResponse(
                 healthy=True,
@@ -250,15 +247,8 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
     # ========== Project Management Methods ==========
     
     def CreateProject(self, request, context):
-        """Create a new project"""
-        try:
-            return self.project_manager.create_project(request)
-        except Exception as e:
-            print(f"❌ Error creating project: {e}")
-            response = projects_pb2.CreateProjectResponse()
-            response.success = False
-            response.error_message = str(e)
-            return response
+        return self.project_manager.create_project(request)
+  
     
     def GetProjects(self, request, context):
         """Get projects with pagination"""
@@ -378,6 +368,17 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
         except Exception as e:
             print(f"❌ Error getting dataset data: {e}")
             response = projects_pb2.GetDatasetDataResponse()
+            return response
+    
+    def DeleteDataset(self, request, context):
+        """Delete a dataset using efficient bulk operations"""
+        try:
+            return self.project_manager.delete_dataset(request)
+        except Exception as e:
+            print(f"❌ Error deleting dataset: {e}")
+            response = projects_pb2.DeleteDatasetResponse()
+            response.success = False
+            response.error_message = str(e)
             return response
 
     # Note: Data boundaries are now calculated directly in GetDatasetData method above

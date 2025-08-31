@@ -12,8 +12,8 @@ import io
 from typing import Iterator, List, Tuple, Dict, Any
 
 # Import protobuf types
-import files_pb2
-import projects_pb2
+from generated import files_pb2
+from generated import projects_pb2
 
 
 class ProjectManager:
@@ -423,27 +423,32 @@ class ProjectManager:
             response.total_points = 0
             return response
 
-    # ========== Project Management Methods ==========
+    # ---------- Manejo de proyectos ----------
+    # Usamos los métodos definidos en database.py para crear un proyecto
     
     def create_project(self, request: projects_pb2.CreateProjectRequest) -> projects_pb2.CreateProjectResponse:
-        """Create a new project"""
         try:
-            print(f"📁 Creating project: {request.name}")
+            print(f"Creando proyecto: {request.name}")
             
+            # Llamamos a la función create_project para crear el proyecto
             project_data = self.db.create_project(request.name, request.description)
             
+            # Se crea la respuesta como la definida en el proto
             response = projects_pb2.CreateProjectResponse()
             response.success = True
             
-            # Populate project data
+            # Obtenemos el proyecto en la respuesta (ProjectResponse.response en protobuf)
             project = response.project
-            project.id = project_data['id']
-            project.name = project_data['name']
-            project.description = project_data['description']
-            project.created_at = project_data['created_at']
-            project.updated_at = project_data['updated_at']
+
+            # Llenamos los datos del proyecto en la respuesta
+            project.id = project_data.id
+            project.name = project_data.name
+            project.description = project_data.description
+            project.created_at = project_data.created_at
+            project.updated_at = project_data.updated_at
             
-            print(f"✅ Project created: {project.id}")
+            print(f"Proyecto creado: {project.id}")
+            # Devolvemos la respuesta
             return response
             
         except Exception as e:
@@ -465,11 +470,11 @@ class ProjectManager:
             
             for project_data in projects_data:
                 project = response.projects.add()
-                project.id = project_data['id']
-                project.name = project_data['name']
-                project.description = project_data['description']
-                project.created_at = project_data['created_at']
-                project.updated_at = project_data['updated_at']
+                project.id = project_data.id
+                project.name = project_data.name
+                project.description = project_data.description
+                project.created_at = project_data.created_at
+                project.updated_at = project_data.updated_at
             
             print(f"✅ Retrieved {len(projects_data)} projects")
             return response
@@ -490,11 +495,11 @@ class ProjectManager:
             if project_data:
                 response.success = True
                 project = response.project
-                project.id = project_data['id']
-                project.name = project_data['name']
-                project.description = project_data['description']
-                project.created_at = project_data['created_at']
-                project.updated_at = project_data['updated_at']
+                project.id = project_data.id
+                project.name = project_data.name
+                project.description = project_data.description
+                project.created_at = project_data.created_at
+                project.updated_at = project_data.updated_at
             else:
                 response.success = False
                 response.error_message = "Project not found"
@@ -513,23 +518,17 @@ class ProjectManager:
         try:
             print(f"📁 Updating project: {request.project_id}")
             
-            success = self.db.update_project(request.project_id, request.name, request.description)
+            updated_project = self.db.update_project(request.project_id, request.name, request.description)
             
             response = projects_pb2.UpdateProjectResponse()
-            if success:
-                # Get updated project data
-                project_data = self.db.get_project(request.project_id)
-                if project_data:
-                    response.success = True
-                    project = response.project
-                    project.id = project_data['id']
-                    project.name = project_data['name']
-                    project.description = project_data['description']
-                    project.created_at = project_data['created_at']
-                    project.updated_at = project_data['updated_at']
-                else:
-                    response.success = False
-                    response.error_message = "Project not found after update"
+            if updated_project:
+                response.success = True
+                project = response.project
+                project.id = updated_project.id
+                project.name = updated_project.name
+                project.description = updated_project.description
+                project.created_at = updated_project.created_at
+                project.updated_at = updated_project.updated_at
             else:
                 response.success = False
                 response.error_message = "Project not found"
@@ -584,13 +583,13 @@ class ProjectManager:
             
             # Populate file data
             file = response.file
-            file.id = file_data['id']
-            file.project_id = file_data['project_id']
-            file.name = file_data['name']
-            file.dataset_type = file_data['dataset_type']
-            file.original_filename = file_data['original_filename']
-            file.file_size = file_data['file_size']
-            file.created_at = file_data['created_at']
+            file.id = file_data.id
+            file.project_id = file_data.project_id
+            file.name = file_data.name
+            file.dataset_type = file_data.dataset_type
+            file.original_filename = file_data.original_filename
+            file.file_size = file_data.file_size
+            file.created_at = file_data.created_at
             
             print(f"✅ File created: {file.id}")
             return response
@@ -613,13 +612,13 @@ class ProjectManager:
             
             for file_data in files_data:
                 file = response.files.add()
-                file.id = file_data['id']
-                file.project_id = file_data['project_id']
-                file.name = file_data['name']
-                file.dataset_type = file_data['dataset_type']
-                file.original_filename = file_data['original_filename']
-                file.file_size = file_data['file_size']
-                file.created_at = file_data['created_at']
+                file.id = file_data.id
+                file.project_id = file_data.project_id
+                file.name = file_data.name
+                file.dataset_type = file_data.dataset_type
+                file.original_filename = file_data.original_filename
+                file.file_size = file_data.file_size
+                file.created_at = file_data.created_at
             
             print(f"✅ Retrieved {len(files_data)} files")
             return response
@@ -638,18 +637,20 @@ class ProjectManager:
             
             response = projects_pb2.GetProjectDatasetsResponse()
             
-            for dataset_data in datasets:
+            for dataset_data, file_data in datasets:
                 dataset = response.datasets.add()
-                dataset.id = dataset_data['id']
-                dataset.file_id = dataset_data['file_id']
-                dataset.file_name = dataset_data['file_name']
-                dataset.dataset_type = dataset_data['dataset_type']
-                dataset.original_filename = dataset_data['original_filename']
-                dataset.total_rows = dataset_data['total_rows']
-                dataset.created_at = dataset_data['created_at']
+                dataset.id = dataset_data.id
+                dataset.file_id = dataset_data.file_id
+                dataset.file_name = file_data.name
+                dataset.dataset_type = file_data.dataset_type
+                dataset.original_filename = file_data.original_filename
+                dataset.total_rows = dataset_data.total_rows
+                dataset.created_at = dataset_data.created_at
                 
-                # Add column mappings
-                for mapping in dataset_data['column_mappings']:
+                # Add column mappings - need to parse JSON since it's stored as string
+                import json
+                column_mappings = json.loads(dataset_data.column_mappings) if dataset_data.column_mappings else []
+                for mapping in column_mappings:
                     col_mapping = dataset.column_mappings.add()
                     col_mapping.column_name = mapping['column_name']
                     col_mapping.column_type = mapping['column_type']
@@ -874,7 +875,7 @@ class ProjectManager:
                 column_mappings_list.append(mapping_dict)
             
             dataset_data = self.db.create_dataset(request.file_id, row_count, column_mappings_list)
-            dataset_id = dataset_data['id']
+            dataset_id = dataset_data.id
             
             # Store processed data
             self.db.store_dataset_data(dataset_id, processed_rows)
@@ -890,13 +891,15 @@ class ProjectManager:
             # Populate dataset data
             dataset = response.dataset
             dataset.id = dataset_id
-            dataset.file_id = dataset_data['file_id']
-            dataset.total_rows = dataset_data['total_rows']
-            dataset.current_page = dataset_data['current_page']
-            dataset.created_at = dataset_data['created_at']
+            dataset.file_id = dataset_data.file_id
+            dataset.total_rows = dataset_data.total_rows
+            dataset.current_page = dataset_data.current_page
+            dataset.created_at = dataset_data.created_at
             
-            # Add column mappings
-            for mapping_dict in dataset_data['column_mappings']:
+            # Add column mappings - parse JSON since it's stored as string
+            import json
+            column_mappings = json.loads(dataset_data.column_mappings) if dataset_data.column_mappings else []
+            for mapping_dict in column_mappings:
                 mapping = dataset.column_mappings.add()
                 mapping.column_name = mapping_dict['column_name']
                 mapping.column_type = mapping_dict['column_type']
@@ -941,8 +944,10 @@ class ProjectManager:
                 row = response.rows.add()
                 row.fields.update(row_data)
             
-            # Add column mappings
-            for mapping_dict in dataset['column_mappings']:
+            # Add column mappings - parse JSON since it's stored as string
+            import json
+            column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
+            for mapping_dict in column_mappings:
                 mapping = response.column_mappings.add()
                 mapping.column_name = mapping_dict['column_name']
                 mapping.column_type = mapping_dict['column_type']
@@ -969,4 +974,31 @@ class ProjectManager:
         except Exception as e:
             print(f"❌ Error getting dataset data: {e}")
             response = projects_pb2.GetDatasetDataResponse()
+            return response
+    
+    def delete_dataset(self, request: projects_pb2.DeleteDatasetRequest) -> projects_pb2.DeleteDatasetResponse:
+        """Delete a dataset using efficient bulk operations"""
+        try:
+            print(f"🗑️  Delete dataset request: {request.dataset_id}")
+            
+            start_time = time.time()
+            success = self.db.delete_dataset(request.dataset_id)
+            delete_time = time.time() - start_time
+            
+            response = projects_pb2.DeleteDatasetResponse()
+            response.success = success
+            response.delete_time = delete_time
+            
+            if not success:
+                response.error_message = "Dataset not found"
+            else:
+                print(f"✅ Dataset deleted in {delete_time:.2f}s")
+            
+            return response
+            
+        except Exception as e:
+            print(f"❌ Error deleting dataset: {e}")
+            response = projects_pb2.DeleteDatasetResponse()
+            response.success = False
+            response.error_message = str(e)
             return response

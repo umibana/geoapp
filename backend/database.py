@@ -1,8 +1,5 @@
-"""
-SQLite database manager simplified using SQLModel.
-Provides CRUD for projects, files, and datasets with minimal boilerplate.
-"""
-
+# Manejo de base de datos
+# SQLite con SQLModel como ORM
 import uuid
 import time
 import json
@@ -13,50 +10,52 @@ from sqlmodel import SQLModel, Field, Relationship, Session, select, create_engi
 from sqlalchemy import Column, LargeBinary, text, event
 
 
-class ProjectModel(SQLModel, table=True):
+# Definicion de modelos de la base de datos
+
+class Project(SQLModel, table=True):
     id: str = Field(primary_key=True)
     name: str
     description: Optional[str] = None
     created_at: int
     updated_at: int
-    files: List["FileModel"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    files: List["File"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
 
-class FileModel(SQLModel, table=True):
+class File(SQLModel, table=True):
     id: str = Field(primary_key=True)
-    project_id: str = Field(foreign_key="projectmodel.id")
+    project_id: str = Field(foreign_key="project.id")
     name: str
     dataset_type: int
     original_filename: str
     file_size: int
     file_content: Optional[bytes] = Field(default=None, sa_column=Column(LargeBinary))
     created_at: int
-    project: Optional[ProjectModel] = Relationship(back_populates="files")
-    datasets: List["DatasetModel"] = Relationship(back_populates="file", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    project: Optional[Project] = Relationship(back_populates="files")
+    datasets: List["Dataset"] = Relationship(back_populates="file", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
 
-class DatasetModel(SQLModel, table=True):
+class Dataset(SQLModel, table=True):
     id: str = Field(primary_key=True)
-    file_id: str = Field(foreign_key="filemodel.id")
+    file_id: str = Field(foreign_key="file.id")
     total_rows: int
     current_page: int = 0
     column_mappings: Optional[str] = None  # JSON string
     created_at: int
-    file: Optional[FileModel] = Relationship(back_populates="datasets")
-    rows: List["DatasetDataModel"] = Relationship(back_populates="dataset", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    file: Optional[File] = Relationship(back_populates="datasets")
+    rows: List["DatasetData"] = Relationship(back_populates="dataset", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
 
-class DatasetDataModel(SQLModel, table=True):
+class DatasetData(SQLModel, table=True):
     id: str = Field(primary_key=True)
-    dataset_id: str = Field(foreign_key="datasetmodel.id")
+    dataset_id: str = Field(foreign_key="dataset.id")
     row_index: int
     data: str  # JSON string
-    dataset: Optional[DatasetModel] = Relationship(back_populates="rows")
+    dataset: Optional[Dataset] = Relationship(back_populates="rows")
 
 
-class ColumnStatsModel(SQLModel, table=True):
+class DatasetColumnStats(SQLModel, table=True):
     id: str = Field(primary_key=True)
-    dataset_id: str = Field(foreign_key="datasetmodel.id")
+    dataset_id: str = Field(foreign_key="dataset.id")
     column_name: str
     column_type: str  # "numeric" or "categorical"
     count: Optional[float] = None
@@ -93,10 +92,13 @@ class DatabaseManager:
     def get_timestamp(self) -> int:
         return int(time.time())
 
-    # ========== Project Management ==========
+    # ---------- Manejo de proyectos ----------
+    # Manejamos el CRUD para crear un proyecto
 
-    def create_project(self, name: str, description: str = "") -> Dict[str, Any]:
-        project = ProjectModel(
+
+
+    def create_project(self, name: str, description: str = "") -> Project:
+        project = Project(
             id=self.generate_id(),
             name=name,
             description=description,
@@ -106,47 +108,43 @@ class DatabaseManager:
         with Session(self.engine) as session:
             session.add(project)
             session.commit()
-            # Access attributes while the object is still in session
-            result = {
-                'id': project.id,
-                'name': project.name,
-                'description': project.description,
-                'created_at': project.created_at,
-                'updated_at': project.updated_at,
-            }
-        return result
+            # Refresh to get the committed object with relationships loaded
+            session.refresh(project)
+        return project
 
-    def get_projects(self, limit: int = 100, offset: int = 0) -> Tuple[List[Dict[str, Any]], int]:
+
+    def get_projects(self, limit: int = 100, offset: int = 0) -> Tuple[List[Project], int]:
         with Session(self.engine) as session:
-            total_count = session.exec(select(func.count(ProjectModel.id))).one()
+            project_count = session.exec(select(func.count(Project.id))).one()
             projects = session.exec(
-                select(ProjectModel).order_by(ProjectModel.updated_at.desc()).limit(limit).offset(offset)
+                select(Project).order_by(Project.updated_at.desc()).limit(limit).offset(offset)
             ).all()
-            # Call model_dump() while objects are still in session
-            project_dicts = [p.model_dump() for p in projects]
-        return project_dicts, int(total_count)
+        return list(projects), int(project_count)
 
-    def get_project(self, project_id: str) -> Optional[Dict[str, Any]]:
+    def get_project(self, project_id: str) -> Optional[Project]:
         with Session(self.engine) as session:
-            project = session.get(ProjectModel, project_id)
-            # Call model_dump() while object is still in session
-            return project.model_dump() if project else None
+            project = session.get(Project, project_id)
+            if project:
+                # Refresh to ensure all relationships are loaded
+                session.refresh(project)
+            return project
 
-    def update_project(self, project_id: str, name: str, description: str) -> bool:
+    def update_project(self, project_id: str, name: str, description: str) -> Optional[Project]:
         with Session(self.engine) as session:
-            project = session.get(ProjectModel, project_id)
+            project = session.get(Project, project_id)
             if not project:
-                return False
+                return None
             project.name = name
             project.description = description
             project.updated_at = self.get_timestamp()
             session.add(project)
             session.commit()
-            return True
+            session.refresh(project)
+            return project
 
     def delete_project(self, project_id: str) -> bool:
         with Session(self.engine) as session:
-            project = session.get(ProjectModel, project_id)
+            project = session.get(Project, project_id)
             if not project:
                 return False
             session.delete(project)
@@ -156,8 +154,8 @@ class DatabaseManager:
     # ========== Manejo de archivos ==========
 
     def create_file(self, project_id: str, name: str, dataset_type: int,
-                    original_filename: str, file_content: bytes) -> Dict[str, Any]:
-        file = FileModel(
+                    original_filename: str, file_content: bytes) -> File:
+        file = File(
             id=self.generate_id(),
             project_id=project_id,
             name=name,
@@ -170,70 +168,35 @@ class DatabaseManager:
         with Session(self.engine) as session:
             session.add(file)
             session.commit()
-            # Access attributes while the object is still in session
-            result = {
-                'id': file.id,
-                'project_id': file.project_id,
-                'name': file.name,
-                'dataset_type': file.dataset_type,
-                'original_filename': file.original_filename,
-                'file_size': file.file_size,
-                'created_at': file.created_at,
-            }
-        return result
+            session.refresh(file)
+        return file
 
-    def get_project_files(self, project_id: str) -> List[Dict[str, Any]]:
+    def get_project_files(self, project_id: str) -> List[File]:
         with Session(self.engine) as session:
             files = session.exec(
-                select(FileModel).where(FileModel.project_id == project_id).order_by(FileModel.created_at.desc())
+                select(File).where(File.project_id == project_id).order_by(File.created_at.desc())
             ).all()
-            # Access attributes while objects are still in session
-            return [
-                {
-                    'id': f.id,
-                    'project_id': f.project_id,
-                    'name': f.name,
-                    'dataset_type': f.dataset_type,
-                    'original_filename': f.original_filename,
-                    'file_size': f.file_size,
-                    'created_at': f.created_at,
-                }
-                for f in files
-            ]
+            return list(files)
 
     def get_file_content(self, file_id: str) -> Optional[bytes]:
         with Session(self.engine) as session:
-            file = session.get(FileModel, file_id)
+            file = session.get(File, file_id)
             return file.file_content if file else None
 
-    def get_datasets_by_project(self, project_id: str) -> List[Dict[str, Any]]:
+    def get_datasets_by_project(self, project_id: str) -> List[Tuple[Dataset, File]]:
         with Session(self.engine) as session:
             # Join datasets with files by project
             datasets = session.exec(
-                select(DatasetModel, FileModel)
-                .join(FileModel, DatasetModel.file_id == FileModel.id)
-                .where(FileModel.project_id == project_id)
-                .order_by(DatasetModel.created_at.desc())
+                select(Dataset, File)
+                .join(File, Dataset.file_id == File.id)
+                .where(File.project_id == project_id)
+                .order_by(Dataset.created_at.desc())
             ).all()
-            # Access attributes while objects are still in session
-            result: List[Dict[str, Any]] = []
-            for dataset, file in datasets:
-                result.append({
-                    'id': dataset.id,
-                    'file_id': dataset.file_id,
-                    'total_rows': dataset.total_rows,
-                    'current_page': dataset.current_page,
-                    'column_mappings': json.loads(dataset.column_mappings) if dataset.column_mappings else [],
-                    'created_at': dataset.created_at,
-                    'file_name': file.name,
-                    'dataset_type': file.dataset_type,
-                    'original_filename': file.original_filename,
-                })
-        return result
+            return list(datasets)
 
     def delete_file(self, file_id: str) -> bool:
         with Session(self.engine) as session:
-            f = session.get(FileModel, file_id)
+            f = session.get(File, file_id)
             if not f:
                 return False
             session.delete(f)
@@ -242,8 +205,8 @@ class DatabaseManager:
 
     # ========== Manejo de datasets ==========
 
-    def create_dataset(self, file_id: str, total_rows: int, column_mappings: List[Dict[str, Any]]) -> Dict[str, Any]:
-        dataset = DatasetModel(
+    def create_dataset(self, file_id: str, total_rows: int, column_mappings: List[Dict[str, Any]]) -> Dataset:
+        dataset = Dataset(
             id=self.generate_id(),
             file_id=file_id,
             total_rows=total_rows,
@@ -254,44 +217,30 @@ class DatabaseManager:
         with Session(self.engine) as session:
             session.add(dataset)
             session.commit()
-            # Access attributes while the object is still in session
-            result = {
-                'id': dataset.id,
-                'file_id': dataset.file_id,
-                'total_rows': dataset.total_rows,
-                'current_page': dataset.current_page,
-                'column_mappings': column_mappings,
-                'created_at': dataset.created_at,
-            }
-        return result
+            session.refresh(dataset)
+        return dataset
 
-    def get_dataset_by_file(self, file_id: str) -> Optional[Dict[str, Any]]:
+    def get_dataset_by_file(self, file_id: str) -> Optional[Dataset]:
         with Session(self.engine) as session:
-            dataset = session.exec(select(DatasetModel).where(DatasetModel.file_id == file_id)).first()
-            if not dataset:
-                return None
-            # Call model_dump() while object is still in session
-            result = dataset.model_dump()
-            result['column_mappings'] = json.loads(dataset.column_mappings) if dataset.column_mappings else []
-            return result
+            dataset = session.exec(select(Dataset).where(Dataset.file_id == file_id)).first()
+            if dataset:
+                session.refresh(dataset)
+            return dataset
 
-    def get_dataset_by_id(self, dataset_id: str) -> Optional[Dict[str, Any]]:
+    def get_dataset_by_id(self, dataset_id: str) -> Optional[Dataset]:
         with Session(self.engine) as session:
-            dataset = session.get(DatasetModel, dataset_id)
-            if not dataset:
-                return None
-            # Call model_dump() while object is still in session
-            result = dataset.model_dump()
-            result['column_mappings'] = json.loads(dataset.column_mappings) if dataset.column_mappings else []
-            return result
+            dataset = session.get(Dataset, dataset_id)
+            if dataset:
+                session.refresh(dataset)
+            return dataset
 
     def store_dataset_data(self, dataset_id: str, data_rows: List[Dict[str, str]]):
         with Session(self.engine) as session:
             # Remove existing rows first
-            session.exec(text("DELETE FROM datasetdatamodel WHERE dataset_id = :dsid").bindparams(dsid=dataset_id))
+            session.exec(text("DELETE FROM datasetdata WHERE dataset_id = :dsid").bindparams(dsid=dataset_id))
             for i, row in enumerate(data_rows):
                 session.add(
-                    DatasetDataModel(
+                    DatasetData(
                         id=self.generate_id(),
                         dataset_id=dataset_id,
                         row_index=i,
@@ -304,12 +253,12 @@ class DatabaseManager:
         offset = (page - 1) * page_size
         with Session(self.engine) as session:
             total_rows = session.exec(
-                select(func.count(DatasetDataModel.id)).where(DatasetDataModel.dataset_id == dataset_id)
+                select(func.count(DatasetData.id)).where(DatasetData.dataset_id == dataset_id)
             ).one()
             rows = session.exec(
-                select(DatasetDataModel.data)
-                .where(DatasetDataModel.dataset_id == dataset_id)
-                .order_by(DatasetDataModel.row_index)
+                select(DatasetData.data)
+                .where(DatasetData.dataset_id == dataset_id)
+                .order_by(DatasetData.row_index)
                 .limit(page_size)
                 .offset(offset)
             ).all()
@@ -340,8 +289,8 @@ class DatabaseManager:
             with Session(self.engine) as session:
                 # Get all data rows for this dataset
                 rows = session.exec(
-                    select(DatasetDataModel.data)
-                    .where(DatasetDataModel.dataset_id == dataset_id)
+                    select(DatasetData.data)
+                    .where(DatasetData.dataset_id == dataset_id)
                 ).all()
                 
                 if not rows:
@@ -401,7 +350,7 @@ class DatabaseManager:
             with Session(self.engine) as session:
                 # Delete existing stats for this dataset using SQLModel query
                 existing_stats = session.exec(
-                    select(ColumnStatsModel).where(ColumnStatsModel.dataset_id == dataset_id)
+                    select(DatasetColumnStats).where(DatasetColumnStats.dataset_id == dataset_id)
                 ).all()
                 
                 for stat in existing_stats:
@@ -417,7 +366,7 @@ class DatabaseManager:
                             print(f"⚠️  Skipping statistics for '{column_name}' - no valid min/max values")
                             continue
                     
-                    stat_record = ColumnStatsModel(
+                    stat_record = DatasetColumnStats(
                         id=self.generate_id(),
                         dataset_id=dataset_id,
                         column_name=column_name,
@@ -464,11 +413,11 @@ class DatabaseManager:
             with Session(self.engine) as session:
                 # Get stored statistics for numeric columns
                 stats = session.exec(
-                    select(ColumnStatsModel)
-                    .where(ColumnStatsModel.dataset_id == dataset_id)
-                    .where(ColumnStatsModel.column_type == "numeric")
-                    .where(ColumnStatsModel.min_value.is_not(None))
-                    .where(ColumnStatsModel.max_value.is_not(None))
+                    select(DatasetColumnStats)
+                    .where(DatasetColumnStats.dataset_id == dataset_id)
+                    .where(DatasetColumnStats.column_type == "numeric")
+                    .where(DatasetColumnStats.min_value.is_not(None))
+                    .where(DatasetColumnStats.max_value.is_not(None))
                 ).all()
                 
                 for stat in stats:

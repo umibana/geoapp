@@ -228,3 +228,15 @@ message DatasetInfo {
 message GetProjectDatasetsResponse {
   repeated DatasetInfo datasets = 1;
 }
+
+// Delete dataset
+message DeleteDatasetRequest {
+  string dataset_id = 1;
+}
+
+message DeleteDatasetResponse {
+  bool success = 1;
+  string error_message = 2;
+  int32 rows_deleted = 3;  // Number of data rows deleted
+  double delete_time = 4;  // Time taken in seconds
+}

@@ -161,7 +161,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
       const response = await window.autoGrpc.getDatasetData({
         dataset_id: datasetId,
         page: 1,
-        page_size: 10000 // Pido cierta cantidad de puntos
+        page_size: 100000 // Pido cierta cantidad de puntos
         // Es temporal, tengo que ver como pasar del STACK SIZE EXCEEDED
       });
 
@@ -176,9 +176,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
       if (response.rows && response.column_mappings) {
         // Parse the dataset structure
         const columnMappings = response.column_mappings;
-        
-        console.log('Column mappings:', columnMappings);
-        console.log('Raw rows:', response.rows);
         
         // Find coordinate columns (X, Y, Z)
         const coords: {x?: string, y?: string, z?: string} = {};
@@ -196,8 +193,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
           }
         });
         
-        console.log('Available columns:', allAvailableColumns);
-        console.log('Coordinate columns:', coords);
+
 
         setCoordinateColumns(coords);
         setAllColumns(allAvailableColumns);
@@ -532,7 +528,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
         progressive: 100000,
         progressiveThreshold: 20000,
         progressiveChunkMode: 'sequential',
-        symbolSize: 2,
+        symbolSize: 4,
         blendMode: 'lighter',
         dimensions: [selectedXAxis, selectedYAxis, selectedValueColumn],
       }]
