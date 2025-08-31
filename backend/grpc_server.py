@@ -244,199 +244,90 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"Columnar streamed data error: {str(e)}")
 
-    # ========== Project Management Methods ==========
+    # ---------- Manejo de proyectos ----------
+    # Crud basico,usamos los métodos definidos en project_manager.py para crear un proyecto
+    #
     
     def CreateProject(self, request, context):
         return self.project_manager.create_project(request)
-  
-    
-    def GetProjects(self, request, context):
-        """Get projects with pagination"""
-        try:
-            return self.project_manager.get_projects(request)
-        except Exception as e:
-            print(f"❌ Error getting projects: {e}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(str(e))
-            return projects_pb2.GetProjectsResponse()
     
     def GetProject(self, request, context):
-        """Get a single project"""
-        try:
-            return self.project_manager.get_project(request)
-        except Exception as e:
-            print(f"❌ Error getting project: {e}")
-            response = projects_pb2.GetProjectResponse()
-            response.success = False
-            response.error_message = str(e)
-            return response
+        return self.project_manager.get_project(request)
     
     def UpdateProject(self, request, context):
-        """Update a project"""
-        try:
-            return self.project_manager.update_project(request)
-        except Exception as e:
-            print(f"❌ Error updating project: {e}")
-            response = projects_pb2.UpdateProjectResponse()
-            response.success = False
-            response.error_message = str(e)
-            return response
+        return self.project_manager.update_project(request)
     
     def DeleteProject(self, request, context):
-        """Delete a project"""
-        try:
-            return self.project_manager.delete_project(request)
-        except Exception as e:
-            print(f"❌ Error deleting project: {e}")
-            response = projects_pb2.DeleteProjectResponse()
-            response.success = False
-            response.error_message = str(e)
-            return response
+        return self.project_manager.delete_project(request)
+
+    # Obtenemos multiples proyectos
+    def GetProjects(self, request, context):
+        return self.project_manager.get_projects(request)
     
-    # ========== File Management Methods ==========
-    
+    # ---------- Manejo de archivos ----------
+
     def CreateFile(self, request, context):
-        """Create a new file"""
-        try:
-            return self.project_manager.create_file(request)
-        except Exception as e:
-            print(f"❌ Error creating file: {e}")
-            response = projects_pb2.CreateFileResponse()
-            response.success = False
-            response.error_message = str(e)
-            return response
+        return self.project_manager.create_file(request)
     
     def GetProjectFiles(self, request, context):
-        """Get all files for a project"""
-        try:
-            return self.project_manager.get_project_files(request)
-        except Exception as e:
-            print(f"❌ Error getting project files: {e}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(str(e))
-            return projects_pb2.GetProjectFilesResponse()
+        return self.project_manager.get_project_files(request)
 
     def GetProjectDatasets(self, request, context):
-        """Get all datasets for a project"""
-        try:
-            return self.project_manager.get_project_datasets(request)
-        except Exception as e:
-            print(f"❌ Error getting project datasets: {e}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(str(e))
-            return projects_pb2.GetProjectDatasetsResponse()
+        return self.project_manager.get_project_datasets(request)
     
     def DeleteFile(self, request, context):
-        """Delete a file"""
-        try:
-            return self.project_manager.delete_file(request)
-        except Exception as e:
-            print(f"❌ Error deleting file: {e}")
-            response = projects_pb2.DeleteFileResponse()
-            response.success = False
-            response.error_message = str(e)
-            return response
+        return self.project_manager.delete_file(request)
     
-    # ========== Enhanced CSV Processing Methods ==========
+    # ---------- Manejo de datasets ----------
     
     def AnalyzeCsvForProject(self, request, context):
-        """Analyze CSV file for project with enhanced column type detection"""
-        try:
-            return self.project_manager.analyze_csv_for_project(request)
-        except Exception as e:
-            print(f"❌ Error analyzing CSV: {e}")
-            response = projects_pb2.AnalyzeCsvForProjectResponse()
-            response.success = False
-            response.error_message = str(e)
-            return response
+        return self.project_manager.analyze_csv_for_project(request)
     
     def ProcessDataset(self, request, context):
-        """Process dataset with column mappings"""
-        try:
-            return self.project_manager.process_dataset(request)
-        except Exception as e:
-            print(f"❌ Error processing dataset: {e}")
-            response = projects_pb2.ProcessDatasetResponse()
-            response.success = False
-            response.error_message = str(e)
-            return response
+        return self.project_manager.process_dataset(request)
     
     def GetDatasetData(self, request, context):
-        """Get dataset data with pagination"""
-        try:
-            return self.project_manager.get_dataset_data(request)
-        except Exception as e:
-            print(f"❌ Error getting dataset data: {e}")
-            response = projects_pb2.GetDatasetDataResponse()
-            return response
+        return self.project_manager.get_dataset_data(request)
     
     def DeleteDataset(self, request, context):
-        """Delete a dataset using efficient bulk operations"""
-        try:
-            return self.project_manager.delete_dataset(request)
-        except Exception as e:
-            print(f"❌ Error deleting dataset: {e}")
-            response = projects_pb2.DeleteDatasetResponse()
-            response.success = False
-            response.error_message = str(e)
-            return response
-
-    # Note: Data boundaries are now calculated directly in GetDatasetData method above
-    # No separate boundaries method needed - simpler and more efficient!
+        return self.project_manager.delete_dataset(request)
 
 
-def find_free_port(start_port=50051):
-    """Find a free port starting from start_port"""
-    for port in range(start_port, start_port + 10):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('127.0.0.1', port))
-                return port
-        except OSError:
-            continue
-    return start_port  # Fallback
-
-
+# Servidor gRPC
+# Utilizamos el puerto 50077 para el servidor gRPC
+# tambien configuramos el tamaño de los mensajes a 500MB
 def serve():
-    """Start the gRPC server"""
     try:
-        # Use fixed port for gRPC
         port = 50077
-        
-        # Create server with increased message size limits (500MB)
         options = [
             ('grpc.max_send_message_length', 500 * 1024 * 1024),  # 500MB
             ('grpc.max_receive_message_length', 500 * 1024 * 1024),  # 500MB
         ]
+        ## Definimos el servidor gRPC con el maximo de workers 10 y las opciones de maximo de mensaje
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=10), options=options)
         
-        # Add service to server
+        # Agregamos el servicio principal al servidor gRPC
         main_service_pb2_grpc.add_GeospatialServiceServicer_to_server(
             GeospatialServicer(), server
         )
         
-        # Configure server
         listen_addr = f'127.0.0.1:{port}'
         server.add_insecure_port(listen_addr)
-        
-        # No need to write port file since we use fixed port 50077
-        
-        # Start server
+
         server.start()
         
-        print(f"🚀 gRPC GeospatialService started on {listen_addr}")
-        print("✅ Ready to accept connections")
+        print(f"Server gRPC (geospatialService) iniciado en {listen_addr}")
         
         try:
             server.wait_for_termination()
         except KeyboardInterrupt:
-            print("\n🛑 Shutting down gRPC server...")
+            print("\n Cerrando servidor gRPC...")
             server.stop(grace=5)
                 
     except Exception as e:
-        print(f"❌ Failed to start gRPC server: {e}")
+        print(f"❌ Error al iniciar el servidor gRPC: {e}")
         
-        # Write error to file
+        # Escribimos el error en un archivo
         script_dir = Path(__file__).parent.absolute()
         error_file = script_dir / 'grpc_error.txt'
         with open(error_file, 'w') as f:
