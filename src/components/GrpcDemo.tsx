@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
-import { ChildProcessVisualization } from './VisualizacionChunks';
+import { ChildProcessVisualization, VisualizacionDatos } from './VisualizacionChunks';
 
 /**
  * Componente de demostración de gRPC
@@ -110,7 +110,7 @@ export function GrpcDemo() {
 
 
       <div className="mt-8 border-t pt-6">
-        <ChildProcessVisualization 
+        <VisualizacionDatos 
           title="🚀 Transmisión de Datos Columnar - Rendimiento Optimizado"
           maxPoints={2000000}
         />

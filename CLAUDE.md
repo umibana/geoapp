@@ -8,26 +8,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
-This is a **desktop geospatial application** built with Electron that combines a React frontend with a Python gRPC backend. The application handles geospatial data processing and visualization with **ultra-responsive streaming** capabilities using **auto-generated gRPC communication** and **efficient columnar data format**.
+This is a **desktop geospatial application** built with Electron that combines a React frontend with a Python gRPC backend. The application handles geospatial data processing and visualization with a **simplified, unified backend architecture** using **auto-generated gRPC communication** and **streamlined data format**.
 
 ### Tech Stack
 - **Frontend**: Electron 36 + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui
-- **Backend**: gRPC server (Python) with SQLite database (SQLModel ORM) + numpy data generation
+- **Backend**: **Unified gRPC server** (Python) with SQLite database (SQLModel ORM) + streamlined numpy data generation
 - **Communication**: ✅ **Auto-generated gRPC API** via Protocol Buffers with secure Electron IPC
-- **Data Format**: ✅ **Columnar format** for 70% memory reduction and optimal performance
-- **Performance**: ✅ **Streaming architecture** for 1M+ datasets without UI freezing
-- **Data Generation**: Numpy-based synthetic geospatial data (elevation, temperature, pressure)
+- **Data Format**: ✅ **Flat array format** `[x1,y1,z1, x2,y2,z2, ...]` for efficient Protocol Buffer transmission
+- **Architecture**: ✅ **Single service pattern** - all functionality consolidated into one `GeospatialService`
+- **Data Generation**: **Streamlined numpy-based** synthetic geospatial data generation
+- **Project Management**: **Centralized** project, file, and dataset management via `ProjectManager` class
 - **Testing**: Vitest (unit), Playwright (e2e), React Testing Library
 - **Build**: Vite 6, Electron Forge, PyInstaller
 
 ### Key Architecture Patterns
 
 1. **✅ Auto-Generated gRPC API**: Complete type safety with auto-generated clients, handlers, and contexts
-2. **✅ Columnar Data Format**: Efficient array-based data structure for large datasets
-3. **✅ Dual Processing Strategy**: Columnar streaming + 
-4. **✅ Secure IPC Communication**: Renderer ↔ Main process via secure context isolation
-5. **✅ Protocol Buffer Integration**: Shared `.proto` definitions ensure type safety across TypeScript and Python
-6. **✅ Desktop Process Management**: gRPC server runs as bundled executable managed by Electron main process
+2. **✅ Unified Service Architecture**: Single `GeospatialService` consolidates all backend functionality
+3. **✅ Flat Array Data Format**: Efficient `[x1,y1,z1, x2,y2,z2, ...]` format for Protocol Buffer transmission
+4. **✅ Centralized Project Management**: All project, file, and dataset operations handled by `ProjectManager`
+5. **✅ Secure IPC Communication**: Renderer ↔ Main process via secure context isolation
+6. **✅ Protocol Buffer Integration**: Shared `.proto` definitions ensure type safety across TypeScript and Python
+7. **✅ Desktop Process Management**: gRPC server runs as bundled executable managed by Electron main process
 
 ### Communication Flow
 ```
@@ -35,10 +37,11 @@ React Components (Renderer Process)
         ↓ Auto-Generated Context Bridge (window.autoGrpc)
         ↓ Secure IPC with Type Safety
 Main Process (Auto-Generated Handlers)
-        ├── Columnar Streaming API (< 2M points)
         ↓ gRPC (@grpc/grpc-js with compression)
-Python gRPC Server (numpy columnar data generation)
-        ↓ Efficient columnar format
+Python gRPC Server (Unified GeospatialService)
+        ├── DataGenerator (numpy flat arrays)
+        ├── ProjectManager (centralized project/file/dataset ops)
+        └── DatabaseManager (SQLite with SQLModel ORM)
 Backend Process (managed by backend_helpers.ts)
 ```
 
@@ -64,39 +67,49 @@ src/grpc-auto/                    # Auto-generated directory (DO NOT EDIT)
 └── auto-main-client.ts           # Main process gRPC client
 ```
 
-### **Efficient Columnar Data Format**
+### **Streamlined Data Format**
 
-The application uses a **columnar data format** optimized for large geospatial datasets:
+The application uses a **flat array data format** optimized for Protocol Buffer transmission:
 
-#### **Columnar Structure**
+#### **Flat Array Structure**
 ```typescript
-type ColumnarData = {
+// Protocol Buffer response format
+type GetColumnarDataResponse = {
+  data: number[];                  // Flat array: [x1,y1,z1, x2,y2,z2, x3,y3,z3, ...]
+  total_count: number;             // Number of points
+  bounds: Map<string, Bounds>;     // Value bounds for each dimension
+};
+
+// Internal Python columnar generation (converted to flat array)
+type InternalColumnarData = {
   id: string[];                    // Point IDs
   x: number[];                     // X coordinates (longitude)
   y: number[];                     // Y coordinates (latitude)  
-  z: number[];                     // Z values (main value like elevation)
+  z: number[];                     // Z values (elevation)
   id_value: string[];              // ID value column
-  additional_data: Record<string, number[]>; // Dynamic columns (temperature, pressure, etc.)
+  value1: number[];                // Additional data columns
+  value2: number[];                
+  value3: number[];                
 };
 ```
 
-#### **Benefits of Columnar Format**
-- **70% Memory Reduction**: Array-based storage vs object-based
-- **Faster Processing**: Vectorized operations on columns
-- **Streaming Friendly**: Natural chunking for large datasets
-- **Cache Efficient**: Better CPU cache utilization
-- **Numpy Compatible**: Direct integration with Python backend
+#### **Benefits of Flat Array Format**
+- **Protocol Buffer Efficient**: Optimal for Protocol Buffer `repeated double` fields
+- **Simple Transmission**: Single array reduces message complexity
+- **Numpy Compatible**: Direct generation from numpy arrays in Python backend
+- **Easy Parsing**: Simple iteration pattern `[x, y, z, x, y, z, ...]`
+- **Memory Efficient**: Contiguous array storage
 
-### **Dual Processing Strategy**
+### **Unified Data Processing**
 
-The application implements one processing approach:
+The application implements a simplified, single processing approach:
 
-#### **1. Columnar Streaming API** (`VisualizacionChunks.tsx`)
-- **Best for**: 100K - 2M points
-- **Technology**: Auto-generated `getBatchDataColumnarStreamed`
-- **Benefits**: Simple, reliable, efficient columnar format
-- **UI**: Green theme, "Columnar Data Streaming"
-- **Memory**: Efficient sampling to prevent stack overflow
+#### **Flat Array Data Generation** (`data_generation.py`)
+- **Method**: `GetColumnarData` - generates synthetic geospatial data
+- **Technology**: Numpy-based generation with flat array Protocol Buffer response  
+- **Format**: `[x1,y1,z1, x2,y2,z2, x3,y3,z3, ...]` for efficient transmission
+- **Data Types**: Elevation (Z), temperature (value1), pressure (value2), humidity (value3)
+- **Benefits**: Simple, reliable, and Protocol Buffer optimized
 
 
 ### **IPC Architecture** (`src/helpers/ipc/`)
@@ -244,119 +257,114 @@ const result = await window.autoGrpc.getFeatures({
 console.log(`Found ${result.features.length} features`);
 ```
 
-#### ✅ Columnar Data API (RECOMMENDED)
-Process large datasets efficiently with columnar format:
+#### ✅ Flat Array Data API (RECOMMENDED)
+Generate synthetic geospatial data efficiently:
 
 ```typescript
-const bounds = {
-  northeast: { latitude: 37.7849, longitude: -122.4094 },
-  southwest: { latitude: 37.7749, longitude: -122.4194 }
-};
-
-// Efficient columnar format for large datasets
-const result = await window.autoGrpc.getBatchDataColumnar({
-  bounds, 
+// Generate synthetic geospatial data in flat array format
+const result = await window.autoGrpc.getColumnarData({
   data_types: ['elevation'], 
-  max_points: 1000000, // 1M points efficiently!
-  resolution: 20
+  max_points: 100000 // Generates up to 100K points
 });
 
-console.log(`Generated ${result.total_count} points using ${result.generation_method}`);
-// Access columnar data: result.columnar_data.x, result.columnar_data.y, result.columnar_data.z
-```
+console.log(`Generated ${result.total_count} points`);
+console.log(`Data format: [x1,y1,z1, x2,y2,z2, ...] with ${result.data.length} values`);
 
-#### ✅ Columnar Streaming (ULTRA-LARGE DATASETS)
-Stream large datasets with real-time progress:
+// Parse flat array data
+const points = [];
+for (let i = 0; i < result.data.length; i += 3) {
+  points.push({
+    x: result.data[i],     // longitude
+    y: result.data[i + 1], // latitude  
+    z: result.data[i + 2]  // elevation
+  });
+}
 
-```typescript
-// Ultra-responsive streaming for massive datasets
-const result = await window.autoGrpc.getBatchDataColumnarStreamed({
-  bounds, 
-  data_types: ['elevation'], 
-  max_points: 5000000, // 5M points with streaming!
-  resolution: 30
-}, (chunk) => {
-  // Real-time progress updates per chunk
-  console.log(`Chunk ${chunk.chunk_number + 1}/${chunk.total_chunks}: ${chunk.points_in_chunk} points`);
-  updateProgressBar((chunk.chunk_number + 1) / chunk.total_chunks * 100);
-});
-
-console.log(`Streamed ${result.length} chunks successfully`);
+console.log(`Parsed ${points.length} points for visualization`);
 ```
 
 ### 📊 Performance Characteristics
 
-#### UI Responsiveness
-- **✅ Columnar Format**: 70% memory reduction vs object-based format
-- **✅ Streaming Architecture**: Handles 5M+ points without UI freezing
+#### Data Generation
+- **✅ Flat Array Format**: Optimal Protocol Buffer transmission efficiency
+- **✅ Numpy-based Generation**: High-performance mathematical operations
 - **✅ Auto-Generated API**: Zero manual API maintenance, full type safety
-- **✅ Memory Efficient**: Smart sampling prevents stack overflow on large datasets
+- **✅ Memory Efficient**: Contiguous array storage for large datasets
 
-#### Data Types
-- **Elevation**: Terrain height data with noise
-- **Temperature**: Thermal data with gradients  
-- **Pressure**: Atmospheric pressure variations
+#### Data Types Generated
+- **Elevation (Z)**: Terrain height using sine/cosine functions with noise
+- **Temperature (value1)**: Thermal data with gradients and noise
+- **Pressure (value2)**: Atmospheric pressure variations with noise  
+- **Humidity (value3)**: Clipped humidity values (0-100%) with noise
 
-#### Resolution Levels
-- **Low (1-10)**: Fast generation, basic detail
-- **Medium (11-20)**: Balanced speed/quality
-- **High (21+)**: Detailed data, slower generation
+#### Generation Characteristics
+- **Coordinate Range**: Latitude -33.6 to -33.3, Longitude -70.8 to -70.5 (Chile region)
+- **Grid-based**: Uses numpy meshgrid for uniform point distribution
+- **Scalable**: Generates from 1K to 100K+ points efficiently
 
 ### 🔧 Backend Implementation
 
 #### Python gRPC Server
-Located in `/backend/grpc_server.py`:
+Located in `/backend/grpc_server.py` - **Unified GeospatialService**:
 
 ```python
-def GetBatchDataColumnar(self, request, context):
-    """Get batch data in columnar format for efficient processing"""
-    columnar_data, generation_method = data_generator.generate_columnar_data(
-        bounds=bounds,
-        data_types=list(request.data_types),
-        max_points=request.max_points,
-        resolution=request.resolution or 20
+def GetColumnarData(self, request, context):
+    """Generate synthetic geospatial data in flat array format"""
+    # Generate columnar data using DataGenerator
+    columnar_data = self.data_generator.generate_columnar_data(
+        max_points=request.max_points
     )
     
-    response = geospatial_pb2.GetBatchDataColumnarResponse()
+    response = geospatial_pb2.GetColumnarDataResponse()
     response.total_count = len(columnar_data['x'])
-    response.generation_method = generation_method
     
-    chunk = response.columnar_data
-    chunk.id.extend(columnar_data['id'])
-    chunk.x.extend(columnar_data['x'])
-    chunk.y.extend(columnar_data['y'])
-    chunk.z.extend(columnar_data['z'])
-    chunk.id_value.extend(columnar_data['id_value'])
+    # Convert to flat array: [x1,y1,z1, x2,y2,z2, x3,y3,z3, ...]
+    flat_data = []
+    for i in range(len(columnar_data['x'])):
+        flat_data.extend([
+            columnar_data['x'][i],    # longitude
+            columnar_data['y'][i],    # latitude  
+            columnar_data['z'][i]     # elevation
+        ])
     
+    response.data.extend(flat_data)
     return response
 ```
 
 #### Protocol Buffer Definitions
-Located in `/protos/main_service.proto`:
+Located in `/protos/main_service.proto` - **Unified GeospatialService**:
 
 ```protobuf
-service MainService {
+service GeospatialService {
   // Simple examples for testing and learning
   rpc HelloWorld(HelloWorldRequest) returns (HelloWorldResponse);
   rpc EchoParameter(EchoParameterRequest) returns (EchoParameterResponse);
-  
-  // Geospatial data methods
-  rpc GetFeatures(GetFeaturesRequest) returns (GetFeaturesResponse);
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
-  rpc GetBatchDataColumnar(GetBatchDataRequest) returns (GetBatchDataColumnarResponse);
-  rpc GetBatchDataColumnarStreamed(GetBatchDataRequest) returns (stream ColumnarDataChunk);
+  
+  // Simplified data generation
+  rpc GetColumnarData(GetBatchDataRequest) returns (GetColumnarDataResponse);
   
   // CSV file processing methods
   rpc AnalyzeCsv(AnalyzeCsvRequest) returns (AnalyzeCsvResponse);
   rpc SendFile(SendFileRequest) returns (SendFileResponse);
   rpc GetLoadedDataStats(GetLoadedDataStatsRequest) returns (GetLoadedDataStatsResponse);
   
-  // Project management methods (NEW)
+  // Project management methods
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
   rpc GetProjects(GetProjectsRequest) returns (GetProjectsResponse);
   rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
   rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse);
   rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
+  
+  // File and dataset management
+  rpc CreateFile(CreateFileRequest) returns (CreateFileResponse);
+  rpc GetProjectFiles(GetProjectFilesRequest) returns (GetProjectFilesResponse);
+  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
+  rpc GetProjectDatasets(GetProjectDatasetsRequest) returns (GetProjectDatasetsResponse);
+  rpc AnalyzeCsvForProject(AnalyzeCsvForProjectRequest) returns (AnalyzeCsvForProjectResponse);
+  rpc ProcessDataset(ProcessDatasetRequest) returns (ProcessDatasetResponse);
+  rpc GetDatasetData(GetDatasetDataRequest) returns (GetDatasetDataResponse);
+  rpc DeleteDataset(DeleteDatasetRequest) returns (DeleteDatasetResponse);
 }
 ```
 
@@ -444,20 +452,21 @@ npm run test:simplified    # Test the simplified gRPC system
 - `routes/` - TanStack Router configuration
 
 ### Backend Structure (`/backend/`)
-- `grpc_server.py` - gRPC service implementation with columnar data support
-- `data_generator.py` - Numpy-based synthetic geospatial data generation (columnar format)
-- `database.py` - SQLite database with SQLModel ORM for project/file/dataset management
+- **`grpc_server.py`** - **Unified GeospatialService** with all gRPC method implementations
+- **`data_generator.py`** - **Streamlined numpy-based** synthetic data generation with flat array output
+- **`project_manager.py`** - **Centralized project management** - handles projects, files, datasets, and CSV processing
+- **`database.py`** - SQLite database with SQLModel ORM for persistent storage
 - `generated/` - Auto-generated Protocol Buffer files
 - `build_server.py` - PyInstaller build configuration
-- `requirements.txt` - Python dependencies (gRPC, numpy, protobuf, sqlmodel)
+- `requirements.txt` - Python dependencies (grpcio, numpy, pandas, sqlmodel)
 - `geospatial.db` - SQLite database file
 
 ### Configuration Files
 - **`protos/`** - **Protocol Buffer definitions directory**:
-  - `main_service.proto` - Main service combining all services (ENTRY POINT)
-  - `geospatial.proto` - Geospatial data types and messages (includes columnar format)
-  - `files.proto` - File processing service definitions
-  - `projects.proto` - Project management service definitions (NEW)
+  - **`main_service.proto`** - **Unified GeospatialService** definition (ENTRY POINT)
+  - **`geospatial.proto`** - Core geospatial data types, requests/responses (flat array format)
+  - **`files.proto`** - CSV file processing service definitions  
+  - **`projects.proto`** - Project and dataset management service definitions
 - `forge.config.ts` - Electron packaging and distribution settings (includes PyInstaller backend)
 - `backend/requirements.txt` - Python dependencies (grpcio>=1.73.0, numpy>=1.24.0)
 - `scripts/generate-protos.js` - Protocol buffer generation script
@@ -487,21 +496,23 @@ npm run test:simplified    # Test the simplified gRPC system
 
 ## Performance Optimization Features
 
-### Columnar Data Processing
-The application uses an **efficient columnar data format** optimized for large geospatial datasets:
+### Simplified Data Processing
+The application uses a **streamlined flat array data format** optimized for Protocol Buffer transmission:
 
-1. **🏗️ Columnar Structure**: Array-based data organization for memory efficiency
-   - **70% Memory Reduction**: Compared to object-based formats
-   - **Vectorized Operations**: Efficient processing of large arrays
-   - **Cache Friendly**: Better CPU cache utilization
+1. **🏗️ Flat Array Structure**: Single array data organization for transmission efficiency
+   - **Protocol Buffer Optimized**: Perfect fit for `repeated double` fields
+   - **Simple Parsing**: Easy iteration pattern `[x, y, z, x, y, z, ...]`
+   - **Memory Contiguous**: Single array allocation for better cache utilization
    
-2. **⚡ Streaming Architecture**: Chunked data delivery for ultra-large datasets
-   - **Chunk-based Processing**: 25K points per chunk
-   - **Real-time Progress**: Live progress updates during streaming
-   - **Memory Bounded**: Prevents memory exhaustion on large datasets
+2. **⚡ Unified Architecture**: Single service consolidates all backend functionality
+   - **Simplified Communication**: One gRPC service handles all operations
+   - **Centralized Management**: ProjectManager coordinates all data operations
+   - **Reduced Complexity**: Fewer moving parts, easier maintenance
 
-3. **🔄 Dual Processing Strategy**: Automatic selection based on dataset size
-   - **Columnar Streaming**: 100K-2M points with auto-generated API
+3. **🔄 Modular Organization**: Clean separation of concerns
+   - **DataGenerator**: Pure numpy-based synthetic data generation
+   - **ProjectManager**: CSV processing, project management, database operations
+   - **DatabaseManager**: SQLite with SQLModel ORM for persistence
 
 ### Auto-Generated gRPC System
 - **Type Safety**: Complete TypeScript integration across frontend and backend
@@ -509,17 +520,18 @@ The application uses an **efficient columnar data format** optimized for large g
 - **Performance**: Direct gRPC communication with Protocol Buffer efficiency
 - **Reliability**: Consistent API contracts and automatic error handling
 
-### Numpy Data Generation
+### Streamlined Data Generation
 - **High-performance**: Numpy arrays for fast mathematical operations
-- **Columnar Output**: Direct generation in efficient columnar format
-- **Multiple data types**: Elevation, temperature, pressure, noise, sine waves
-- **Scalable**: Generate 10K to 5M+ data points efficiently
+- **Flat Array Output**: Direct conversion to Protocol Buffer compatible format
+- **Multiple data types**: Elevation, temperature, pressure, humidity with noise
+- **Grid-based**: Uniform point distribution using numpy meshgrid
 
 ## Important Notes
 
 ### Core Architecture
 - **Auto-Generated API**: Use `window.autoGrpc.*` - all methods are type-safe and auto-generated
-- **Columnar Format**: All new development uses efficient columnar data format
+- **Unified Service**: Single `GeospatialService` consolidates all backend functionality
+- **Flat Array Format**: Data transmitted as `[x1,y1,z1, x2,y2,z2, ...]` for Protocol Buffer efficiency
 - **gRPC-Only**: All communication uses gRPC on port 50077 - no REST API
 - **IPC Security**: gRPC calls routed through Electron IPC for security (context isolation)
 - **Fixed Port**: gRPC server always uses port 50077 for consistency
@@ -555,42 +567,41 @@ The application uses an **efficient columnar data format** optimized for large g
 
 ## 🎯 Recent Architecture Updates
 
-### **Auto-Generated gRPC System Implementation**
+### **Simplified Backend Architecture Implementation**
 
-The application has been **completely modernized** with a full auto-generation system:
+The application has been **significantly simplified** with a unified backend approach:
 
-#### **What Was Added:**
-- ✅ **Auto-Generated API**: Complete gRPC system generated from Protocol Buffers
-- ✅ **Columnar Data Format**: Efficient array-based data structure for large datasets
-- ✅ **Type Safety**: Full TypeScript integration across frontend and backend
-- ✅ **Processing**: Columnar streaming 
-- ✅ **Memory Efficiency**: 70% memory reduction and stack overflow prevention
-
+#### **What Was Changed:**
+- ✅ **Unified Service**: Consolidated all functionality into single `GeospatialService`
+- ✅ **Flat Array Format**: Simplified data format `[x1,y1,z1, x2,y2,z2, ...]` for Protocol Buffer efficiency  
+- ✅ **Centralized Management**: `ProjectManager` handles all project, file, and dataset operations
+- ✅ **Streamlined Generation**: Simplified numpy-based data generation with flat array output
+- ✅ **Modular Organization**: Clean separation between `DataGenerator`, `ProjectManager`, and `DatabaseManager`
 
 #### **Key Benefits:**
-1. **Zero Maintenance**: No manual API code - everything auto-generated
-2. **Type Safety**: Complete TypeScript integration and error prevention
-3. **Performance**: 70% memory reduction with columnar format
-4. **Scalability**: Handles 5M+ points without UI freezing
-5. **Reliability**: Consistent API contracts and automatic error handling
+1. **Simplified Architecture**: Single service reduces complexity and maintenance overhead
+2. **Protocol Buffer Optimized**: Flat array format perfect for `repeated double` transmission
+3. **Centralized Logic**: All business logic consolidated in focused, modular classes
+4. **Easy Maintenance**: Fewer moving parts, clearer code organization
+5. **Type Safety**: Complete TypeScript integration maintained with auto-generated API
 
 #### **Usage Pattern:**
 ```typescript
-// Auto-generated API with full type safety
-const result = await window.autoGrpc.getBatchDataColumnar({
-  bounds: { northeast: {...}, southwest: {...} },
+// Simplified API with flat array format
+const result = await window.autoGrpc.getColumnarData({
   data_types: ['elevation'],
-  max_points: 1000000,
-  resolution: 20
+  max_points: 100000
 });
 
-// Access columnar data efficiently
-const points = result.columnar_data.x.length;
-const coordinates = result.columnar_data.x.map((x, i) => ({
-  lng: x,
-  lat: result.columnar_data.y[i], 
-  value: result.columnar_data.z[i]
-}));
+// Parse flat array efficiently
+const points = [];
+for (let i = 0; i < result.data.length; i += 3) {
+  points.push({
+    x: result.data[i],     // longitude
+    y: result.data[i + 1], // latitude  
+    z: result.data[i + 2]  // elevation
+  });
+}
 ```
 
-This modernization provides maximum performance and reliability while dramatically reducing maintenance overhead.
+This simplification provides maximum maintainability and clarity while preserving performance and type safety.

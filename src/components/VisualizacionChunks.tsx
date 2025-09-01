@@ -3,49 +3,31 @@ import * as echarts from 'echarts';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
 
-type ChildProcessStats = {
-  totalProcessed: number;
-  avgValue: number;
-  minValue: number;
-  maxValue: number;
-  dataTypes: string[];
-  processingTime: number;
-  pointsPerSecond: number;
+// Type definitions
+type EChartsParams = {
+  data: [number, number, number] | Record<string, unknown>;
 };
 
-type ChartConfig = {
-  type: string;
-  data: Array<[number, number, number]>;
-  metadata: {
-    totalPoints: number;
-    chartPoints: number;
-    samplingRatio: number;
-    bounds: []
-  };
+type GetColumnarDataResponse = {
+  data: number[];
+  total_count: number;
+  bounds: { [key: string]: { min_value: number; max_value: number } };
 };
 
-interface ChildProcessVisualizationProps {
+interface VisualizationProps {
   title?: string;
-  maxPoints?: number;
   autoResize?: boolean;
 }
 
-export function ChildProcessVisualization({ 
-  title = "🚀 Node.js Child Process Visualization", 
-  maxPoints = 1000000,
+export function VisualizacionDatos({ 
+  title = "Geospatial Data Visualization", 
   autoResize = true 
-}: ChildProcessVisualizationProps) {
+}: VisualizationProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<echarts.ECharts | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [processingStats, setProcessingStats] = useState<ChildProcessStats | null>(null);
-  const [chartConfig, setChartConfig] = useState<ChartConfig | null>(null);
-  const [progress, setProgress] = useState({
-    processed: 0,
-    total: 0,
-    percentage: 0,
-    phase: 'ready'
-  });
+  const [totalPoints, setTotalPoints] = useState(0);
+  const [currentBounds, setCurrentBounds] = useState<{x: [number, number], y: [number, number], z: [number, number]} | null>(null);
 
   // Initialize chart
   useEffect(() => {
@@ -70,11 +52,11 @@ export function ChildProcessVisualization({
       },
       tooltip: {
         trigger: 'item',
-        formatter: function(params: any) {
+        formatter: function(params: EChartsParams) {
           if (Array.isArray(params.data)) {
             const [lng, lat, value] = params.data;
             return `
-              <strong>Child Process Point</strong><br/>
+              <strong>Point Data</strong><br/>
               Longitude: ${lng.toFixed(6)}<br/>
               Latitude: ${lat.toFixed(6)}<br/>
               Value: ${value.toFixed(2)}
@@ -101,22 +83,46 @@ export function ChildProcessVisualization({
         nameLocation: 'middle',
         nameGap: 30
       },
+      dataZoom: [
+        {
+          type: 'inside',
+          xAxisIndex: 0,
+          filterMode: 'none'
+        },
+        {
+          type: 'inside', 
+          yAxisIndex: 0,
+          filterMode: 'none'
+        },
+        {
+          type: 'slider',
+          show: true,
+          xAxisIndex: 0,
+          bottom: '10%'
+        },
+        {
+          type: 'slider',
+          show: true,
+          yAxisIndex: 0,
+          right: '10px',
+          width: '20px'
+        }
+      ],
+      toolbox: {
+        feature: {
+          dataZoom: {
+            yAxisIndex: 'none'
+          },
+          restore: {}
+        }
+      },
       series: [{
         type: 'scatter',
-        large: true,
-        largeThreshold: 50000,
         data: [],
         symbolSize: 3,
         itemStyle: {
-          color: function(params: any) {
-            const value = params.data[2];
-            // Dynamic color mapping based on actual data range
-            const minVal = 50;  // Approximate min from our simplified generation
-            const maxVal = 150; // Approximate max from our simplified generation
-            const normalized = Math.max(0, Math.min(1, (value - minVal) / (maxVal - minVal)));
-            const hue = (1 - normalized) * 240; // Blue (240) to Red (0)
-            return `hsl(${hue}, 70%, 60%)`;
-          }
+          opacity: 0.8,
+          borderWidth: 0
         },
         emphasis: {
           itemStyle: {
@@ -151,138 +157,133 @@ export function ChildProcessVisualization({
   }, [title, autoResize]);
 
   // Update chart with new data
-  const updateChart = useCallback((config: ChartConfig) => {
+  const updateChart = useCallback((flatData: number[], bounds: {x: [number, number], y: [number, number], z: [number, number]}, pointCount: number) => {
     const chart = chartInstanceRef.current;
-    if (!chart || chart.isDisposed() || !config || !config.data) return;
+    if (!chart || chart.isDisposed() || !flatData.length) return;
 
-
-    const metadata = config.metadata || {};
-    const bounds = metadata.bounds || { lng: [0, 0], lat: [0, 0], value: [0, 0] };
+    // Convert flat array [x1,y1,z1,x2,y2,z2,...] to tuples for ECharts
+    const tupleData: Array<[number, number, number]> = [];
+    for (let i = 0; i < flatData.length; i += 3) {
+      tupleData.push([flatData[i], flatData[i+1], flatData[i+2]]);
+    }
 
     chart.setOption({
       title: {
-        text: `${title} (${(metadata.chartPoints || 0).toLocaleString()}/${(metadata.totalPoints || 0).toLocaleString()} points)`,
-        subtext: `Child Process Sampling: ${((metadata.samplingRatio || 0) * 100).toFixed(1)}%`
+        text: `${title} (${pointCount.toLocaleString()} points)`
+      },
+      visualMap: {
+        min: bounds.z[0],
+        max: bounds.z[1],
+        dimension: 2, // Use the third dimension (Z value) for color mapping
+        orient: 'vertical',
+        right: 10,
+        top: 'center',
+        text: ['HIGH', 'LOW'],
+        calculable: true,
+        inRange: {
+          color: ['#1e40af', '#3b82f6', '#60a5fa', '#93c5fd', '#dbeafe', '#fef3c7', '#fcd34d', '#f59e0b', '#d97706', '#b45309']
+        },
+        textStyle: {
+          color: '#374151'
+        }
       },
       xAxis: {
-        min: bounds.lng[0],
-        max: bounds.lng[1]
+        min: bounds.x[0],
+        max: bounds.x[1]
       },
       yAxis: {
-        min: bounds.lat[0],
-        max: bounds.lat[1]
+        min: bounds.y[0],
+        max: bounds.y[1]
+      },
+      dataZoom: [
+        {
+          type: 'inside',
+          xAxisIndex: 0,
+          filterMode: 'none'
+        },
+        {
+          type: 'inside', 
+          yAxisIndex: 0,
+          filterMode: 'none'
+        },
+        {
+          type: 'slider',
+          show: true,
+          xAxisIndex: 0,
+          bottom: '10%'
+        },
+        {
+          type: 'slider',
+          show: true,
+          yAxisIndex: 0,
+          right: '10px',
+          width: '20px'
+        }
+      ],
+      toolbox: {
+        feature: {
+          dataZoom: {
+            yAxisIndex: 'none'
+          },
+          restore: {}
+        }
       },
       series: [{
+        type: 'scatter',
+        data: tupleData,
+        symbolSize: pointCount > 50000 ? 2 : 3,
+        itemStyle: {
+          opacity: 0.8,
+          borderWidth: 0
+        },
         large: true,
-        type: 'scatter', // Explicitly set series type
-        data: config.data || [],
-        symbolSize: (metadata.chartPoints || 0) > 50000 ? 2 : 3
+        progressive: 100000,
+        progressiveThreshold: 20000,
+        progressiveChunkMode: 'sequential'
       }]
-    }, true);
+    });
 
-    toast.success('Child Process Chart Updated!', {
-      description: `Visualizing ${(metadata.chartPoints || 0).toLocaleString()} points from ${(metadata.totalPoints || 0).toLocaleString()} total`
+    toast.success('Chart Updated!', {
+      description: `Visualizing ${pointCount.toLocaleString()} points`
     });
   }, [title]);
 
-  // Test child process with different sizes
-  const testChildProcess = useCallback(async (testMaxPoints: number) => {
+  
+
+  // Test with flat array format
+  const testColumnarData = useCallback(async (testMaxPoints: number) => {
     setIsLoading(true);
-    setProgress({ processed: 0, total: 0, percentage: 0, phase: 'starting_child_process' });
 
     try {
-
-
-      // Use the simplified columnar streaming API 
-      const result = await window.autoGrpc.getBatchDataColumnar({
+      const result = await window.autoGrpc.getColumnarData({
         max_points: testMaxPoints
-      }, (chunk: any) => {
-        // Update progress based on chunk information
-        if (chunk.total_chunks && chunk.chunk_number !== undefined) {
-          const percentage = ((chunk.chunk_number + 1) / chunk.total_chunks) * 100;
-          setProgress({
-            processed: chunk.points_in_chunk || 0,
-            total: chunk.total_points || testMaxPoints,
-            percentage: percentage,
-            phase: `worker_processing_chunk_${chunk.chunk_number + 1}_of_${chunk.total_chunks}`
-          });
-        }
-      });
+      }) as GetColumnarDataResponse;
 
-      
-      // Process all chunks to collect ALL points without sampling
-      let totalProcessed = 0;
-      const allChartData: Array<[number, number, number]> = [];
-      
-      
-      // Carga todos los puntos de los chunks
-      result.forEach((chunk: any, chunkIndex: number) => {
-        if (chunk.x && chunk.y && chunk.z) {
-          const chunkSize = chunk.x.length;
-          totalProcessed += chunkSize;
-          
-          // Agrega todos los puntos al chart (no extra array operations)
-          for (let i = 0; i < chunk.x.length; i++) {
-            allChartData.push([chunk.x[i], chunk.y[i], chunk.z[i]]);
-          }
-          
-          // Update progress during chunk processing
-          setProgress({
-            processed: totalProcessed,
-            total: testMaxPoints,
-            percentage: (totalProcessed / testMaxPoints) * 100,
-            phase: `processing_chunk_${chunkIndex + 1}_of_${result.length}`
-          });
-        }
-      });
-      
-      const endTime = performance.now();
-      const duration = (endTime - Date.now() + 5000) / 1000; // Rough estimate
-      const pointsPerSecond = Math.round(totalProcessed / Math.max(duration, 0.001));
-      
-
-      // Usamos bounds fijos (Simulamos que los obtenemos del backend con pandas)
-      const chartBounds = {
-        lng: [-70.8, -70.5],  
-        lat: [-33.6, -33.3],   
-        value: [50, 150]      
+      // Extract bounds from gRPC response
+      const bounds = {
+        x: [result.bounds['x']?.min_value ?? 0, result.bounds['x']?.max_value ?? 0] as [number, number],
+        y: [result.bounds['y']?.min_value ?? 0, result.bounds['y']?.max_value ?? 0] as [number, number],
+        z: [result.bounds['z']?.min_value ?? 0, result.bounds['z']?.max_value ?? 0] as [number, number]
       };
 
-      // Create chart config with ALL points (no sampling)
-      const chartConfig: ChartConfig = {
-        type: 'scatter',
-        data: allChartData,
-        metadata: {
-          totalPoints: totalProcessed,
-          chartPoints: allChartData.length,
-          samplingRatio: 1.0, // No sampling - showing all points!
-          bounds: chartBounds
-        }
-      };
-      
-      setChartConfig(chartConfig);
-      updateChart(chartConfig);
+      setTotalPoints(result.total_count);
+      setCurrentBounds(bounds);
+      updateChart(result.data, bounds, result.total_count);
 
-      setProgress({ 
-        processed: totalProcessed, 
-        total: totalProcessed, 
-        percentage: 100, 
-        phase: 'complete' 
-      });
-
-      toast.success('🎉 Million Point Visualization Complete!', {
-        description: `${totalProcessed.toLocaleString()} points displayed in chart (NO sampling!) at ${pointsPerSecond.toLocaleString()} points/sec`
+      toast.success('Chart Updated!', {
+        description: `${result.total_count.toLocaleString()} points loaded`
       });
 
     } catch (error) {
-      toast.error('Subprocess test failed', {
+      toast.error('Failed to load data', {
         description: error instanceof Error ? error.message : 'Unknown error'
       });
-      setProgress(prev => ({ ...prev, phase: 'error' }));
     } finally {
       setIsLoading(false);
     }
   }, [updateChart]);
+
+
 
   // Test sizes for child process
   const testSizes = [1000, 5000, 10000, 25000, 50000, 100000,500000];
@@ -292,21 +293,21 @@ export function ChildProcessVisualization({
       {/* Controls */}
       <div className="flex flex-wrap gap-3 items-center justify-between p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border">
         <div>
-          <h3 className="text-lg font-semibold text-gray-800">🚀 Simplified Geospatial Data Visualization</h3>
+          <h3 className="text-lg font-semibold text-gray-800">Geospatial Data Visualization</h3>
           <p className="text-sm text-gray-600">
-            High-performance visualization with flat data structure: id, x, y, z, id_value, value1, value2, value3
+            Displaying coordinate data with dynamic bounds from backend
           </p>
         </div>
         
         <div className="flex flex-wrap gap-2">
           {testSizes.map(size => (
             <Button
-              key={size}
-              onClick={() => testChildProcess(size)}
+              key={`columnar-${size}`}
+              onClick={() => testColumnarData(size)}
               disabled={isLoading}
               size="sm"
-              variant={size === maxPoints ? "default" : "outline"}
-              className="bg-green-600 hover:bg-green-700 text-white"
+              variant="default"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               {size.toLocaleString()}
             </Button>
@@ -314,59 +315,8 @@ export function ChildProcessVisualization({
         </div>
       </div>
 
-      {/* Progress */}
-      {(isLoading || progress.percentage > 0) && (
-        <div className="p-4 bg-white rounded-lg border shadow-sm">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-medium text-gray-700">
-              Child Process: {progress.phase.replace(/_/g, ' ')}
-            </span>
-            <span className="text-sm text-gray-500">
-              {progress.percentage.toFixed(1)}%
-            </span>
-          </div>
-          
-          <div className="w-full bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-gradient-to-r from-green-500 to-blue-600 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${Math.min(progress.percentage, 100)}%` }}
-            />
-          </div>
-          
-          {progress.total > 0 && (
-            <p className="text-xs text-gray-500 mt-1">
-              {progress.processed.toLocaleString()} / {progress.total.toLocaleString()} points
-            </p>
-          )}
-        </div>
-      )}
 
-      {/* Statistics */}
-      {processingStats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="p-3 bg-white rounded-lg border text-center">
-            <div className="text-2xl font-bold text-green-600">
-              {processingStats.totalProcessed.toLocaleString()}
-            </div>
-            <div className="text-xs text-gray-500">Points Processed</div>
-          </div>
-          
-          <div className="p-3 bg-white rounded-lg border text-center">
-            <div className="text-2xl font-bold text-blue-600">
-              {processingStats.pointsPerSecond.toLocaleString()}
-            </div>
-            <div className="text-xs text-gray-500">Points/sec</div>
-          </div>
-          
-          <div className="p-3 bg-white rounded-lg border text-center">
-            <div className="text-2xl font-bold text-purple-600">
-              {processingStats.avgValue}
-            </div>
-            <div className="text-xs text-gray-500">Avg Value</div>
-          </div>
-          
-        </div>
-      )}
+
 
       {/* Chart */}
       <div className="relative">
@@ -376,20 +326,20 @@ export function ChildProcessVisualization({
           style={{ height: '500px' }}
         />
         
-        {chartConfig && (
+        {totalPoints > 0 && (
           <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs">
-            Child Process: {chartConfig.metadata.chartPoints.toLocaleString()} points displayed
+            {totalPoints.toLocaleString()} points
           </div>
         )}
       </div>
 
       {/* Chart Info */}
-      {chartConfig && (
+      {totalPoints > 0 && currentBounds && (
         <div className="text-sm text-gray-600 space-y-1">
-          <p><strong>Total Processed:</strong> {(chartConfig.metadata?.totalPoints || 0).toLocaleString()}</p>
-          <p><strong>Chart Points:</strong> {(chartConfig.metadata?.chartPoints || 0).toLocaleString()}</p>
-          <p><strong>Sampling Ratio:</strong> {((chartConfig.metadata?.samplingRatio || 0) * 100).toFixed(1)}%</p>
-          <p><strong>Value Range:</strong> {(chartConfig.metadata?.bounds?.value?.[0] || 0).toFixed(2)} - {(chartConfig.metadata?.bounds?.value?.[1] || 0).toFixed(2)}</p>
+          <p><strong>Points:</strong> {totalPoints.toLocaleString()}</p>
+          <p><strong>X Range:</strong> {currentBounds.x[0].toFixed(3)} to {currentBounds.x[1].toFixed(3)}</p>
+          <p><strong>Y Range:</strong> {currentBounds.y[0].toFixed(3)} to {currentBounds.y[1].toFixed(3)}</p>
+          <p><strong>Z Range:</strong> {currentBounds.z[0].toFixed(2)} to {currentBounds.z[1].toFixed(2)}</p>
         </div>
       )}
     </div>

@@ -525,6 +525,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
           }
         },
         large: true,
+        largeThreshold: 50000,
         progressive: 100000,
         progressiveThreshold: 20000,
         progressiveChunkMode: 'sequential',

@@ -212,37 +212,10 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
             context.set_details(f"GetLoadedDataStats failed: {str(e)}")
             return response
     
-    def GetBatchDataColumnar(self, request, context):
-        """
-        Get batch data in columnar format for efficient processing
-        
-        @param request: GetBatchDataRequest with bounds, data types, max points, and resolution
-        @param context: gRPC context
-        @returns: GetBatchDataColumnarResponse with columnar data chunks
-        """
-        try:
-            return self.data_generator.get_batch_data_columnar(request, context)
-        except Exception as e:
-            print(f"❌ Error in GetBatchDataColumnar: {e}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(f"Columnar batch data error: {str(e)}")
-            return geospatial_pb2.GetBatchDataColumnarResponse()
+    def GetColumnarData(self, request, context):
+        return self.data_generator.get_columnar_data(request, context)
     
 
-    def GetBatchDataColumnarStreamed(self, request, context):
-        """
-        Stream batch data in columnar format with chunking
-        
-        @param request: GetBatchDataRequest with bounds, data types, max points, and resolution
-        @param context: gRPC context
-        @yields: ColumnarDataChunk messages
-        """
-        try:
-            yield from self.data_generator.get_batch_data_columnar_streamed(request, context)
-        except Exception as e:
-            print(f"❌ Error in GetBatchDataColumnarStreamed: {e}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(f"Columnar streamed data error: {str(e)}")
 
     # ---------- Manejo de proyectos ----------
     # Crud basico,usamos los métodos definidos en project_manager.py para crear un proyecto

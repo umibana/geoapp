@@ -54,8 +54,18 @@ class DataGenerator:
         if seed is not None:
             np.random.seed(seed)  
         else:
-            ## Si no hay seed, usamos un seed aleatorio
-            np.random.seed()
+            ## Si no hay seed, usamos un seed aleatorio basado en tiempo
+            import time
+            random_seed = int(time.time() * 1000000) % 2**32
+            np.random.seed(random_seed)
+
+        # Agregamos variación aleatoria a las coordenadas x,y
+        lat_variation = np.random.uniform(-0.01, 0.01, actual_count)  # ±0.01 grados lat
+        lng_variation = np.random.uniform(-0.01, 0.01, actual_count)  # ±0.01 grados lng
+        
+        # Aplicamos la variación sin clipear para permitir bounds dinámicos
+        flat_lat = flat_lat + lat_variation
+        flat_lng = flat_lng + lng_variation
 
         # Generamos valores de prueba con numpy
         z_values = 100 + 50 * np.sin(flat_lat * 0.1) * np.cos(flat_lng * 0.1)
@@ -85,103 +95,47 @@ class DataGenerator:
         
         return columnar_data
     
-    # Conseguir datos en formato columnar
-    # Se trata un solo chunk, para no streaming (Y reutilizar codigo de streaming)
-    def get_batch_data_columnar(self, request, context=None) -> geospatial_pb2.GetBatchDataColumnarResponse:
+
+
+    def get_columnar_data(self, request, context=None) -> geospatial_pb2.GetColumnarDataResponse:
         try:
-            
-            # Usamos el generador de datos para crear los datos columnar
+            # Generate the columnar data first
             columnar_data = self.generate_columnar_data(
                 max_points=request.max_points
             )
             
-            # Creamos la respuesta de gRPC
-            response = geospatial_pb2.GetBatchDataColumnarResponse()
+            # Create response
+            response = geospatial_pb2.GetColumnarDataResponse()
             response.total_count = len(columnar_data['x'])
             
-            # Creamos el chunk de datos columnar (un solo chunk para no streaming)
-            chunk = response.columnar_data
-            chunk.id.extend(columnar_data['id'])
-            chunk.x.extend(columnar_data['x'])
-            chunk.y.extend(columnar_data['y'])
-            chunk.z.extend(columnar_data['z'])
-            chunk.id_value.extend(columnar_data['id_value'])
-            chunk.chunk_number = 0
-            chunk.total_chunks = 1
-            chunk.points_in_chunk = len(columnar_data['x'])
-            chunk.is_final_chunk = True
+            # Create flat array: [x1,y1,z1, x2,y2,z2, x3,y3,z3, ...]
+            flat_data = []
+            for i in range(len(columnar_data['x'])):
+                flat_data.extend([
+                    columnar_data['x'][i],
+                    columnar_data['y'][i], 
+                    columnar_data['z'][i]
+                ])
             
-            # Agregamos las columnas adicionales de valores (Repeated en Protocol Buffer)
-            additional_keys = ['value1', 'value2', 'value3']
-            for key in additional_keys:
-                if key in columnar_data:
-                    double_array = geospatial_pb2.DoubleArray()
-                    double_array.values.extend(columnar_data[key])
-                    chunk.additional_data[key].CopyFrom(double_array)
+            response.data.extend(flat_data)
+            
+            # Calculamos los limites para el gráfico y los seteamos en la response
+            # 
+            response.bounds['x'].min_value = np.min(columnar_data['x'])
+            response.bounds['x'].max_value = np.max(columnar_data['x'])
+            
+            response.bounds['y'].min_value = np.min(columnar_data['y'])
+            response.bounds['y'].max_value = np.max(columnar_data['y'])
+            
+            response.bounds['z'].min_value = np.min(columnar_data['z'])
+            response.bounds['z'].max_value = np.max(columnar_data['z'])
             
             return response
             
         except Exception as e:
-            print(f"❌ Error en get_batch_data_columnar: {e}")
+            print(f"❌ Error en get_batch_data_flat: {e}")
             if context:
                 context.set_code(grpc.StatusCode.INTERNAL)
-                context.set_details(f"Error de datos en formato columnar: {str(e)}")
-            return geospatial_pb2.GetBatchDataColumnarResponse()
+                context.set_details(f"Error de datos en formato flat: {str(e)}")
+            return geospatial_pb2.GetColumnarDataResponse()
     
-    # Conseguir datos en formato columnar streaming
-    # Se trata varios chunks, para streaming
-    def get_batch_data_columnar_streamed(self, request, context=None) -> Iterator[geospatial_pb2.ColumnarDataChunk]:
-
-        try:
-            
-            # Usamos el generador de datos para crear los datos columnar
-            columnar_data = self.generate_columnar_data(
-                max_points=request.max_points
-            )
-            
-            total_points = len(columnar_data['x'])
-            # Definimos el tamaño de los chunks (25K puntos por chunk, ajustable)
-            chunk_size = 25000 
-            total_chunks = (total_points + chunk_size - 1) // chunk_size
-            
-            print(f"🔄 Streaming {total_points} puntos en {total_chunks} chunks de {chunk_size} cada uno")
-            
-            # Streaming de datos en chunks
-            for chunk_index in range(total_chunks):
-                start_idx = chunk_index * chunk_size
-                end_idx = min(start_idx + chunk_size, total_points)
-                
-                # Creamos el chunk
-                chunk = geospatial_pb2.ColumnarDataChunk()
-                chunk.chunk_number = chunk_index
-                chunk.total_chunks = total_chunks
-                chunk.points_in_chunk = end_idx - start_idx
-                chunk.is_final_chunk = (chunk_index == total_chunks - 1)
-                # Agregamos los datos para este chunk
-                chunk.id.extend(columnar_data['id'][start_idx:end_idx])
-                chunk.x.extend(columnar_data['x'][start_idx:end_idx])
-                chunk.y.extend(columnar_data['y'][start_idx:end_idx])
-                chunk.z.extend(columnar_data['z'][start_idx:end_idx])
-                chunk.id_value.extend(columnar_data['id_value'][start_idx:end_idx])
-                
-                # Agregamos las columnas adicionales de valores (Repeated en Protocol Buffer)
-                additional_keys = ['value1', 'value2', 'value3']
-                for key in additional_keys:
-                    if key in columnar_data:
-                        double_array = geospatial_pb2.DoubleArray()
-                        double_array.values.extend(columnar_data[key][start_idx:end_idx])
-                        chunk.additional_data[key].CopyFrom(double_array)
-                # Usamos yield para streaming
-                yield chunk
-                
-                # Pausa entre chunks para evitar sobrecargar la memoria
-                if chunk_index < total_chunks - 1:
-                    time.sleep(0.001)  # 1ms de pausa
-            
-            print(f"✅ get_batch_data_columnar_streamed terminado, streaming de {total_points} puntos en {total_chunks} chunks")
-            
-        except Exception as e:
-            print(f"❌ Error en get_batch_data_columnar_streamed: {e}")
-            if context:
-                context.set_code(grpc.StatusCode.INTERNAL)
-                context.set_details(f"Error de datos en formato columnar streaming: {str(e)}")

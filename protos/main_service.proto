@@ -16,7 +16,7 @@ service GeospatialService {
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
   
   // Formato columnar para datos grandes
-  rpc GetBatchDataColumnar(GetBatchDataRequest) returns (GetBatchDataColumnarResponse);
+  rpc GetColumnarData(GetBatchDataRequest) returns (GetColumnarDataResponse);
   
   // Procesamiento de archivos CSV
   rpc AnalyzeCsv(AnalyzeCsvRequest) returns (AnalyzeCsvResponse);

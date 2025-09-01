@@ -3,44 +3,6 @@ syntax = "proto3";
 package geospatial;
 
 import "files.proto";
-
-// =============================================================================
-// TIPOS DE DATOS COMUNES
-// =============================================================================
-
-message Coordinate {
-  double latitude = 1;
-  double longitude = 2;
-  optional double altitude = 3;
-}
-
-message BoundingBox {
-  Coordinate northeast = 1;
-  Coordinate southwest = 2;
-}
-
-
-
-message DataPoint {
-  string id = 1;
-  Coordinate location = 2;
-  double value = 3;
-  string unit = 4;
-  int64 timestamp = 5;
-  map<string, string> metadata = 6;
-}
-
-// Mensajes de formato de datos optimizados
-message OptimizedDataPoint {
-  string id = 1;
-  float latitude = 2;    // float32 en lugar de double
-  float longitude = 3;   // float32 en lugar de double
-  float altitude = 4;    // float32 en lugar de double
-  float value = 5;       // float32 en lugar de double
-  string unit = 6;
-  int64 timestamp = 7;
-}
-
 // =============================================================================
 // SOLICITUDES/RESPUESTAS DEL SERVICIO PRINCIPAL
 // =============================================================================
@@ -76,57 +38,30 @@ message HealthCheckResponse {
 }
 
 // =============================================================================
-// SOLICITUDES/RESPUESTAS DEL SERVICIO GEOESPACIAL
+// Formato para entregar datos para visualización
+// En este caso, es para datos en dos dimensiones: x,y. z es el valor de la variable.
 // =============================================================================
 
+// Lo que envia el frontend para obtener datos
+// Se recibe el dato que se quiere como z (data_types)
+// el número de puntos máximos a obtener (max_points)
 
 message GetBatchDataRequest {
-  BoundingBox bounds = 1;
   repeated string data_types = 2;
   int32 max_points = 3;
 }
-
-message GetBatchDataResponse {
-  repeated DataPoint data_points = 1;
-  int32 total_count = 2;
+// Establesco los limites para el gráfico
+message Bounds {
+  double max_value = 1;
+  double min_value = 2;
 }
 
-message GetBatchDataOptimizedResponse {
-  repeated OptimizedDataPoint data_points = 1;
-  int32 total_count = 2;
+message GetColumnarDataResponse {
+  repeated double data = 1;  // Array con posiciones: [x1,y1,z1, x2,y2,z2, x3,y3,z3, ...]
+  int32 total_count = 2;     // Numéro de puntos
+  // Uso map para poder después establecer el limite del valor, por ejemplo bounds["x"]
+  // Podría usar repeated pero tendria que entrar con indices (bounds[0])
+  map<string, Bounds> bounds = 3; 
+  // Puedo agregar más datos...
+
 }
-
-// =============================================================================
-// FORMATO COLUMNAR PARA DATOS MASIVOS
-// =============================================================================
-
-// Nuevo formato columnar para procesamiento eficiente de datasets masivos
-message ColumnarDataChunk {
-  repeated string id = 1;                    // Point IDs
-  repeated double x = 2;                     // X coordinates (longitude)
-  repeated double y = 3;                     // Y coordinates (latitude)  
-  repeated double z = 4;                     // Z values (main value like elevation)
-  repeated string id_value = 5;              // ID value column
-  map<string, DoubleArray> additional_data = 6;  // Dynamic additional columns (temperature, pressure, etc.)
-  int32 chunk_number = 7;
-  int32 total_chunks = 8;
-  int32 points_in_chunk = 9;
-  bool is_final_chunk = 10;
-}
-
-// Helper message for dynamic double arrays
-message DoubleArray {
-  repeated double values = 1;
-}
-
-// Helper message for dynamic string arrays  
-message StringArray {
-  repeated string values = 1;
-}
-
-// Response with new columnar format
-message GetBatchDataColumnarResponse {
-  ColumnarDataChunk columnar_data = 1;
-  int32 total_count = 2;
-}
-
