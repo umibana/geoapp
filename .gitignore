@@ -111,3 +111,5 @@ src/grpc-auto/
 *.db
 backend/__pycache__/**
 backend/__pycache__/**/**
+**.db.wal
+**.wal

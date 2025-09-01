@@ -1,391 +1,42 @@
 #!/usr/bin/env python
 """
-Project Manager Module  
-Handles project management and CSV processing operations
+Módulo de gestión de proyectos
+Maneja operaciones de proyectos y archivos CSV usando DuckDB
 """
 
 import time
-import pandas as pd
-import numpy as np
-import csv
-import io
-from typing import Iterator, List, Tuple, Dict, Any
+import json
+import os
+from pathlib import Path
+from typing import List, Dict, Any
 
-# Import protobuf types
-from generated import files_pb2
+# Importar tipos protobuf
 from generated import projects_pb2
 
 
 class ProjectManager:
-    """Manager for projects and CSV file operations"""
+    """Gestor de proyectos y operaciones con archivos CSV"""
     
     def __init__(self, db_manager):
         self.db = db_manager
-        print("📁 ProjectManager initialized")
+        print("📁 ProjectManager inicializado")
     
-    # ========== CSV Processing Methods ==========
-    
-    def analyze_csv(self, file_path: str, file_name: str, rows_to_analyze: int = 1000, save_to_sql: bool = False) -> files_pb2.AnalyzeCsvResponse:
-        """
-        Enhanced CSV analysis using pandas describe() for comprehensive statistical analysis
-        
-        Args:
-            file_path: Path to the CSV file
-            file_name: Name of the file
-            rows_to_analyze: Number of rows to analyze for statistics (default: 1000 for better stats)
-            save_to_sql: Whether to save the analyzed data to SQL database
-        """
-        try:
-            import os
-            from pathlib import Path
-            
-            # Get file size
-            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-            
-            # Read the entire dataset first to get accurate statistics
-            print(f"📊 Reading CSV file: {file_path}")
-            df_full = pd.read_csv(file_path)
-            total_rows = len(df_full)
-            total_columns = len(df_full.columns)
-            
-            # Use a sample for detailed analysis if the file is very large
-            if rows_to_analyze < total_rows and rows_to_analyze > 0:
-                df_sample = df_full.sample(n=min(rows_to_analyze, total_rows), random_state=42)
-                print(f"📊 Using sample of {len(df_sample)} rows for detailed analysis")
-            else:
-                df_sample = df_full
-                print(f"📊 Analyzing all {total_rows} rows")
-            
-            response = files_pb2.AnalyzeCsvResponse()
-            response.success = True
-            response.total_rows = total_rows
-            response.total_columns = total_columns
-            response.file_size_mb = file_size_mb
-            response.encoding = "utf-8"  # Could be enhanced to detect encoding
-            
-            # Get comprehensive statistics using pandas describe()
-            numeric_describe = df_sample.select_dtypes(include=[np.number]).describe()
-            # For categorical data, we'll get basic stats manually below
-            
-            # Track column types
-            numeric_columns = []
-            categorical_columns = []
-            auto_mapping = {}
-            
-            # Analyze each column
-            for col_name in df_full.columns:
-                column_info = response.columns.add()
-                column_info.name = str(col_name)
-                
-                # Determine if column is numeric or categorical
-                is_numeric = col_name in numeric_describe.columns
-                column_info.type = "number" if is_numeric else "string"
-                
-                if is_numeric:
-                    numeric_columns.append(str(col_name))
-                    
-                    # Add comprehensive statistics from describe()
-                    if col_name in numeric_describe.columns:
-                        col_stats = numeric_describe[col_name]
-                        stats = column_info.stats
-                        stats.count = float(col_stats.get('count', 0))
-                        stats.mean = float(col_stats.get('mean', 0))
-                        stats.std = float(col_stats.get('std', 0))
-                        stats.min = float(col_stats.get('min', 0))
-                        stats.q25 = float(col_stats.get('25%', 0))
-                        stats.q50 = float(col_stats.get('50%', 0))  # median
-                        stats.q75 = float(col_stats.get('75%', 0))
-                        stats.max = float(col_stats.get('max', 0))
-                        stats.null_count = int(df_sample[col_name].isnull().sum())
-                        stats.unique_count = int(df_sample[col_name].nunique())
-                else:
-                    categorical_columns.append(str(col_name))
-                    
-                    # Add basic statistics for categorical columns
-                    stats = column_info.stats
-                    stats.count = float(df_sample[col_name].count())
-                    stats.null_count = int(df_sample[col_name].isnull().sum())
-                    stats.unique_count = int(df_sample[col_name].nunique())
-                
-                # Add sample values (first 5 non-null unique values)
-                sample_values = df_sample[col_name].dropna().unique()[:5]
-                column_info.sample_values.extend([str(val) for val in sample_values])
-                
-                # Auto-detect mappings based on column names (case-insensitive)
-                col_lower = str(col_name).lower()
-                if any(x in col_lower for x in ['site_id', 'station_id', 'point_id', 'sample_id']) or col_lower.endswith('_id'):
-                    auto_mapping['id'] = str(col_name)
-                    column_info.is_required = True
-                elif any(x in col_lower for x in ['longitude', 'lng', 'long']) or col_lower in ['x', 'lon']:
-                    auto_mapping['x'] = str(col_name)
-                    column_info.is_required = True
-                elif any(x in col_lower for x in ['latitude', 'lat']) and not any(k in col_lower for k in ['year', 'yr']):
-                    auto_mapping['y'] = str(col_name)
-                    column_info.is_required = True
-                elif any(x in col_lower for x in ['elevation', 'height', 'altitude', 'elev']) or col_lower in ['z']:
-                    auto_mapping['z'] = str(col_name)
-                    column_info.is_required = True
-                elif any(x in col_lower for x in ['depth', 'profundidad']):
-                    auto_mapping['depth'] = str(col_name)
-                    column_info.is_required = True
-                else:
-                    column_info.is_required = False
-            
-            # Set column type lists
-            response.numeric_columns.extend(numeric_columns)
-            response.categorical_columns.extend(categorical_columns)
-            
-            # Set auto-detected mappings
-            for key, value in auto_mapping.items():
-                response.auto_detected_mapping[key] = value
-            
-            # Optional: Save to SQL database using pandas to_sql()
-            if save_to_sql:
-                table_name = f"csv_analysis_{Path(file_name).stem}"
-                print(f"💾 Saving CSV data to SQL table: {table_name}")
-                
-                # Use the database manager's engine to save data
-                try:
-                    df_full.to_sql(table_name, self.db.engine, if_exists='replace', index=False)
-                    print(f"✅ Successfully saved {total_rows} rows to SQL table: {table_name}")
-                except Exception as sql_error:
-                    print(f"⚠️ Failed to save to SQL: {sql_error}")
-                    # Don't fail the entire analysis if SQL save fails
-            
-            print(f"📊 Enhanced CSV analysis complete:")
-            print(f"   📁 File: {file_name} ({file_size_mb:.2f} MB)")
-            print(f"   📏 Dimensions: {total_rows:,} rows × {total_columns} columns")
-            print(f"   🔢 Numeric columns: {len(numeric_columns)}")
-            print(f"   📝 Categorical columns: {len(categorical_columns)}")
-            print(f"   🎯 Auto-mapped: {auto_mapping}")
-            
-            return response
-            
-        except Exception as e:
-            print(f"❌ Enhanced CSV analysis error: {e}")
-            response = files_pb2.AnalyzeCsvResponse()
-            response.success = False
-            response.error_message = str(e)
-            return response
-    
-    def create_sample_csv_for_testing(self, file_path: str = "/tmp/sample_geospatial.csv") -> str:
-        """
-        Create a sample CSV file for testing the enhanced analyze_csv functionality
-        
-        Returns:
-            str: Path to the created sample CSV file
-        """
-        try:
-            # Create a sample geospatial dataset with various data types
-            np.random.seed(42)  # For reproducible results
-            n_samples = 1000
-            
-            sample_data = {
-                'site_id': [f'SITE_{i:03d}' for i in range(1, n_samples + 1)],
-                'longitude': np.random.uniform(-74.0, -70.0, n_samples),
-                'latitude': np.random.uniform(-34.0, -32.0, n_samples),
-                'elevation': np.random.normal(1000, 200, n_samples),
-                'temperature': np.random.normal(25, 10, n_samples),
-                'humidity': np.random.uniform(20, 90, n_samples),
-                'pressure': np.random.normal(1013, 30, n_samples),
-                'wind_speed': np.abs(np.random.normal(15, 8, n_samples)),
-                'soil_type': np.random.choice(['Clay', 'Sandy', 'Loam', 'Rocky'], n_samples),
-                'vegetation': np.random.choice(['Forest', 'Grassland', 'Desert', 'Urban'], n_samples),
-                'measurement_date': pd.date_range('2024-01-01', periods=n_samples, freq='h').strftime('%Y-%m-%d %H:%M:%S')
-            }
-            
-            # Add some missing values to test null handling
-            sample_data['temperature'][::50] = np.nan  # Every 50th value is missing
-            sample_data['humidity'][::75] = np.nan     # Every 75th value is missing
-            
-            # Create DataFrame and save to CSV
-            df = pd.DataFrame(sample_data)
-            df.to_csv(file_path, index=False)
-            
-            print(f"✅ Created sample CSV file at: {file_path}")
-            print(f"   📏 Dataset: {len(df)} rows × {len(df.columns)} columns")
-            print(f"   🔢 Numeric columns: {len(df.select_dtypes(include=[np.number]).columns)}")
-            print(f"   📝 Categorical columns: {len(df.select_dtypes(include=['object']).columns)}")
-            
-            return file_path
-            
-        except Exception as e:
-            print(f"❌ Error creating sample CSV: {e}")
-            raise e
-
-    def send_file(self, request: files_pb2.SendFileRequest) -> files_pb2.SendFileResponse:
-        """
-        Process the complete CSV file with variable mappings and keep data in memory
-        """
-        try:
-            start_time = time.time()
-            print(f"📂 SendFile request: {request.file_path}")
-            print(f"   Variables: X={request.x_variable}, Y={request.y_variable}, Z={request.z_variable}, ID={request.id_variable}, DEPTH={request.depth_variable}")
-            
-            # Read the entire CSV file
-            df = pd.read_csv(request.file_path)
-
-            # Apply preview-driven overrides
-            # 1) Include/skip the first data row (preview row)
-            try:
-                if hasattr(request, 'include_first_row') and not request.include_first_row and len(df) > 0:
-                    df = df.iloc[1:].reset_index(drop=True)
-            except Exception:
-                # Be conservative and continue if field not present
-                pass
-
-            # 2) Enforce column types from preview where provided
-            try:
-                # request.column_types is a map<string, string>
-                if hasattr(request, 'column_types') and request.column_types:
-                    for col_name, col_type in request.column_types.items():
-                        if col_name in df.columns:
-                            if str(col_type).lower() == 'number':
-                                df[col_name] = pd.to_numeric(df[col_name], errors='coerce')
-                            else:
-                                df[col_name] = df[col_name].astype(str)
-            except Exception as e:
-                print(f"⚠️ Column type enforcement failed: {e}")
-            total_rows = len(df)
-            
-            # Validate that required columns exist
-            required_cols = []
-            if request.x_variable:
-                required_cols.append(request.x_variable)
-            if request.y_variable:
-                required_cols.append(request.y_variable)
-            
-            missing_cols = [col for col in required_cols if col not in df.columns]
-            if missing_cols:
-                raise ValueError(f"Missing required columns: {missing_cols}")
-            
-            # If user selected specific columns, restrict to those (ensure mapping vars are included)
-            try:
-                if hasattr(request, 'included_columns') and request.included_columns:
-                    keep_cols = [c for c in request.included_columns if c in df.columns]
-                    # Always include mapping variables so required fields exist
-                    for mvar in [request.x_variable, request.y_variable, request.z_variable, request.id_variable, request.depth_variable]:
-                        if mvar and mvar in df.columns and mvar not in keep_cols:
-                            keep_cols.append(mvar)
-                    if keep_cols:
-                        df = df[keep_cols]
-            except Exception:
-                pass
-
-            # Filter and process the data
-            valid_rows = 0
-            invalid_rows = 0
-            errors = []
-            
-            # Create a processed dataset (store in memory for now)
-            processed_data = []
-            
-            for idx, row in df.iterrows():
-                try:
-                    data_point = {}
-                    
-                    # Map the variables
-                    if request.x_variable and request.x_variable in row:
-                        data_point['x'] = float(row[request.x_variable])
-                    if request.y_variable and request.y_variable in row:
-                        data_point['y'] = float(row[request.y_variable])
-                    if request.z_variable and request.z_variable in row:
-                        data_point['z'] = float(row[request.z_variable])
-                    if request.id_variable and request.id_variable in row:
-                        data_point['id'] = str(row[request.id_variable])
-                    if request.depth_variable and request.depth_variable in row:
-                        data_point['depth'] = float(row[request.depth_variable])
-
-                    # Copy remaining columns so chunk API can expose metrics/attrs
-                    try:
-                        for col in df.columns:
-                            if col in [request.x_variable, request.y_variable, request.z_variable, request.id_variable, request.depth_variable]:
-                                continue
-                            val = row[col]
-                            # Skip NaN
-                            try:
-                                if val is None or (isinstance(val, float) and np.isnan(val)):
-                                    continue
-                            except Exception:
-                                pass
-                            # Keep numeric vs string
-                            if isinstance(val, (int, float, np.integer, np.floating)):
-                                data_point[col] = float(val)
-                            else:
-                                data_point[col] = str(val)
-                    except Exception as copy_err:
-                        # Non-fatal, continue processing
-                        pass
-                    
-                    # Validate required fields
-                    if 'x' in data_point and 'y' in data_point:
-                        processed_data.append(data_point)
-                        valid_rows += 1
-                    else:
-                        invalid_rows += 1
-                        if len(errors) < 10:  # Limit error messages
-                            errors.append(f"Row {idx}: Missing X or Y coordinate")
-                        
-                except (ValueError, TypeError) as e:
-                    invalid_rows += 1
-                    if len(errors) < 10:
-                        errors.append(f"Row {idx}: {str(e)}")
-            
-            # Store the processed data globally (in a real app, use a database)
-            global loaded_csv_data
-            loaded_csv_data = {
-                'data': processed_data,
-                'file_name': request.file_name,
-                'file_path': request.file_path,
-                'variable_mapping': {
-                    'x': request.x_variable,
-                    'y': request.y_variable,
-                    'z': request.z_variable,
-                    'id': request.id_variable,
-                    'depth': request.depth_variable
-                },
-                'timestamp': time.time()
-            }
-            
-            processing_time = time.time() - start_time
-            
-            response = files_pb2.SendFileResponse()
-            response.total_rows_processed = total_rows
-            response.valid_rows = valid_rows
-            response.invalid_rows = invalid_rows
-            response.errors.extend(errors[:10])  # Return up to 10 errors
-            response.success = True
-            response.processing_time = f"{processing_time:.2f}s"
-            
-            print(f"📂 SendFile completed: {valid_rows}/{total_rows} valid rows in {processing_time:.2f}s")
-            return response
-            
-        except Exception as e:
-            print(f"❌ SendFile error: {e}")
-            response = files_pb2.SendFileResponse()
-            response.success = False
-            response.errors.append(str(e))
-            return response
-
-
-    # ---------- Manejo de proyectos ----------
-    # Usamos los métodos definidos en database.py para crear un proyecto
+    # ========== Métodos de gestión de proyectos ==========
     
     def create_project(self, request: projects_pb2.CreateProjectRequest) -> projects_pb2.CreateProjectResponse:
+        """Crear un nuevo proyecto"""
         try:
             print(f"Creando proyecto: {request.name}")
             
-            # Llamamos a la función create_project para crear el proyecto
+            # Llamar a la función create_project para crear el proyecto
             project_data = self.db.create_project(request.name, request.description)
             
-            # Se crea la respuesta como la definida en el proto
+            # Crear la respuesta
             response = projects_pb2.CreateProjectResponse()
             response.success = True
             
-            # Obtenemos el proyecto en la respuesta (ProjectResponse.response en protobuf)
+            # Llenar los datos del proyecto
             project = response.project
-
-            # Llenamos los datos del proyecto en la respuesta
             project.id = project_data.id
             project.name = project_data.name
             project.description = project_data.description
@@ -393,20 +44,19 @@ class ProjectManager:
             project.updated_at = project_data.updated_at
             
             print(f"Proyecto creado: {project.id}")
-            # Devolvemos la respuesta
             return response
             
         except Exception as e:
-            print(f"❌ Error creating project: {e}")
+            print(f"❌ Error creando proyecto: {e}")
             response = projects_pb2.CreateProjectResponse()
             response.success = False
             response.error_message = str(e)
             return response
     
     def get_projects(self, request: projects_pb2.GetProjectsRequest) -> projects_pb2.GetProjectsResponse:
-        """Get projects with pagination"""
+        """Obtener proyectos con paginación"""
         try:
-            print(f"📁 Getting projects: limit={request.limit}, offset={request.offset}")
+            print(f"📁 Obteniendo proyectos: limit={request.limit}, offset={request.offset}")
             
             projects_data, total_count = self.db.get_projects(request.limit or 100, request.offset)
             
@@ -421,18 +71,18 @@ class ProjectManager:
                 project.created_at = project_data.created_at
                 project.updated_at = project_data.updated_at
             
-            print(f"✅ Retrieved {len(projects_data)} projects")
+            print(f"✅ Obtenidos {len(projects_data)} proyectos")
             return response
             
         except Exception as e:
-            print(f"❌ Error getting projects: {e}")
+            print(f"❌ Error obteniendo proyectos: {e}")
             response = projects_pb2.GetProjectsResponse()
             return response
     
     def get_project(self, request: projects_pb2.GetProjectRequest) -> projects_pb2.GetProjectResponse:
-        """Get a single project"""
+        """Obtener un proyecto específico"""
         try:
-            print(f"📁 Getting project: {request.project_id}")
+            print(f"📁 Obteniendo proyecto: {request.project_id}")
             
             project_data = self.db.get_project(request.project_id)
             
@@ -447,21 +97,21 @@ class ProjectManager:
                 project.updated_at = project_data.updated_at
             else:
                 response.success = False
-                response.error_message = "Project not found"
+                response.error_message = "Proyecto no encontrado"
             
             return response
             
         except Exception as e:
-            print(f"❌ Error getting project: {e}")
+            print(f"❌ Error obteniendo proyecto: {e}")
             response = projects_pb2.GetProjectResponse()
             response.success = False
             response.error_message = str(e)
             return response
     
     def update_project(self, request: projects_pb2.UpdateProjectRequest) -> projects_pb2.UpdateProjectResponse:
-        """Update a project"""
+        """Actualizar un proyecto"""
         try:
-            print(f"📁 Updating project: {request.project_id}")
+            print(f"📁 Actualizando proyecto: {request.project_id}")
             
             updated_project = self.db.update_project(request.project_id, request.name, request.description)
             
@@ -476,46 +126,46 @@ class ProjectManager:
                 project.updated_at = updated_project.updated_at
             else:
                 response.success = False
-                response.error_message = "Project not found"
+                response.error_message = "Proyecto no encontrado"
             
             return response
             
         except Exception as e:
-            print(f"❌ Error updating project: {e}")
+            print(f"❌ Error actualizando proyecto: {e}")
             response = projects_pb2.UpdateProjectResponse()
             response.success = False
             response.error_message = str(e)
             return response
     
     def delete_project(self, request: projects_pb2.DeleteProjectRequest) -> projects_pb2.DeleteProjectResponse:
-        """Delete a project"""
+        """Eliminar un proyecto"""
         try:
-            print(f"📁 Deleting project: {request.project_id}")
+            print(f"📁 Eliminando proyecto: {request.project_id}")
             
             success = self.db.delete_project(request.project_id)
             
             response = projects_pb2.DeleteProjectResponse()
             response.success = success
             if not success:
-                response.error_message = "Project not found"
+                response.error_message = "Proyecto no encontrado"
             
             return response
             
         except Exception as e:
-            print(f"❌ Error deleting project: {e}")
+            print(f"❌ Error eliminando proyecto: {e}")
             response = projects_pb2.DeleteProjectResponse()
             response.success = False
             response.error_message = str(e)
             return response
     
-    # ========== File Management Methods ==========
+    # ========== Métodos de gestión de archivos ==========
     
     def create_file(self, request: projects_pb2.CreateFileRequest) -> projects_pb2.CreateFileResponse:
-        """Create a new file"""
+        """Crear un nuevo archivo con importación directa a DuckDB"""
         try:
-            print(f"📄 Creating file: {request.name} for project {request.project_id}")
+            print(f"📄 Creando archivo: {request.name} para proyecto {request.project_id}")
             
-            # Create file with immediate DuckDB import (no binary storage)
+            # Crear archivo con importación inmediata a DuckDB
             file_data, duckdb_table_name, column_statistics = self.db.create_file_with_csv(
                 request.project_id,
                 request.name,
@@ -524,15 +174,14 @@ class ProjectManager:
                 request.file_content
             )
             
-            # Store statistics in database if analysis was successful
+            # Guardar estadísticas en base de datos si el análisis fue exitoso
             if column_statistics:
-                print(f"📈 Statistics generated for {len(column_statistics)} columns from DuckDB table: {duckdb_table_name}")
-                # Statistics are automatically available via DuckDB queries
+                print(f"📈 Estadísticas generadas para {len(column_statistics)} columnas desde tabla DuckDB: {duckdb_table_name}")
             
             response = projects_pb2.CreateFileResponse()
             response.success = True
             
-            # Direct field assignment
+            # Asignación directa de campos
             response.file.id = file_data.id
             response.file.project_id = file_data.project_id
             response.file.name = file_data.name
@@ -541,20 +190,20 @@ class ProjectManager:
             response.file.file_size = file_data.file_size
             response.file.created_at = file_data.created_at
             
-            print(f"✅ File created: {response.file.id}")
+            print(f"✅ Archivo creado: {response.file.id}")
             return response
             
         except Exception as e:
-            print(f"❌ Error creating file: {e}")
+            print(f"❌ Error creando archivo: {e}")
             response = projects_pb2.CreateFileResponse()
             response.success = False
             response.error_message = str(e)
             return response
     
     def get_project_files(self, request: projects_pb2.GetProjectFilesRequest) -> projects_pb2.GetProjectFilesResponse:
-        """Get all files for a project"""
+        """Obtener todos los archivos de un proyecto"""
         try:
-            print(f"📄 Getting files for project: {request.project_id}")
+            print(f"📄 Obteniendo archivos para proyecto: {request.project_id}")
             
             files_data = self.db.get_project_files(request.project_id)
             
@@ -570,18 +219,18 @@ class ProjectManager:
                 file.file_size = file_data.file_size
                 file.created_at = file_data.created_at
             
-            print(f"✅ Retrieved {len(files_data)} files")
+            print(f"✅ Obtenidos {len(files_data)} archivos")
             return response
             
         except Exception as e:
-            print(f"❌ Error getting project files: {e}")
+            print(f"❌ Error obteniendo archivos del proyecto: {e}")
             response = projects_pb2.GetProjectFilesResponse()
             return response
 
     def get_project_datasets(self, request: projects_pb2.GetProjectDatasetsRequest) -> projects_pb2.GetProjectDatasetsResponse:
-        """Get all datasets for a project"""
+        """Obtener todos los datasets de un proyecto"""
         try:
-            print(f"📊 Getting datasets for project: {request.project_id}")
+            print(f"📊 Obteniendo datasets para proyecto: {request.project_id}")
             
             datasets = self.db.get_datasets_by_project(request.project_id)
             
@@ -597,8 +246,7 @@ class ProjectManager:
                 dataset.total_rows = dataset_data.total_rows
                 dataset.created_at = dataset_data.created_at
                 
-                # Add column mappings - need to parse JSON since it's stored as string
-                import json
+                # Agregar mapeos de columnas - parsear JSON
                 column_mappings = json.loads(dataset_data.column_mappings) if dataset_data.column_mappings else []
                 for mapping in column_mappings:
                     col_mapping = dataset.column_mappings.add()
@@ -607,92 +255,90 @@ class ProjectManager:
                     col_mapping.mapped_field = mapping['mapped_field']
                     col_mapping.is_coordinate = mapping['is_coordinate']
             
-            print(f"✅ Found {len(datasets)} datasets")
+            print(f"✅ Encontrados {len(datasets)} datasets")
             return response
             
         except Exception as e:
-            print(f"❌ Error getting project datasets: {e}")
+            print(f"❌ Error obteniendo datasets del proyecto: {e}")
             response = projects_pb2.GetProjectDatasetsResponse()
             return response
     
     def delete_file(self, request: projects_pb2.DeleteFileRequest) -> projects_pb2.DeleteFileResponse:
-        """Delete a file"""
+        """Eliminar un archivo"""
         try:
-            print(f"📄 Deleting file: {request.file_id}")
+            print(f"📄 Eliminando archivo: {request.file_id}")
             
             success = self.db.delete_file(request.file_id)
             
             response = projects_pb2.DeleteFileResponse()
             response.success = success
             if not success:
-                response.error_message = "File not found"
+                response.error_message = "Archivo no encontrado"
             
             return response
             
         except Exception as e:
-            print(f"❌ Error deleting file: {e}")
+            print(f"❌ Error eliminando archivo: {e}")
             response = projects_pb2.DeleteFileResponse()
             response.success = False
             response.error_message = str(e)
             return response
     
-    # ========== Enhanced CSV Processing Methods ==========
+    # ========== Métodos de procesamiento CSV mejorado ==========
     
     def analyze_csv_for_project(self, request: projects_pb2.AnalyzeCsvForProjectRequest) -> projects_pb2.AnalyzeCsvForProjectResponse:
-        """Analyze CSV file for project with enhanced column type detection"""
+        """Analizar archivo CSV para proyecto con detección mejorada de tipos de columna"""
         try:
-            print(f"📊 Analyzing CSV for project file: {request.file_id}")
+            print(f"📊 Analizando CSV para archivo del proyecto: {request.file_id}")
             
-            # Get data from DuckDB table (data is already imported)
+            # Obtener datos de la tabla DuckDB (datos ya importados)
             table_name = f"data_{request.file_id.replace('-', '_')}"
             
-            # Check if DuckDB table exists
+            # Verificar si la tabla DuckDB existe
             if not self.db.check_duckdb_table_exists(table_name):
-                # Try to migrate if it's an old file
+                # Intentar migrar si es un archivo antiguo
                 if not self.db.migrate_old_file_to_duckdb(request.file_id):
                     response = projects_pb2.AnalyzeCsvForProjectResponse()
                     response.success = False
-                    response.error_message = "File data not found in DuckDB. Please re-upload the file."
+                    response.error_message = "Datos del archivo no encontrados en DuckDB. Por favor, vuelve a subir el archivo."
                     return response
             
-            # Get sample data from DuckDB table
+            # Obtener datos de muestra de la tabla DuckDB
             try:
                 with self.db.engine.connect() as conn:
                     from sqlalchemy import text
-                    # Get table schema
+                    # Obtener esquema de la tabla
                     schema_result = conn.execute(text(f"DESCRIBE {table_name}"))
                     headers = [row[0] for row in schema_result]
                     
-                    # Get first 5 rows for preview
+                    # Obtener primeras 5 filas para vista previa
                     preview_result = conn.execute(text(f"SELECT * FROM {table_name} LIMIT 5"))
                     preview_data = [list(row) for row in preview_result]
                     
-                    # Get total row count
+                    # Obtener conteo total de filas
                     count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
                     row_count = int(count_result[0])
                     
             except Exception as e:
-                print(f"⚠️  DuckDB table not found for file {request.file_id}: {e}")
-                # This might be an old file uploaded before DuckDB migration
-                # Return a basic response indicating the file needs to be re-uploaded
+                print(f"⚠️  Tabla DuckDB no encontrada para archivo {request.file_id}: {e}")
                 response = projects_pb2.AnalyzeCsvForProjectResponse()
                 response.success = False
-                response.error_message = "File needs to be re-uploaded for analysis. This file was uploaded before the DuckDB migration."
+                response.error_message = "El archivo necesita ser re-subido para análisis. Este archivo fue subido antes de la migración a DuckDB."
                 return response
             
-            # Convert preview data to protobuf format
+            # Convertir datos de vista previa a formato protobuf
             preview_rows = []
             for row_data in preview_data:
                 preview_row = projects_pb2.PreviewRow()
                 preview_row.values.extend([str(val) for val in row_data])
                 preview_rows.append(preview_row)
             
-            # Simple type detection
+            # Detección simple de tipos
             suggested_types = []
             suggested_mappings = {}
             
             for header in headers:
-                # Simple heuristics for column type detection
+                # Heurísticas simples para detección de tipo de columna
                 if any(keyword in header.lower() for keyword in ['x', 'east', 'longitude', 'lon']):
                     suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)
                     suggested_mappings[header] = "x"
@@ -706,7 +352,7 @@ class ProjectManager:
                     suggested_types.append(projects_pb2.COLUMN_TYPE_CATEGORICAL)
                     suggested_mappings[header] = ""
                 else:
-                    suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)  # Default to numeric
+                    suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)  # Por defecto numérico
                     suggested_mappings[header] = ""
             
             response = projects_pb2.AnalyzeCsvForProjectResponse()
@@ -717,38 +363,38 @@ class ProjectManager:
             response.suggested_mappings.update(suggested_mappings)
             response.total_rows = row_count
             
-            print(f"✅ CSV analyzed: {len(headers)} columns, {row_count} rows")
+            print(f"✅ CSV analizado: {len(headers)} columnas, {row_count} filas")
             return response
             
         except Exception as e:
-            print(f"❌ Error analyzing CSV: {e}")
+            print(f"❌ Error analizando CSV: {e}")
             response = projects_pb2.AnalyzeCsvForProjectResponse()
             response.success = False
             response.error_message = str(e)
             return response
     
     def process_dataset(self, request: projects_pb2.ProcessDatasetRequest) -> projects_pb2.ProcessDatasetResponse:
-        """Process dataset with column mappings - data already in DuckDB"""
+        """Procesar dataset con mapeos de columnas - datos ya en DuckDB"""
         try:
-            print(f"📊 Processing dataset for file: {request.file_id}")
+            print(f"📊 Procesando dataset para archivo: {request.file_id}")
             
-            # Get the DuckDB table name for this file (data is already imported)
+            # Obtener el nombre de la tabla DuckDB para este archivo
             table_name = f"data_{request.file_id.replace('-', '_')}"
             
-            # Verify DuckDB table exists and get row count
+            # Verificar que la tabla DuckDB existe y obtener conteo de filas
             try:
                 with self.db.engine.connect() as conn:
                     from sqlalchemy import text
                     count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
                     total_rows = int(count_result[0])
-                    print(f"📊 Found DuckDB table '{table_name}' with {total_rows:,} rows")
+                    print(f"📊 Tabla DuckDB '{table_name}' encontrada con {total_rows:,} filas")
             except Exception as e:
                 response = projects_pb2.ProcessDatasetResponse()
                 response.success = False
-                response.error_message = f"DuckDB table not found: {e}"
+                response.error_message = f"Tabla DuckDB no encontrada: {e}"
                 return response
             
-            # Create dataset record with DuckDB table reference
+            # Crear registro de dataset con referencia a tabla DuckDB
             column_mappings_list = []
             for mapping in request.column_mappings:
                 mapping_dict = {
@@ -759,25 +405,24 @@ class ProjectManager:
                 }
                 column_mappings_list.append(mapping_dict)
             
-            # Create dataset record pointing to the DuckDB table
+            # Crear registro de dataset que apunte a la tabla DuckDB
             dataset_data = self.db.create_dataset(request.file_id, table_name, total_rows, column_mappings_list)
             dataset_id = dataset_data.id
             
-            print(f"✅ Dataset created: {dataset_id} → DuckDB table '{table_name}'")
+            print(f"✅ Dataset creado: {dataset_id} → tabla DuckDB '{table_name}'")
             
             response = projects_pb2.ProcessDatasetResponse()
             response.success = True
             response.processed_rows = total_rows
             
-            # Populate dataset data
+            # Poblar datos del dataset
             dataset = response.dataset
             dataset.id = dataset_id
             dataset.file_id = dataset_data.file_id
             dataset.total_rows = dataset_data.total_rows
             dataset.created_at = dataset_data.created_at
             
-            # Add column mappings
-            import json
+            # Agregar mapeos de columnas
             column_mappings = json.loads(dataset_data.column_mappings) if dataset_data.column_mappings else []
             for mapping_dict in column_mappings:
                 mapping = dataset.column_mappings.add()
@@ -786,28 +431,28 @@ class ProjectManager:
                 mapping.mapped_field = mapping_dict['mapped_field']
                 mapping.is_coordinate = mapping_dict['is_coordinate']
             
-            print(f"✅ Dataset processing complete: {total_rows:,} rows → DuckDB table '{table_name}'")
+            print(f"✅ Procesamiento de dataset completo: {total_rows:,} filas → tabla DuckDB '{table_name}'")
             return response
             
         except Exception as e:
-            print(f"❌ Error processing dataset: {e}")
+            print(f"❌ Error procesando dataset: {e}")
             response = projects_pb2.ProcessDatasetResponse()
             response.success = False
             response.error_message = str(e)
             return response
     
     def get_dataset_data(self, request: projects_pb2.GetDatasetDataRequest) -> projects_pb2.GetDatasetDataResponse:
-        """Get dataset data with pagination from DuckDB"""
+        """Obtener datos del dataset con paginación desde DuckDB"""
         try:
-            print(f"📊 Getting dataset data: {request.dataset_id}, page {request.page}")
+            print(f"📊 Obteniendo datos del dataset: {request.dataset_id}, página {request.page}")
             
-            # Get dataset info first
+            # Obtener información del dataset primero
             dataset = self.db.get_dataset_by_id(request.dataset_id)
             if not dataset:
                 response = projects_pb2.GetDatasetDataResponse()
                 return response
             
-            # Get paginated data from DuckDB
+            # Obtener datos paginados desde DuckDB
             rows, total_rows, total_pages = self.db.get_dataset_data_from_duckdb(
                 request.dataset_id, 
                 request.page or 1, 
@@ -819,32 +464,31 @@ class ProjectManager:
             response.current_page = request.page or 1
             response.total_pages = total_pages
             
-            print(f"🔧 Adding {len(rows)} rows to response...")
+            print(f"🔧 Agregando {len(rows)} filas a la respuesta...")
             
-            # Add rows (convert all values to strings for protobuf)
+            # Agregar filas (convertir todos los valores a strings para protobuf)
             for i, row_data in enumerate(rows):
                 try:
                     row = response.rows.add()
-                    # Convert all values to strings for protobuf map<string, string>
+                    # Convertir todos los valores a strings para protobuf map<string, string>
                     string_fields = {}
                     for k, v in row_data.items():
                         try:
                             string_fields[k] = str(v)
                         except Exception as field_e:
-                            print(f"❌ Error converting field {k}={v} (type: {type(v)}): {field_e}")
+                            print(f"❌ Error convirtiendo campo {k}={v} (tipo: {type(v)}): {field_e}")
                             string_fields[k] = "ERROR_CONVERTING"
                     
                     row.fields.update(string_fields)
-                    if i == 0:  # Log first row for debugging
-                        print(f"🔧 First row fields: {string_fields}")
+                    if i == 0:  # Log primera fila para debug
+                        print(f"🔧 Campos primera fila: {string_fields}")
                 except Exception as row_e:
-                    print(f"❌ Error adding row {i}: {row_e}")
+                    print(f"❌ Error agregando fila {i}: {row_e}")
                     break
             
-            print(f"🔧 Adding column mappings...")
+            print(f"🔧 Agregando mapeos de columnas...")
             
-            # Add column mappings
-            import json
+            # Agregar mapeos de columnas
             try:
                 column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
                 for mapping_dict in column_mappings:
@@ -854,9 +498,9 @@ class ProjectManager:
                     mapping.mapped_field = mapping_dict['mapped_field']
                     mapping.is_coordinate = mapping_dict['is_coordinate']
             except Exception as mapping_e:
-                print(f"❌ Error adding column mappings: {mapping_e}")
+                print(f"❌ Error agregando mapeos de columnas: {mapping_e}")
             
-            # Get data boundaries from DuckDB table statistics
+            # Obtener límites de datos desde estadísticas de tabla DuckDB
             try:
                 table_name = dataset.duckdb_table_name
                 boundaries = self.db.get_duckdb_table_statistics(table_name)
@@ -868,22 +512,22 @@ class ProjectManager:
                         boundary.max_value = float(stats['max'])
                         boundary.valid_count = int(stats.get('count', 0))
             except Exception as e:
-                print(f"⚠️  Could not get boundaries: {e}")
+                print(f"⚠️  No se pudieron obtener límites: {e}")
             
-            print(f"✅ Retrieved {len(rows)} dataset rows from DuckDB")
+            print(f"✅ Obtenidas {len(rows)} filas del dataset desde DuckDB")
             return response
             
         except Exception as e:
             import traceback
-            print(f"❌ Error getting dataset data: {e}")
-            print(f"❌ Full traceback: {traceback.format_exc()}")
+            print(f"❌ Error obteniendo datos del dataset: {e}")
+            print(f"❌ Traceback completo: {traceback.format_exc()}")
             response = projects_pb2.GetDatasetDataResponse()
             return response
     
     def delete_dataset(self, request: projects_pb2.DeleteDatasetRequest) -> projects_pb2.DeleteDatasetResponse:
-        """Delete a dataset using efficient bulk operations"""
+        """Eliminar un dataset usando operaciones bulk eficientes"""
         try:
-            print(f"🗑️  Delete dataset request: {request.dataset_id}")
+            print(f"🗑️  Solicitud de eliminar dataset: {request.dataset_id}")
             
             start_time = time.time()
             success = self.db.delete_dataset(request.dataset_id)
@@ -894,14 +538,14 @@ class ProjectManager:
             response.delete_time = delete_time
             
             if not success:
-                response.error_message = "Dataset not found"
+                response.error_message = "Dataset no encontrado"
             else:
-                print(f"✅ Dataset deleted in {delete_time:.2f}s")
+                print(f"✅ Dataset eliminado en {delete_time:.2f}s")
             
             return response
             
         except Exception as e:
-            print(f"❌ Error deleting dataset: {e}")
+            print(f"❌ Error eliminando dataset: {e}")
             response = projects_pb2.DeleteDatasetResponse()
             response.success = False
             response.error_message = str(e)
