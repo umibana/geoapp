@@ -29,7 +29,6 @@ class File(SQLModel, table=True):
     dataset_type: int
     original_filename: str
     file_size: int
-    # Removed file_content - data now lives in DuckDB tables
     created_at: int
     project: Optional[Project] = Relationship(back_populates="files")
     datasets: List["Dataset"] = Relationship(back_populates="file", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
@@ -43,9 +42,6 @@ class Dataset(SQLModel, table=True):
     column_mappings: Optional[str] = None  # JSON string for column mappings
     created_at: int
     file: Optional[File] = Relationship(back_populates="datasets")
-
-
-# Removed DatasetData - data now stored directly in DuckDB tables
 
 
 class DatasetColumnStats(SQLModel, table=True):
@@ -417,19 +413,6 @@ class DatabaseManager:
             print(f"🔍 Table '{table_name}' check failed: {e}")
             return False
     
-    def migrate_old_file_to_duckdb(self, file_id: str) -> bool:
-        """
-        Attempt to migrate an old file with file_content to DuckDB table
-        This is for backward compatibility with files uploaded before DuckDB migration
-        """
-        try:
-            # This method is for handling legacy files that might still have file_content
-            # Since we removed file_content, this will return False for now
-            # In the future, if needed, we could implement file re-upload logic here
-            return False
-        except Exception as e:
-            print(f"❌ Error migrating old file: {e}")
-            return False
 
     def get_datasets_by_project(self, project_id: str) -> List[Tuple[Dataset, File]]:
         with Session(self.engine) as session:

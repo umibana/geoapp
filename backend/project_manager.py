@@ -323,7 +323,7 @@ class ProjectManager:
                 print(f"⚠️  Tabla DuckDB no encontrada para archivo {request.file_id}: {e}")
                 response = projects_pb2.AnalyzeCsvForProjectResponse()
                 response.success = False
-                response.error_message = "El archivo necesita ser re-subido para análisis. Este archivo fue subido antes de la migración a DuckDB."
+                response.error_message = "El archivo necesita ser re-subido para análisis."
                 return response
             
             # Convertir datos de vista previa a formato protobuf
@@ -342,7 +342,7 @@ class ProjectManager:
                 if any(keyword in header.lower() for keyword in ['x', 'east', 'longitude', 'lon']):
                     suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)
                     suggested_mappings[header] = "x"
-                elif any(keyword in header.lower() for keyword in ['y', 'north', 'latitude', 'lat']):
+                elif any(keyword in header.lower() for keyword in ['latitude', 'lat', 'north', 'y']):
                     suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)
                     suggested_mappings[header] = "y"
                 elif any(keyword in header.lower() for keyword in ['z', 'elevation', 'height', 'depth']):

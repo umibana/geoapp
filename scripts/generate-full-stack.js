@@ -359,7 +359,7 @@ class AutoMainGrpcClient {
     try {
       const protoPath = process.env.NODE_ENV === 'development' 
         ? join(process.cwd(), '${MAIN_PROTO_FILE}')
-        : join(process.resourcesPath, 'app', '${MAIN_PROTO_FILE}');
+        : join(process.resourcesPath, '${MAIN_PROTO_FILE}');
       
       const protoOptions = {
         keepCase: true,
@@ -367,7 +367,9 @@ class AutoMainGrpcClient {
         enums: String,
         defaults: true,
         oneofs: true,
-        includeDirs: [join(process.cwd(), '${PROTO_DIR}')]
+        includeDirs: [process.env.NODE_ENV === 'development' 
+          ? join(process.cwd(), '${PROTO_DIR}')
+          : join(process.resourcesPath, '${PROTO_DIR}')]
       };
       
       const packageDefinition = protoLoader.loadSync(protoPath, protoOptions);

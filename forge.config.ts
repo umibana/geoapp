@@ -11,7 +11,8 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     extraResource: [
-      "./backend/dist/grpc-server"
+      "./backend/dist/grpc-server",
+      "./protos"  // Add this line
     ],
   },
   rebuildConfig: {},
