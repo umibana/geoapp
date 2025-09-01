@@ -191,26 +191,6 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
             context.set_details(f"SendFile failed: {str(e)}")
             return response
 
-    def GetLoadedDataStats(self, request, context):
-        """
-        Get statistics about the currently loaded CSV data
-        
-        @param request: GetLoadedDataStatsRequest (empty for now)
-        @param context: gRPC context
-        @returns: GetLoadedDataStatsResponse with statistics
-        """
-        try:
-            response = self.project_manager.get_loaded_data_stats()
-            return response
-            
-        except Exception as e:
-            print(f"❌ GetLoadedDataStats error: {e}")
-            response = files_pb2.GetLoadedDataStatsResponse()
-            response.has_data = False
-            response.total_points = 0
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(f"GetLoadedDataStats failed: {str(e)}")
-            return response
     
     def GetColumnarData(self, request, context):
         return self.data_generator.get_columnar_data(request, context)

@@ -367,61 +367,6 @@ class ProjectManager:
             response.errors.append(str(e))
             return response
 
-    def get_loaded_data_stats(self) -> files_pb2.GetLoadedDataStatsResponse:
-        """
-        Get statistics about the currently loaded CSV data
-        """
-        try:
-            global loaded_csv_data
-            
-            response = files_pb2.GetLoadedDataStatsResponse()
-            
-            if 'loaded_csv_data' not in globals() or not loaded_csv_data:
-                response.has_data = False
-                response.total_points = 0
-                return response
-                
-            data = loaded_csv_data['data']
-            response.has_data = True
-            response.total_points = len(data)
-            
-            if data:
-                # Calculate statistics for X, Y, Z
-                x_values = [p['x'] for p in data if 'x' in p]
-                y_values = [p['y'] for p in data if 'y' in p]
-                z_values = [p['z'] for p in data if 'z' in p]
-                
-                if x_values:
-                    response.x_stats['min'] = min(x_values)
-                    response.x_stats['max'] = max(x_values)
-                    response.x_stats['avg'] = sum(x_values) / len(x_values)
-                    
-                if y_values:
-                    response.y_stats['min'] = min(y_values)
-                    response.y_stats['max'] = max(y_values)
-                    response.y_stats['avg'] = sum(y_values) / len(y_values)
-                    
-                if z_values:
-                    response.z_stats['min'] = min(z_values)
-                    response.z_stats['max'] = max(z_values)
-                    response.z_stats['avg'] = sum(z_values) / len(z_values)
-                
-                # Available columns
-                if loaded_csv_data.get('variable_mapping'):
-                    mapping = loaded_csv_data['variable_mapping']
-                    for key, value in mapping.items():
-                        if value:  # Only add non-empty mappings
-                            response.available_columns.append(f"{key}:{value}")
-            
-            print(f"📊 GetLoadedDataStats: {response.total_points} points loaded")
-            return response
-            
-        except Exception as e:
-            print(f"❌ GetLoadedDataStats error: {e}")
-            response = files_pb2.GetLoadedDataStatsResponse()
-            response.has_data = False
-            response.total_points = 0
-            return response
 
     # ---------- Manejo de proyectos ----------
     # Usamos los métodos definidos en database.py para crear un proyecto

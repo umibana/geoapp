@@ -77,21 +77,6 @@ message SendFileResponse {
     string processing_time = 6;
 }
 
-// Solicitud para obtener estadísticas de los datos cargados
-message GetLoadedDataStatsRequest {
-    // Empty for now, might add filtering options later
-}
-
-// Respuesta con estadísticas de los datos en memoria
-message GetLoadedDataStatsResponse {
-    int32 total_points = 1;
-    map<string, double> x_stats = 2; // min, max, avg for X
-    map<string, double> y_stats = 3; // min, max, avg for Y  
-    map<string, double> z_stats = 4; // min, max, avg for Z
-    repeated string available_columns = 5;
-    bool has_data = 6;
-}
-
 // =============================================================================
 // CHUNKED ACCESS TO LOADED CSV DATA
 // =============================================================================
