@@ -108,7 +108,7 @@ class DataGenerator:
             response = geospatial_pb2.GetColumnarDataResponse()
             response.total_count = len(columnar_data['x'])
             
-            # Create flat array: [x1,y1,z1, x2,y2,z2, x3,y3,z3, ...]
+           # Dejamos los arreglos con flatten 
             flat_data = []
             for i in range(len(columnar_data['x'])):
                 flat_data.extend([

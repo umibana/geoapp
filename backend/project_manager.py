@@ -570,7 +570,8 @@ class ProjectManager:
         try:
             print(f"📄 Creating file: {request.name} for project {request.project_id}")
             
-            file_data = self.db.create_file(
+            # Create file with immediate DuckDB import (no binary storage)
+            file_data, duckdb_table_name, column_statistics = self.db.create_file_with_csv(
                 request.project_id,
                 request.name,
                 int(request.dataset_type),
@@ -578,20 +579,24 @@ class ProjectManager:
                 request.file_content
             )
             
+            # Store statistics in database if analysis was successful
+            if column_statistics:
+                print(f"📈 Statistics generated for {len(column_statistics)} columns from DuckDB table: {duckdb_table_name}")
+                # Statistics are automatically available via DuckDB queries
+            
             response = projects_pb2.CreateFileResponse()
             response.success = True
             
-            # Populate file data
-            file = response.file
-            file.id = file_data.id
-            file.project_id = file_data.project_id
-            file.name = file_data.name
-            file.dataset_type = file_data.dataset_type
-            file.original_filename = file_data.original_filename
-            file.file_size = file_data.file_size
-            file.created_at = file_data.created_at
+            # Direct field assignment
+            response.file.id = file_data.id
+            response.file.project_id = file_data.project_id
+            response.file.name = file_data.name
+            response.file.dataset_type = file_data.dataset_type
+            response.file.original_filename = file_data.original_filename
+            response.file.file_size = file_data.file_size
+            response.file.created_at = file_data.created_at
             
-            print(f"✅ File created: {file.id}")
+            print(f"✅ File created: {response.file.id}")
             return response
             
         except Exception as e:
@@ -693,36 +698,55 @@ class ProjectManager:
         try:
             print(f"📊 Analyzing CSV for project file: {request.file_id}")
             
-            # Get file content
-            file_content = self.db.get_file_content(request.file_id)
-            if not file_content:
+            # Get data from DuckDB table (data is already imported)
+            table_name = f"data_{request.file_id.replace('-', '_')}"
+            
+            # Check if DuckDB table exists
+            if not self.db.check_duckdb_table_exists(table_name):
+                # Try to migrate if it's an old file
+                if not self.db.migrate_old_file_to_duckdb(request.file_id):
+                    response = projects_pb2.AnalyzeCsvForProjectResponse()
+                    response.success = False
+                    response.error_message = "File data not found in DuckDB. Please re-upload the file."
+                    return response
+            
+            # Get sample data from DuckDB table
+            try:
+                with self.db.engine.connect() as conn:
+                    from sqlalchemy import text
+                    # Get table schema
+                    schema_result = conn.execute(text(f"DESCRIBE {table_name}"))
+                    headers = [row[0] for row in schema_result]
+                    
+                    # Get first 5 rows for preview
+                    preview_result = conn.execute(text(f"SELECT * FROM {table_name} LIMIT 5"))
+                    preview_data = [list(row) for row in preview_result]
+                    
+                    # Get total row count
+                    count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
+                    row_count = int(count_result[0])
+                    
+            except Exception as e:
+                print(f"⚠️  DuckDB table not found for file {request.file_id}: {e}")
+                # This might be an old file uploaded before DuckDB migration
+                # Return a basic response indicating the file needs to be re-uploaded
                 response = projects_pb2.AnalyzeCsvForProjectResponse()
                 response.success = False
-                response.error_message = "File not found"
+                response.error_message = "File needs to be re-uploaded for analysis. This file was uploaded before the DuckDB migration."
                 return response
             
-            # Analyze CSV content (reusing existing CSV logic)
-            csv_text = file_content.decode('utf-8')
-            csv_reader = csv.reader(io.StringIO(csv_text))
-            
-            headers = next(csv_reader)
+            # Convert preview data to protobuf format
             preview_rows = []
-            row_count = 0
-            
-            for i, row in enumerate(csv_reader):
-                if i < 5:  # Preview first 5 rows
-                    preview_row = projects_pb2.PreviewRow()
-                    preview_row.values.extend(row)
-                    preview_rows.append(preview_row)
-                row_count += 1
+            for row_data in preview_data:
+                preview_row = projects_pb2.PreviewRow()
+                preview_row.values.extend([str(val) for val in row_data])
+                preview_rows.append(preview_row)
             
             # Simple type detection
             suggested_types = []
             suggested_mappings = {}
             
             for header in headers:
-                # Try to detect numeric vs categorical
-                is_numeric = False
                 # Simple heuristics for column type detection
                 if any(keyword in header.lower() for keyword in ['x', 'east', 'longitude', 'lon']):
                     suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)
@@ -759,111 +783,27 @@ class ProjectManager:
             return response
     
     def process_dataset(self, request: projects_pb2.ProcessDatasetRequest) -> projects_pb2.ProcessDatasetResponse:
-        """Process dataset with column mappings using pandas for efficient processing and statistics"""
+        """Process dataset with column mappings - data already in DuckDB"""
         try:
             print(f"📊 Processing dataset for file: {request.file_id}")
             
-            # Get file content
-            file_content = self.db.get_file_content(request.file_id)
-            if not file_content:
+            # Get the DuckDB table name for this file (data is already imported)
+            table_name = f"data_{request.file_id.replace('-', '_')}"
+            
+            # Verify DuckDB table exists and get row count
+            try:
+                with self.db.engine.connect() as conn:
+                    from sqlalchemy import text
+                    count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
+                    total_rows = int(count_result[0])
+                    print(f"📊 Found DuckDB table '{table_name}' with {total_rows:,} rows")
+            except Exception as e:
                 response = projects_pb2.ProcessDatasetResponse()
                 response.success = False
-                response.error_message = "File not found"
+                response.error_message = f"DuckDB table not found: {e}"
                 return response
             
-            # Read CSV directly into pandas DataFrame for efficient processing
-            csv_text = file_content.decode('utf-8')
-            df = pd.read_csv(io.StringIO(csv_text))
-            
-            print(f"📊 Loaded CSV: {len(df)} rows × {len(df.columns)} columns")
-            
-            # Create mapping dict for column transformations
-            column_map = {}
-            numeric_columns = []
-            categorical_columns = []
-            
-            for mapping in request.column_mappings:
-                if mapping.column_type != projects_pb2.COLUMN_TYPE_UNUSED:
-                    column_map[mapping.column_name] = {
-                        'type': mapping.column_type,
-                        'field': mapping.mapped_field if mapping.mapped_field else mapping.column_name,
-                        'is_coordinate': mapping.is_coordinate
-                    }
-                    
-                    # Track column types for statistics
-                    field_name = mapping.mapped_field if mapping.mapped_field else mapping.column_name
-                    if mapping.column_type == projects_pb2.COLUMN_TYPE_NUMERIC:
-                        numeric_columns.append((mapping.column_name, field_name))
-                    else:
-                        categorical_columns.append((mapping.column_name, field_name))
-            
-            # Apply column transformations using pandas
-            processed_df = pd.DataFrame()
-            
-            for orig_col, mapping in column_map.items():
-                if orig_col in df.columns:
-                    field_name = mapping['field']
-                    
-                    if mapping['type'] == projects_pb2.COLUMN_TYPE_NUMERIC:
-                        # Convert to numeric, replacing errors with NaN
-                        processed_df[field_name] = pd.to_numeric(df[orig_col], errors='coerce')
-                    else:  # CATEGORICAL
-                        processed_df[field_name] = df[orig_col].astype(str)
-            
-            # Calculate comprehensive statistics using pandas describe()
-            print(f"📈 Calculating statistics using pandas describe()...")
-            column_statistics = {}
-            
-            # Get statistics for numeric columns
-            if numeric_columns:
-                numeric_df = processed_df.select_dtypes(include=[np.number])
-                if not numeric_df.empty:
-                    numeric_stats = numeric_df.describe()
-                    
-                    for col in numeric_df.columns:
-                        if col in numeric_stats.columns:
-                            col_stats = numeric_stats[col]
-                            count = col_stats.get('count', 0)
-                            
-                            # Skip columns with no valid data (all NaN)
-                            if count == 0:
-                                print(f"⚠️  Skipping column '{col}' - no valid numeric data (all NaN)")
-                                continue
-                            
-                            column_statistics[col] = {
-                                'column_type': 'numeric',
-                                'count': float(count),
-                                'mean': float(col_stats.get('mean', 0)) if not pd.isna(col_stats.get('mean')) else None,
-                                'std': float(col_stats.get('std', 0)) if not pd.isna(col_stats.get('std')) else None,
-                                'min': float(col_stats.get('min', 0)) if not pd.isna(col_stats.get('min')) else None,
-                                '25%': float(col_stats.get('25%', 0)) if not pd.isna(col_stats.get('25%')) else None,
-                                '50%': float(col_stats.get('50%', 0)) if not pd.isna(col_stats.get('50%')) else None,  # median
-                                '75%': float(col_stats.get('75%', 0)) if not pd.isna(col_stats.get('75%')) else None,
-                                'max': float(col_stats.get('max', 0)) if not pd.isna(col_stats.get('max')) else None,
-                                'null_count': int(numeric_df[col].isnull().sum()),
-                                'unique_count': int(numeric_df[col].nunique())
-                            }
-            
-            # Get statistics for categorical columns
-            if categorical_columns:
-                categorical_df = processed_df.select_dtypes(include=['object'])
-                for col in categorical_df.columns:
-                    column_statistics[col] = {
-                        'column_type': 'categorical',
-                        'count': float(categorical_df[col].count()),
-                        'null_count': int(categorical_df[col].isnull().sum()),
-                        'unique_count': int(categorical_df[col].nunique())
-                    }
-            
-            print(f"📈 Generated statistics for {len(column_statistics)} columns")
-            
-            # Convert processed DataFrame to list of dictionaries for storage
-            processed_rows = processed_df.to_dict('records')
-            # Convert to string format for JSON storage
-            processed_rows = [{k: str(v) for k, v in row.items()} for row in processed_rows]
-            row_count = len(processed_rows)
-            
-            # Create dataset record
+            # Create dataset record with DuckDB table reference
             column_mappings_list = []
             for mapping in request.column_mappings:
                 mapping_dict = {
@@ -874,29 +814,24 @@ class ProjectManager:
                 }
                 column_mappings_list.append(mapping_dict)
             
-            dataset_data = self.db.create_dataset(request.file_id, row_count, column_mappings_list)
+            # Create dataset record pointing to the DuckDB table
+            dataset_data = self.db.create_dataset(request.file_id, table_name, total_rows, column_mappings_list)
             dataset_id = dataset_data.id
             
-            # Store processed data
-            self.db.store_dataset_data(dataset_id, processed_rows)
-            
-            # Store column statistics in database for fast boundary retrieval
-            print(f"💾 Storing column statistics in database...")
-            self.db.store_column_statistics(dataset_id, column_statistics)
+            print(f"✅ Dataset created: {dataset_id} → DuckDB table '{table_name}'")
             
             response = projects_pb2.ProcessDatasetResponse()
             response.success = True
-            response.processed_rows = row_count
+            response.processed_rows = total_rows
             
             # Populate dataset data
             dataset = response.dataset
             dataset.id = dataset_id
             dataset.file_id = dataset_data.file_id
             dataset.total_rows = dataset_data.total_rows
-            dataset.current_page = dataset_data.current_page
             dataset.created_at = dataset_data.created_at
             
-            # Add column mappings - parse JSON since it's stored as string
+            # Add column mappings
             import json
             column_mappings = json.loads(dataset_data.column_mappings) if dataset_data.column_mappings else []
             for mapping_dict in column_mappings:
@@ -906,7 +841,7 @@ class ProjectManager:
                 mapping.mapped_field = mapping_dict['mapped_field']
                 mapping.is_coordinate = mapping_dict['is_coordinate']
             
-            print(f"✅ Dataset processed: {row_count} rows with stored statistics")
+            print(f"✅ Dataset processing complete: {total_rows:,} rows → DuckDB table '{table_name}'")
             return response
             
         except Exception as e:
@@ -917,7 +852,7 @@ class ProjectManager:
             return response
     
     def get_dataset_data(self, request: projects_pb2.GetDatasetDataRequest) -> projects_pb2.GetDatasetDataResponse:
-        """Get dataset data with pagination"""
+        """Get dataset data with pagination from DuckDB"""
         try:
             print(f"📊 Getting dataset data: {request.dataset_id}, page {request.page}")
             
@@ -927,8 +862,8 @@ class ProjectManager:
                 response = projects_pb2.GetDatasetDataResponse()
                 return response
             
-            # Get paginated data
-            rows, total_rows, total_pages = self.db.get_dataset_data(
+            # Get paginated data from DuckDB
+            rows, total_rows, total_pages = self.db.get_dataset_data_from_duckdb(
                 request.dataset_id, 
                 request.page or 1, 
                 request.page_size or 100
@@ -939,40 +874,64 @@ class ProjectManager:
             response.current_page = request.page or 1
             response.total_pages = total_pages
             
-            # Add rows
-            for row_data in rows:
-                row = response.rows.add()
-                row.fields.update(row_data)
+            print(f"🔧 Adding {len(rows)} rows to response...")
             
-            # Add column mappings - parse JSON since it's stored as string
+            # Add rows (convert all values to strings for protobuf)
+            for i, row_data in enumerate(rows):
+                try:
+                    row = response.rows.add()
+                    # Convert all values to strings for protobuf map<string, string>
+                    string_fields = {}
+                    for k, v in row_data.items():
+                        try:
+                            string_fields[k] = str(v)
+                        except Exception as field_e:
+                            print(f"❌ Error converting field {k}={v} (type: {type(v)}): {field_e}")
+                            string_fields[k] = "ERROR_CONVERTING"
+                    
+                    row.fields.update(string_fields)
+                    if i == 0:  # Log first row for debugging
+                        print(f"🔧 First row fields: {string_fields}")
+                except Exception as row_e:
+                    print(f"❌ Error adding row {i}: {row_e}")
+                    break
+            
+            print(f"🔧 Adding column mappings...")
+            
+            # Add column mappings
             import json
-            column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
-            for mapping_dict in column_mappings:
-                mapping = response.column_mappings.add()
-                mapping.column_name = mapping_dict['column_name']
-                mapping.column_type = mapping_dict['column_type']
-                mapping.mapped_field = mapping_dict['mapped_field']
-                mapping.is_coordinate = mapping_dict['is_coordinate']
+            try:
+                column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
+                for mapping_dict in column_mappings:
+                    mapping = response.column_mappings.add()
+                    mapping.column_name = mapping_dict['column_name']
+                    mapping.column_type = mapping_dict['column_type']
+                    mapping.mapped_field = mapping_dict['mapped_field']
+                    mapping.is_coordinate = mapping_dict['is_coordinate']
+            except Exception as mapping_e:
+                print(f"❌ Error adding column mappings: {mapping_e}")
             
-            # Calculate and add data boundaries for efficient chart scaling
-            # Now using optimized SQL-based calculation that works with large datasets
-            print(f"📐 Calculating SQL-based boundaries for dataset {request.dataset_id}")
-            boundaries = self.db.get_dataset_boundaries(request.dataset_id)
-            print(f"📐 Found {len(boundaries)} column boundaries: {list(boundaries.keys())}")
+            # Get data boundaries from DuckDB table statistics
+            try:
+                table_name = dataset.duckdb_table_name
+                boundaries = self.db.get_duckdb_table_statistics(table_name)
+                for col_name, stats in boundaries.items():
+                    if stats.get('column_type') == 'numeric' and stats.get('min') is not None:
+                        boundary = response.data_boundaries.add()
+                        boundary.column_name = col_name
+                        boundary.min_value = float(stats['min'])
+                        boundary.max_value = float(stats['max'])
+                        boundary.valid_count = int(stats.get('count', 0))
+            except Exception as e:
+                print(f"⚠️  Could not get boundaries: {e}")
             
-            for col_name, boundary_data in boundaries.items():
-                boundary = response.data_boundaries.add()
-                boundary.column_name = col_name
-                boundary.min_value = boundary_data['min_value']
-                boundary.max_value = boundary_data['max_value']
-                boundary.valid_count = boundary_data['valid_count']
-                print(f"   📐 {col_name}: {boundary_data['min_value']:.2f} to {boundary_data['max_value']:.2f} ({boundary_data['valid_count']} values)")
-            
-            print(f"✅ Retrieved {len(rows)} dataset rows")
+            print(f"✅ Retrieved {len(rows)} dataset rows from DuckDB")
             return response
             
         except Exception as e:
+            import traceback
             print(f"❌ Error getting dataset data: {e}")
+            print(f"❌ Full traceback: {traceback.format_exc()}")
             response = projects_pb2.GetDatasetDataResponse()
             return response
     
