@@ -96,17 +96,10 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
   useEffect(() => {
     const canRenderChart = chartData.length > 0 && selectedXAxis && selectedYAxis && selectedValueColumn;
     
-    console.log('🏗️ Chart initialization useEffect:', {
-      canRenderChart,
-      hasChartRef: !!chartRef.current,
-      hasChartInstance: !!chartInstanceRef.current,
-      chartDataLength: chartData.length
-    });
     
     if (!canRenderChart) {
       // Dispose existing chart if conditions are no longer met
       if (chartInstanceRef.current) {
-        console.log('🧹 Disposing existing chart instance');
         chartInstanceRef.current.dispose();
         chartInstanceRef.current = null;
       }
@@ -114,18 +107,15 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
     }
     
     if (!chartRef.current) {
-      console.log('❌ Chart ref not available yet');
       return;
     }
     
     // Don't reinitialize if chart already exists
     if (chartInstanceRef.current) {
-      console.log('♻️ Chart instance already exists, updating...');
       updateChart();
       return;
     }
     
-    console.log('🚀 Creating new chart instance');
     const chart = echarts.init(chartRef.current, undefined, {
       renderer: 'canvas',
       useDirtyRect: true,
@@ -143,8 +133,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
 
     // Cleanup function
     return () => {
-      console.log('🧹 Cleaning up chart instance');
-      // window.removeEventListener('resize', handleResize);
       if (chartInstanceRef.current) {
         chartInstanceRef.current.dispose();
         chartInstanceRef.current = null;
@@ -165,13 +153,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
         // Es temporal, tengo que ver como pasar del STACK SIZE EXCEEDED
       });
 
-      // console.log('Raw response:', response);
-      // console.log('📊 Dataset loading summary:', {
-      //   requestedPageSize: 10000,
-      //   totalRowsInDataset: response.total_rows,
-      //   actualRowsReceived: response.rows?.length || 0,
-      //   gotAllPoints: (response.rows?.length || 0) >= response.total_rows
-      // });
       
       if (response.rows && response.column_mappings) {
         // Parse the dataset structure
@@ -221,13 +202,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
 
         // Capture data boundaries for chart scaling
         const dataBoundaries = response.data_boundaries || [];
-        console.log('📐 Data boundaries from backend:', dataBoundaries);
-        console.log('📐 Raw response structure:', {
-          hasDataBoundaries: !!response.data_boundaries,
-          dataBoundariesLength: dataBoundaries.length,
-          allResponseKeys: Object.keys(response),
-          sampleBoundary: dataBoundaries[0]
-        });
 
         setDataset({
           id: datasetId,
@@ -245,70 +219,29 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
     }
   };
 
-  /**
-   * Extrae valores de forma segura desde datos de Protocol Buffer
-   * Maneja la estructura {fields: {...}} y convierte a números
-   */
-  const extractValue = (row: any, columnName: string, defaultValue: number = 0): number => {
-    // Maneja estructura de Protocol Buffer: {fields: {...}}
-    const data = row.fields || row;
-    
-    if (!data || !columnName) return defaultValue;
-    
-    const rawValue = data[columnName];
-    
-    // Maneja varios tipos de datos
-    if (typeof rawValue === 'number') return rawValue;
-    if (typeof rawValue === 'string') {
-      const parsed = parseFloat(rawValue);
-      return isNaN(parsed) ? defaultValue : parsed;
-    }
-    
-    return defaultValue;
-  };
 
 
   const prepareChartData = () => {
     if (!dataset || !selectedValueColumn || !selectedXAxis || !selectedYAxis) {
-      console.log('Missing required data for chart:', {
-        dataset: !!dataset,
-        selectedValueColumn,
-        selectedXAxis,
-        selectedYAxis
-      });
       return;
     }
     
-    console.log('Preparing chart data with:', {
-      selectedXAxis,
-      selectedYAxis,
-      selectedValueColumn,
-      totalRows: dataset.rows.length
-    });
-    
-    // Convert dataset rows to chart format using the pattern from existing components
+    // Convert dataset rows to chart format - handle protocol buffer structure
     const chartPoints = dataset.rows.map((row, index) => {
-      // Use the safe extraction helper
-      const xVal = extractValue(row, selectedXAxis);
-      const yVal = extractValue(row, selectedYAxis);
-      const valueVal = extractValue(row, selectedValueColumn);
+      // Protocol buffer data comes with fields structure
+      const data = row.fields || row;
+      const xVal = Number(data[selectedXAxis]) || 0;
+      const yVal = Number(data[selectedYAxis]) || 0;
+      const valueVal = Number(data[selectedValueColumn]) || 0;
       
-      // Enhanced debugging for first few rows
-      if (index < 5) {
-        console.log(`Row ${index} processing:`, {
+      // Debug first few rows to understand data structure
+      if (index < 3) {
+        console.log(`Row ${index}:`, {
           rawRow: row,
           hasFields: 'fields' in row,
-          parsedData: row.fields || row,
-          extractedValues: {
-            x: xVal,
-            y: yVal,
-            value: valueVal
-          },
-          columnMappings: {
-            xColumn: selectedXAxis,
-            yColumn: selectedYAxis,
-            valueColumn: selectedValueColumn
-          }
+          data,
+          selectedColumns: { selectedXAxis, selectedYAxis, selectedValueColumn },
+          extractedValues: { x: xVal, y: yVal, value: valueVal }
         });
       }
       
@@ -317,8 +250,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
         x: xVal,
         y: yVal,
         value: valueVal,
-        originalData: row.fields || row,
-        // Add validation flag
+        originalData: data,
         isValid: !isNaN(xVal) && !isNaN(yVal) && !isNaN(valueVal) &&
                  isFinite(xVal) && isFinite(yVal) && isFinite(valueVal)
       };
@@ -327,63 +259,16 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
     console.log('Chart data processing results:', {
       totalRows: dataset.rows.length,
       validPoints: chartPoints.length,
-      invalidPoints: dataset.rows.length - chartPoints.length,
-      samplePoints: chartPoints.slice(0, 3),
-      dataRanges: chartPoints.length > 0 ? {
-        xRange: [Math.min(...chartPoints.map(p => p.x)), Math.max(...chartPoints.map(p => p.x))],
-        yRange: [Math.min(...chartPoints.map(p => p.y)), Math.max(...chartPoints.map(p => p.y))],
-        valueRange: [Math.min(...chartPoints.map(p => p.value)), Math.max(...chartPoints.map(p => p.value))]
-      } : null,
-      // Debug: Check for duplicate coordinates
-      uniqueCoordinates: chartPoints.length > 0 ? new Set(chartPoints.map(p => `${p.x},${p.y}`)).size : 0,
-      coordinateDistribution: chartPoints.length > 0 ? {
-        xValues: [...new Set(chartPoints.map(p => p.x))].length,
-        yValues: [...new Set(chartPoints.map(p => p.y))].length,
-        xyPairs: new Set(chartPoints.map(p => `${p.x},${p.y}`)).size
-      } : null
+      samplePoint: chartPoints[0]
     });
     
-    // Apply jittering if many points have identical coordinates
-    const uniqueCoords = new Set(chartPoints.map(p => `${p.x},${p.y}`)).size;
-    const hasOverlapping = uniqueCoords < chartPoints.length * 0.8; // If <80% unique coordinates
-    
-    let finalChartPoints = chartPoints;
-    if (hasOverlapping && chartPoints.length > 10) {
-      console.log('🎯 Applying jittering to reduce overlapping points');
-      const xRange = Math.max(...chartPoints.map(p => p.x)) - Math.min(...chartPoints.map(p => p.x));
-      const yRange = Math.max(...chartPoints.map(p => p.y)) - Math.min(...chartPoints.map(p => p.y));
-      const jitterX = xRange * 0.01; // 1% of range
-      const jitterY = yRange * 0.01;
-      
-      finalChartPoints = chartPoints.map(point => ({
-        ...point,
-        x: point.x + (Math.random() - 0.5) * jitterX,
-        y: point.y + (Math.random() - 0.5) * jitterY
-      }));
-    }
-    
-    setChartData(finalChartPoints);
+    setChartData(chartPoints);
   };
 
   const updateChart = () => {
-    console.log('🎨 updateChart called with:', {
-      hasChartInstance: !!chartInstanceRef.current,
-      chartDataLength: chartData.length,
-      selectedAxes: { selectedXAxis, selectedYAxis, selectedValueColumn },
-      chartRef: !!chartRef.current
-    });
-
-    if (!chartInstanceRef.current) {
-      console.log('❌ No chart instance available');
+    if (!chartInstanceRef.current || chartData.length === 0) {
       return;
     }
-    
-    if (chartData.length === 0) {
-      console.log('❌ No chart data available');
-      return;
-    }
-
-    console.log('✅ Proceeding with chart update, sample data:', chartData.slice(0, 3));
 
     // Get boundaries for automatic scaling
     const getBoundaryForColumn = (columnName: string) => {
@@ -393,21 +278,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
 
     const xBoundary = getBoundaryForColumn(selectedXAxis);
     const yBoundary = getBoundaryForColumn(selectedYAxis);
-
-    console.log('📐 Using boundaries for chart scaling:', {
-      xAxis: selectedXAxis,
-      xBoundary,
-      yAxis: selectedYAxis,
-      yBoundary,
-      hasDatasetBoundaries: !!dataset?.dataBoundaries,
-      totalBoundaries: dataset?.dataBoundaries?.length || 0,
-      allBoundaries: dataset?.dataBoundaries?.map(b => ({
-        column: b.column_name,
-        min: b.min_value,
-        max: b.max_value,
-        count: b.valid_count
-      }))
-    });
 
     // Calculate value range for visualMap
     const valueRange = chartData.length > 0 ? {
@@ -448,7 +318,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
         axisPointer: {
           type: 'cross'
         },
-        formatter: function(params: any) {
+        formatter: function(params: {data: number[], dataIndex: number}) {
           const data = params.data;
           return `
             <strong>Punto ${params.dataIndex + 1}</strong><br/>
@@ -493,23 +363,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
         type: 'scatter',
         data: chartData.map(point => [point.x, point.y, point.value]),
         animation: false,
-        // symbolSize: function(data: number[]) {
-        //   // Variable symbol size based on dataset size and value
-        //   const minVal = Math.min(...chartData.map(p => Math.abs(p.value)));
-        //   const maxVal = Math.max(...chartData.map(p => Math.abs(p.value)));
-        //   const range = maxVal - minVal;
-        //   if (range === 0) return 8;
-
-        //   if (chartData.length === 0) return 8;
-          
-        //   const baseSize = chartData.length > 500 ? 4 : 8;
-        //   const uniqueCoords = new Set(chartData.map(p => `${p.x},${p.y}`)).size;
-        //   const overlapFactor = chartData.length / uniqueCoords;
-        //   // Increase size if many points overlap at same coordinates
-        //   const normalizedValue = (Math.abs(data[2]) - minVal) / range * 15 + 5;
-
-        //   return Math.min(baseSize + Math.log(overlapFactor) + normalizedValue, 10);
-        // },
         itemStyle: {
           opacity: 0.8,
           borderWidth: 0,
@@ -525,35 +378,17 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
           }
         },
         large: true,
-        largeThreshold: 50000,
+        largeThreshold: 20000,
         progressive: 100000,
         progressiveThreshold: 20000,
         progressiveChunkMode: 'sequential',
         symbolSize: 4,
-        blendMode: 'lighter',
+        blendMode: 'screen',
         dimensions: [selectedXAxis, selectedYAxis, selectedValueColumn],
       }]
     };
     
-    console.log('📊 Setting chart option:', {
-      seriesDataLength: option.series[0].data.length,
-      sampleSeriesData: option.series[0].data.slice(0, 3),
-      xAxisConfig: {
-        name: option.xAxis.name,
-        min: option.xAxis.min || 'auto',
-        max: option.xAxis.max || 'auto',
-        hasBoundary: !!xBoundary
-      },
-      yAxisConfig: {
-        name: option.yAxis.name,
-        min: option.yAxis.min || 'auto',
-        max: option.yAxis.max || 'auto',
-        hasBoundary: !!yBoundary
-      }
-    });
-    
     chartInstanceRef.current.setOption(option);
-    console.log('✅ Chart option set successfully');
   };
 
   if (loading) {
@@ -705,13 +540,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ datasetId, datasetName, o
         <CardContent>
           {(() => {
             const canRenderChart = chartData.length > 0 && selectedXAxis && selectedYAxis && selectedValueColumn;
-            console.log('📈 Chart rendering condition check:', {
-              chartDataLength: chartData.length,
-              selectedXAxis,
-              selectedYAxis,
-              selectedValueColumn,
-              canRenderChart
-            });
             
             return canRenderChart ? (
               <div 

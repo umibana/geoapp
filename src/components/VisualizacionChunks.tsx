@@ -237,6 +237,8 @@ export function VisualizacionDatos({
           borderWidth: 0
         },
         large: true,
+        largeThreshold: 10000,
+        blendMode: 'screen',
         progressive: 100000,
         progressiveThreshold: 20000,
         progressiveChunkMode: 'sequential'
@@ -293,10 +295,7 @@ export function VisualizacionDatos({
       {/* Controls */}
       <div className="flex flex-wrap gap-3 items-center justify-between p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg border">
         <div>
-          <h3 className="text-lg font-semibold text-gray-800">Geospatial Data Visualization</h3>
-          <p className="text-sm text-gray-600">
-            Displaying coordinate data with dynamic bounds from backend
-          </p>
+          <h3 className="text-lg font-semibold text-gray-800">Visualización datos backend</h3>
         </div>
         
         <div className="flex flex-wrap gap-2">
@@ -317,7 +316,6 @@ export function VisualizacionDatos({
 
 
 
-
       {/* Chart */}
       <div className="relative">
         <div 
@@ -325,23 +323,9 @@ export function VisualizacionDatos({
           className="w-full bg-white rounded-lg border shadow-sm"
           style={{ height: '500px' }}
         />
-        
-        {totalPoints > 0 && (
-          <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs">
-            {totalPoints.toLocaleString()} points
-          </div>
-        )}
       </div>
 
-      {/* Chart Info */}
-      {totalPoints > 0 && currentBounds && (
-        <div className="text-sm text-gray-600 space-y-1">
-          <p><strong>Points:</strong> {totalPoints.toLocaleString()}</p>
-          <p><strong>X Range:</strong> {currentBounds.x[0].toFixed(3)} to {currentBounds.x[1].toFixed(3)}</p>
-          <p><strong>Y Range:</strong> {currentBounds.y[0].toFixed(3)} to {currentBounds.y[1].toFixed(3)}</p>
-          <p><strong>Z Range:</strong> {currentBounds.z[0].toFixed(2)} to {currentBounds.z[1].toFixed(2)}</p>
-        </div>
-      )}
+   
     </div>
   );
 }
