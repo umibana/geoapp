@@ -291,17 +291,15 @@ class ProjectManager:
         try:
             print(f"📊 Analizando CSV para archivo del proyecto: {request.file_id}")
             
+            # Validar que file_id no esté vacío
+            if not request.file_id:
+                response = projects_pb2.AnalyzeCsvForProjectResponse()
+                response.success = False
+                response.error_message = "file_id no puede estar vacío"
+                return response
+            
             # Obtener datos de la tabla DuckDB (datos ya importados)
             table_name = f"data_{request.file_id.replace('-', '_')}"
-            
-            # Verificar si la tabla DuckDB existe
-            if not self.db.check_duckdb_table_exists(table_name):
-                # Intentar migrar si es un archivo antiguo
-                if not self.db.migrate_old_file_to_duckdb(request.file_id):
-                    response = projects_pb2.AnalyzeCsvForProjectResponse()
-                    response.success = False
-                    response.error_message = "Datos del archivo no encontrados en DuckDB. Por favor, vuelve a subir el archivo."
-                    return response
             
             # Obtener datos de muestra de la tabla DuckDB
             try:

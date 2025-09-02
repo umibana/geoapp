@@ -11,7 +11,7 @@ import { Trash2, Edit, Plus, FolderOpen, Upload, BarChart3, Database, Eye } from
 import DatasetViewer from './DatasetViewer';
 
 // Importar tipos generados
-import { DatasetType } from '@/generated/projects_pb';
+import { DatasetType } from '@/generated/projects';
 
 /**
  * Propiedades del gestor de proyectos

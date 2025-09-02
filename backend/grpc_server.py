@@ -141,56 +141,6 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
             context.set_details(f"EchoParameter failed: {str(e)}")
             return geospatial_pb2.EchoParameterResponse()
     
-    def AnalyzeCsv(self, request, context):
-        """
-        Analiza un archivo CSV para detectar nombres de columnas y tipos de datos desde las primeras dos filas
-        
-        @param request: AnalyzeCsvRequest with file_path, file_name, and rows_to_analyze
-        @param context: gRPC context
-        @returns: AnalyzeCsvResponse with column info and auto-detected mappings
-        """
-        try:
-            # Enhanced CSV analysis with optional SQL saving
-            save_to_sql = request.save_to_sql if hasattr(request, 'save_to_sql') else False
-            rows_to_analyze = request.rows_to_analyze if request.rows_to_analyze > 0 else 1000
-            response = self.project_manager.analyze_csv(
-                request.file_path, 
-                request.file_name, 
-                rows_to_analyze, 
-                save_to_sql
-            )
-            return response
-            
-        except Exception as e:
-            print(f"❌ AnalyzeCsv error: {e}")
-            response = files_pb2.AnalyzeCsvResponse()
-            response.success = False
-            response.error_message = str(e)
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(f"AnalyzeCsv failed: {str(e)}")
-            return response
-
-    def SendFile(self, request, context):
-        """
-        Process the complete CSV file with variable mappings and keep data in memory
-        
-        @param request: SendFileRequest with file path and variable mappings
-        @param context: gRPC context
-        @returns: SendFileResponse with processing statistics
-        """
-        try:
-            response = self.project_manager.send_file(request)
-            return response
-            
-        except Exception as e:
-            print(f"❌ SendFile error: {e}")
-            response = files_pb2.SendFileResponse()
-            response.success = False
-            response.errors.append(str(e))
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(f"SendFile failed: {str(e)}")
-            return response
-
     
     def GetColumnarData(self, request, context):
         return self.data_generator.get_columnar_data(request, context)

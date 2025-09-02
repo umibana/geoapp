@@ -28,9 +28,7 @@
     "generate:protos": "source venv/bin/activate && node scripts/generate-protos.js",
     "generate:simple": "source venv/bin/activate && node scripts/generate-full-stack.js",
     "generate:full-stack": "source venv/bin/activate && node scripts/generate-full-stack.js",
-    "test:simplified": "node scripts/test-simplified-system.js",
-    "generate:protos:frontend": "protoc --plugin=protoc-gen-es=./node_modules/.bin/protoc-gen-es --es_out=src/generated --es_opt=target=ts geospatial.proto",
-    "generate:protos:backend": "python -m grpc_tools.protoc --python_out=backend/generated --grpc_python_out=backend/generated --proto_path=. geospatial.proto"
+    "test:simplified": "node scripts/test-simplified-system.js"
   },
   "author": "Hans Villarroel <hans.villarroel@usach.cl>",
   "license": "Apache-2.0",
@@ -114,6 +112,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
+    "ts-proto": "^2.7.7",
     "uplot": "^1.6.32",
     "zod": "^3.24.3"
   }

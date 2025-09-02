@@ -10,9 +10,10 @@
  * 5. Simple context provider
  */
 
-const { execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+import { execSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import process from 'process';
 
 const PROTO_DIR = 'protos';
 const MAIN_PROTO_FILE = 'protos/main_service.proto';
@@ -560,9 +561,9 @@ async function generateOriginalProtos() {
   ensureDirectory(FRONTEND_OUT_DIR);
   ensureDirectory(BACKEND_OUT_DIR);
   
-  // Generate TypeScript files
-  const frontendCommand = `protoc --plugin=protoc-gen-es=./node_modules/.bin/protoc-gen-es --es_out=${FRONTEND_OUT_DIR} --es_opt=target=ts --proto_path=${PROTO_DIR} ${MAIN_PROTO_FILE}`;
-  const frontendSuccess = runCommand(frontendCommand, 'Generating TypeScript protobuf files');
+  // Generate TypeScript files using ts-proto
+  const frontendCommand = `protoc --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=${FRONTEND_OUT_DIR} --ts_proto_opt=lowerCaseServiceMethods=true --ts_proto_opt=snakeToCamel=false --proto_path=${PROTO_DIR} ${MAIN_PROTO_FILE}`;
+  const frontendSuccess = runCommand(frontendCommand, 'Generating TypeScript protobuf files with ts-proto');
   
   // Generate Python files
   const backendCommand = `python3 -m grpc_tools.protoc --python_out=${BACKEND_OUT_DIR} --grpc_python_out=${BACKEND_OUT_DIR} --proto_path=${PROTO_DIR} ${MAIN_PROTO_FILE}`;
@@ -609,8 +610,8 @@ async function main() {
   }
 }
 
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   main();
 }
 
-module.exports = { main };
+export { main };

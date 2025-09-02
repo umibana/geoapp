@@ -56,14 +56,14 @@ function checkProtoFiles() {
 }
 
 function generateFrontendProtos() {
-  log('Generating frontend Protocol Buffers...');
+  log('Generating frontend Protocol Buffers with ts-proto...');
   
   ensureDirectory(FRONTEND_OUT_DIR);
   
-  // Generate TypeScript files using Buf's protoc-gen-es - process all proto files
-  const command = `protoc --plugin=protoc-gen-es=./node_modules/.bin/protoc-gen-es --es_out=${FRONTEND_OUT_DIR} --es_opt=target=ts --proto_path=${PROTO_DIR} ${PROTO_DIR}/*.proto`;
+  // Generate TypeScript files using ts-proto - process all proto files
+  const command = `protoc --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=${FRONTEND_OUT_DIR} --ts_proto_opt=lowerCaseServiceMethods=true --ts_proto_opt=snakeToCamel=false --proto_path=${PROTO_DIR} ${PROTO_DIR}/*.proto`;
   
-  return runCommand(command, 'Generating TypeScript protobuf files for frontend');
+  return runCommand(command, 'Generating TypeScript protobuf files for frontend with ts-proto');
 }
 
 function generateBackendProtos() {
@@ -89,10 +89,10 @@ function checkDependencies() {
     process.exit(1);
   }
   
-  // Check if protoc-gen-es is available
-  const protocGenEs = './node_modules/.bin/protoc-gen-es';
-  if (!existsSync(protocGenEs)) {
-    error('protoc-gen-es not found. Install with: npm install @bufbuild/protoc-gen-es');
+  // Check if ts-proto is available
+  const protocGenTsProto = './node_modules/.bin/protoc-gen-ts_proto';
+  if (!existsSync(protocGenTsProto)) {
+    error('protoc-gen-ts_proto not found. Install with: npm install ts-proto');
     process.exit(1);
   }
   
@@ -109,8 +109,8 @@ function checkDependencies() {
 }
 
 function main() {
-  console.log('🚀 Protocol Buffer Generator');
-  console.log('============================');
+  console.log('🚀 Protocol Buffer Generator (ts-proto)');
+  console.log('=======================================');
   
   checkDependencies();
   checkProtoFiles();
@@ -134,6 +134,6 @@ function main() {
   }
 }
 
-  main();
+main();
 
 export default { main }; 

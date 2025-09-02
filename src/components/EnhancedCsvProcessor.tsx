@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { CheckCircle2, XCircle, AlertCircle, FileText, Settings, Database } from 'lucide-react';
 
 // Importar tipos generados
-import { ColumnType } from '@/generated/projects_pb';
+import { AnalyzeCsvForProjectResponse, ColumnMapping, ColumnType, ProcessDatasetResponse } from '@/generated/projects';
 
 /**
  * Propiedades del procesador mejorado de CSV
@@ -22,44 +22,6 @@ interface EnhancedCsvProcessorProps {
   onCancel?: () => void;                                   // Callback para cancelar
 }
 
-/**
- * Mapeo de columnas CSV a campos geoespaciales
- * Define cómo interpretar cada columna del archivo CSV
- */
-interface ColumnMapping {
-  column_name: string;     // Nombre de la columna en el CSV
-  column_type: ColumnType; // Tipo de datos (numérico, categórico, etc.)
-  mapped_field: string;    // Campo mapeado (x, y, z, etc.)
-  is_coordinate: boolean;  // Si es una coordenada espacial
-}
-
-/**
- * Respuesta del análisis de CSV
- * Contiene información sobre la estructura del archivo
- */
-interface AnalyzeCsvResponse {
-  success: boolean;        // Si el análisis fue exitoso
-  error_message?: string;  // Mensaje de error si ocurrió alguno
-  headers: string[];
-  preview_rows: Array<{ values: string[] }>;
-  suggested_types: ColumnType[];
-  suggested_mappings: Record<string, string>;
-  total_rows: number;
-}
-
-interface ProcessDatasetResponse {
-  success: boolean;
-  error_message?: string;
-  dataset: {
-    id: string;
-    file_id: string;
-    total_rows: number;
-    current_page: number;
-    created_at: number;
-    column_mappings: ColumnMapping[];
-  };
-  processed_rows: number;
-}
 
 const columnTypeLabels = {
   [ColumnType.NUMERIC]: 'Numeric',
@@ -118,7 +80,8 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
 
       const response = await window.autoGrpc.analyzeCsvForProject({
         file_id: fileId
-      }) as AnalyzeCsvResponse;
+        
+      }) as AnalyzeCsvForProjectResponse;
 
       if (response.success) {
         setHeaders(response.headers);
