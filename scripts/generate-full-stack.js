@@ -137,47 +137,82 @@ function parseAllProtoFiles() {
   }
 }
 
-function generateSimpleClient(services) {
+function generateTypedClient(services, allMessages) {
   // Find GeospatialService (the main aggregator service)
   const service = services.find(s => s.name === 'GeospatialService') || services[0];
   if (!service) return '';
+  
+  // Dynamically organize imports by proto file based on message definitions
+  const importsByFile = {
+    'geospatial_pb': new Set(),
+    'projects_pb': new Set(),
+    'files_pb': new Set()
+  };
+  
+  // Add all request/response types to appropriate import files
+  service.methods.forEach(method => {
+    [method.requestType, method.responseType].forEach(typeName => {
+      // Determine which proto file this type belongs to based on naming patterns
+      if (typeName.includes('Project') || typeName.includes('Dataset') || typeName.includes('File')) {
+        importsByFile['projects_pb'].add(typeName);
+      } else if (typeName.includes('AnalyzeCsv') || typeName.includes('SendFile')) {
+        importsByFile['files_pb'].add(typeName);
+      } else {
+        importsByFile['geospatial_pb'].add(typeName);
+      }
+    });
+  });
+  
+  // Generate dynamic import statements
+  const importStatements = Object.entries(importsByFile)
+    .filter(([_, types]) => types.size > 0)
+    .map(([file, types]) => {
+      const typeList = Array.from(types).sort().join(',\n  ');
+      return `import type {\n  ${typeList}\n} from '../generated/${file}';`;
+    })
+    .join('\n');
   
   const methods = service.methods.map(method => {
     const methodName = method.name;
     const camelCaseMethod = methodName.charAt(0).toLowerCase() + methodName.slice(1);
     
     if (method.isStreaming) {
-      return `  async ${camelCaseMethod}(request, onData) {
+      return `  async ${camelCaseMethod}(request: ${method.requestType}, onData?: (data: ${method.responseType}) => void): Promise<${method.responseType}[]> {
     return this.callStreamingMethod('${methodName}', request, onData);
   }`;
     } else {
-      return `  async ${camelCaseMethod}(request) {
+      return `  async ${camelCaseMethod}(request: ${method.requestType}): Promise<${method.responseType}> {
     return this.callMethod('${methodName}', request);
   }`;
     }
   }).join('\n\n');
   
-  return `// Auto-generated gRPC client
+  return `// Auto-generated gRPC client with Protocol Buffer types
 // DO NOT EDIT - This file is auto-generated
 
 import { ipcRenderer } from 'electron';
+${importStatements}
 
 export class AutoGrpcClient {
   constructor() {
-    // Simple auto-generated gRPC client
+    // Type-safe auto-generated gRPC client
   }
 
-  private async callMethod(methodName, request) {
+  private async callMethod<TRequest, TResponse>(methodName: string, request: TRequest): Promise<TResponse> {
     const channel = \`grpc-\${methodName.toLowerCase().replace(/([A-Z])/g, '-$1').toLowerCase()}\`;
     return ipcRenderer.invoke(channel, request);
   }
   
-  private async callStreamingMethod(methodName, request, onData) {
+  private async callStreamingMethod<TRequest, TResponse>(
+    methodName: string, 
+    request: TRequest, 
+    onData?: (data: TResponse) => void
+  ): Promise<TResponse[]> {
     return new Promise((resolve, reject) => {
       const requestId = \`stream-\${Date.now()}-\${Math.random()}\`;
-      const results = [];
+      const results: TResponse[] = [];
       
-      const handleData = (event, data) => {
+      const handleData = (event: any, data: any) => {
         if (data.requestId !== requestId) return;
         
         if (data.type === 'data') {
@@ -190,7 +225,7 @@ export class AutoGrpcClient {
         }
       };
       
-      const handleError = (event, data) => {
+      const handleError = (event: any, data: any) => {
         if (data.requestId !== requestId) return;
         ipcRenderer.off('grpc-stream-data', handleData);
         ipcRenderer.off('grpc-stream-error', handleError);
@@ -272,7 +307,7 @@ ${handlers}
 `;
 }
 
-function generateSimpleContext(services) {
+function generateTypedContext(services) {
   // Find GeospatialService (the main aggregator service)
   const service = services.find(s => s.name === 'GeospatialService') || services[0];
   if (!service) return '';
@@ -282,19 +317,81 @@ function generateSimpleContext(services) {
     return `  ${camelCaseMethod}: autoGrpcClient.${camelCaseMethod}.bind(autoGrpcClient),`;
   }).join('\n');
   
-  return `// Auto-generated context provider
+  return `// Auto-generated context provider with TypeScript types
 // DO NOT EDIT - This file is auto-generated
 
 import { contextBridge } from 'electron';
 import { autoGrpcClient } from './auto-grpc-client';
+import type { AutoGrpcContext } from './auto-context';
 
-const autoGrpcContext = {
+const autoGrpcContext: AutoGrpcContext = {
 ${methods}
 };
 
 export function exposeAutoGrpcContext() {
   contextBridge.exposeInMainWorld('autoGrpc', autoGrpcContext);
-  console.log('✅ Auto-gRPC context exposed');
+  console.log('✅ Auto-gRPC context exposed with TypeScript types');
+}
+`;
+}
+
+function generateAutoContextTypes(services, allMessages) {
+  // Find GeospatialService (the main aggregator service)
+  const service = services.find(s => s.name === 'GeospatialService') || services[0];
+  if (!service) return '';
+  
+  // Dynamically organize imports by proto file based on message definitions
+  const importsByFile = {
+    'geospatial_pb': new Set(),
+    'projects_pb': new Set(),
+    'files_pb': new Set()
+  };
+  
+  // Add all request/response types to appropriate import files
+  service.methods.forEach(method => {
+    [method.requestType, method.responseType].forEach(typeName => {
+      // Determine which proto file this type belongs to based on naming patterns
+      if (typeName.includes('Project') || typeName.includes('Dataset') || typeName.includes('File')) {
+        importsByFile['projects_pb'].add(typeName);
+      } else if (typeName.includes('AnalyzeCsv') || typeName.includes('SendFile')) {
+        importsByFile['files_pb'].add(typeName);
+      } else {
+        importsByFile['geospatial_pb'].add(typeName);
+      }
+    });
+  });
+  
+  // Generate dynamic import statements
+  const importStatements = Object.entries(importsByFile)
+    .filter(([_, types]) => types.size > 0)
+    .map(([file, types]) => {
+      const typeList = Array.from(types).sort().join(',\n  ');
+      return `import type {\n  ${typeList}\n} from '../generated/${file}';`;
+    })
+    .join('\n');
+  
+  // Generate method signatures for the interface
+  const methodSignatures = service.methods.map(method => {
+    const camelCaseMethod = method.name.charAt(0).toLowerCase() + method.name.slice(1);
+    
+    if (method.isStreaming) {
+      return `  ${camelCaseMethod}: (request: ${method.requestType}, onData?: (data: ${method.responseType}) => void) => Promise<${method.responseType}[]>;`;
+    } else {
+      return `  ${camelCaseMethod}: (request: ${method.requestType}) => Promise<${method.responseType}>;`;
+    }
+  }).join('\n');
+  
+  return `// Auto-generated TypeScript interfaces for window.autoGrpc
+// DO NOT EDIT - This file is auto-generated
+
+${importStatements}
+
+/**
+ * Type-safe interface for window.autoGrpc methods
+ * All methods are auto-generated from Protocol Buffer service definitions
+ */
+export interface AutoGrpcContext {
+${methodSignatures}
 }
 `;
 }
@@ -425,9 +522,9 @@ async function generateAllFiles() {
     // Create auto-generation directory
     ensureDirectory(AUTO_GEN_DIR);
     
-    // Generate simple client
-    log('Generating simple gRPC client...');
-    const clientContent = generateSimpleClient(services);
+    // Generate typed client
+    log('Generating type-safe gRPC client...');
+    const clientContent = generateTypedClient(services, messages);
     fs.writeFileSync(path.join(AUTO_GEN_DIR, 'auto-grpc-client.ts'), clientContent);
     
     // Generate IPC handlers
@@ -435,9 +532,14 @@ async function generateAllFiles() {
     const handlersContent = generateSimpleHandlers(services);
     fs.writeFileSync(path.join(AUTO_GEN_DIR, 'auto-ipc-handlers.ts'), handlersContent);
     
+    // Generate TypeScript interface definitions
+    log('Generating TypeScript context interface...');
+    const contextTypesContent = generateAutoContextTypes(services, messages);
+    fs.writeFileSync(path.join(AUTO_GEN_DIR, 'auto-context.ts'), contextTypesContent);
+    
     // Generate context provider
     log('Generating context provider...');
-    const contextContent = generateSimpleContext(services);
+    const contextContent = generateTypedContext(services);
     fs.writeFileSync(path.join(AUTO_GEN_DIR, 'auto-grpc-context.ts'), contextContent);
     
     // Generate main process client

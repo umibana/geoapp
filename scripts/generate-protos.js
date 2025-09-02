@@ -6,7 +6,7 @@
 
 import { execSync } from 'child_process';
 import { existsSync, mkdirSync } from 'fs';
-import path from 'path';
+import process from 'process';
 
 const PROTO_DIR = 'protos';
 const MAIN_PROTO_FILE = 'protos/main_service.proto';

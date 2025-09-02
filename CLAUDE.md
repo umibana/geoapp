@@ -146,7 +146,7 @@ src/helpers/ipc/
 - **Type-Safe ORM**: SQLModel provides type safety across Python backend
 - **Project Management**: Full CRUD operations for projects, files, and datasets
 - **Relationship Mapping**: Projects → Files → Datasets → DataRows
-- **Persistent Storage**: SQLite database (`geospatial.db`) for data persistence
+- **Persistent Storage**: DuckDB database (`geospatial.db`) for data persistence
 - **Database Models**:
   - `Project`: Project metadata and configuration
   - `File`: CSV file records associated with projects
