@@ -20,7 +20,6 @@ export function BackendStatus({ className = '' }: BackendStatusProps) {
 
   const checkBackendStatus = async () => {
     try {
-      // Get backend URL from Electron (will be grpc://127.0.0.1:50077)
       const url = await window.electronBackend.getBackendUrl();
       setBackendUrl(url);
       

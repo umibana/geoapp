@@ -634,6 +634,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
                           placeholder="Ingresa un nombre para este archivo"
                         />
                       </div>
+                      {uploadDatasetType && (
                       <div>
                         <Label htmlFor="dataset-type">Tipo de Dataset </Label>
                         <Select
@@ -653,9 +654,10 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
                             <SelectItem value="3">
                               Block
                             </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                     </div>
                     <DialogFooter>
                       <Button

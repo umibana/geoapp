@@ -57,11 +57,10 @@ message Bounds {
 }
 
 message GetColumnarDataResponse {
-  repeated double data = 1;  // Array con posiciones: [x1,y1,z1, x2,y2,z2, x3,y3,z3, ...]
-  int32 total_count = 2;     // Numéro de puntos
-  // Uso map para poder después establecer el limite del valor, por ejemplo bounds["x"]
-  // Podría usar repeated pero tendria que entrar con indices (bounds[0])
+  // Binary approach for Float32Array
+  bytes binary_data = 4;        // Raw Float32Array as binary data
+  int32 data_length = 5;        // Number of elements in the array
+  
+  int32 total_count = 2;        // Numéro de puntos
   map<string, Bounds> bounds = 3; 
-  // Puedo agregar más datos...
-
 }

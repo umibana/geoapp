@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
-import { ChildProcessVisualization, VisualizacionDatos } from './VisualizacionChunks';
+import {  VisualizacionDatos } from './VisualizacionChunks';
 
 /**
  * Componente de demostración de gRPC

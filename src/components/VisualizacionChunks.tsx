@@ -9,7 +9,8 @@ type EChartsParams = {
 };
 
 type GetColumnarDataResponse = {
-  data: number[];
+  binary_data: Uint8Array;   // Binary Float32Array data
+  data_length: number;       // Number of Float32 elements
   total_count: number;
   bounds: { [key: string]: { min_value: number; max_value: number } };
 };
@@ -26,8 +27,6 @@ export function VisualizacionDatos({
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstanceRef = useRef<echarts.ECharts | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [totalPoints, setTotalPoints] = useState(0);
-  const [currentBounds, setCurrentBounds] = useState<{x: [number, number], y: [number, number], z: [number, number]} | null>(null);
 
   // Initialize chart
   useEffect(() => {
@@ -94,19 +93,6 @@ export function VisualizacionDatos({
           yAxisIndex: 0,
           filterMode: 'none'
         },
-        {
-          type: 'slider',
-          show: true,
-          xAxisIndex: 0,
-          bottom: '10%'
-        },
-        {
-          type: 'slider',
-          show: true,
-          yAxisIndex: 0,
-          right: '10px',
-          width: '20px'
-        }
       ],
       toolbox: {
         feature: {
@@ -156,37 +142,19 @@ export function VisualizacionDatos({
     };
   }, [title, autoResize]);
 
-  // Update chart with new data
-  const updateChart = useCallback((flatData: number[], bounds: {x: [number, number], y: [number, number], z: [number, number]}, pointCount: number) => {
+  // Actualizar gráfico con datos Float32Array optimizados
+  const updateChart = useCallback((inputData: number[] | Float32Array, bounds: {x: [number, number], y: [number, number], z: [number, number]}, pointCount: number) => {
     const chart = chartInstanceRef.current;
-    if (!chart || chart.isDisposed() || !flatData.length) return;
+    if (!chart || chart.isDisposed() || !inputData.length) return;
 
-    // Convert flat array [x1,y1,z1,x2,y2,z2,...] to tuples for ECharts
-    const tupleData: Array<[number, number, number]> = [];
-    for (let i = 0; i < flatData.length; i += 3) {
-      tupleData.push([flatData[i], flatData[i+1], flatData[i+2]]);
-    }
+    // Usar Float32Array directamente - ECharts soporta datos binarios nativamente
+    const float32Data = inputData instanceof Float32Array ? inputData : new Float32Array(inputData);
 
     chart.setOption({
       title: {
         text: `${title} (${pointCount.toLocaleString()} points)`
       },
-      visualMap: {
-        min: bounds.z[0],
-        max: bounds.z[1],
-        dimension: 2, // Use the third dimension (Z value) for color mapping
-        orient: 'vertical',
-        right: 10,
-        top: 'center',
-        text: ['HIGH', 'LOW'],
-        calculable: true,
-        inRange: {
-          color: ['#1e40af', '#3b82f6', '#60a5fa', '#93c5fd', '#dbeafe', '#fef3c7', '#fcd34d', '#f59e0b', '#d97706', '#b45309']
-        },
-        textStyle: {
-          color: '#374151'
-        }
-      },
+  
       xAxis: {
         min: bounds.x[0],
         max: bounds.x[1]
@@ -195,42 +163,12 @@ export function VisualizacionDatos({
         min: bounds.y[0],
         max: bounds.y[1]
       },
-      dataZoom: [
-        {
-          type: 'inside',
-          xAxisIndex: 0,
-          filterMode: 'none'
-        },
-        {
-          type: 'inside', 
-          yAxisIndex: 0,
-          filterMode: 'none'
-        },
-        {
-          type: 'slider',
-          show: true,
-          xAxisIndex: 0,
-          bottom: '10%'
-        },
-        {
-          type: 'slider',
-          show: true,
-          yAxisIndex: 0,
-          right: '10px',
-          width: '20px'
-        }
-      ],
-      toolbox: {
-        feature: {
-          dataZoom: {
-            yAxisIndex: 'none'
-          },
-          restore: {}
-        }
-      },
+
+  
       series: [{
         type: 'scatter',
-        data: tupleData,
+        data: float32Data,  // Datos binarios directos - sin conversión
+        dimensions: ['x', 'y', 'z'],  // Requerido para datos TypedArray
         symbolSize: pointCount > 50000 ? 2 : 3,
         itemStyle: {
           opacity: 0.8,
@@ -240,7 +178,7 @@ export function VisualizacionDatos({
         largeThreshold: 10000,
         blendMode: 'screen',
         progressive: 100000,
-        progressiveThreshold: 20000,
+        progressiveThreshold: 10000,
         progressiveChunkMode: 'sequential'
       }]
     });
@@ -268,9 +206,18 @@ export function VisualizacionDatos({
         z: [result.bounds['z']?.min_value ?? 0, result.bounds['z']?.max_value ?? 0] as [number, number]
       };
 
-      setTotalPoints(result.total_count);
-      setCurrentBounds(bounds);
-      updateChart(result.data, bounds, result.total_count);
+
+      // Crear Float32Array alineado desde datos binarios del backend
+      // gRPC (protobuf) nos da un Float32Array desalineado, por lo que hay que alinearlo
+
+      const alignedBuffer = result.binary_data.buffer.slice(
+        result.binary_data.byteOffset, 
+        result.binary_data.byteOffset + result.data_length * 4
+      );
+      const dataToUse = new Float32Array(alignedBuffer);
+      
+      // Actualizar gráfico con los datos recibidos
+      updateChart(dataToUse, bounds, result.total_count);
 
       toast.success('Chart Updated!', {
         description: `${result.total_count.toLocaleString()} points loaded`
@@ -288,7 +235,7 @@ export function VisualizacionDatos({
 
 
   // Test sizes for child process
-  const testSizes = [1000, 5000, 10000, 25000, 50000, 100000,500000];
+  const testSizes = [1000, 5000, 10000, 25000, 50000, 100000,500000, 2000000];
 
   return (
     <div className="w-full space-y-4">

@@ -83,6 +83,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
         
       }) as AnalyzeCsvForProjectResponse;
 
+
       if (response.success) {
         setHeaders(response.headers);
         setPreviewRows(response.preview_rows.map(row => row.values));

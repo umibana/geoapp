@@ -43,7 +43,7 @@ class DataGenerator:
         lng_grid = np.linspace(lng_min, lng_max, actual_resolution, dtype=np.float64)
         lat_mesh, lng_mesh = np.meshgrid(lat_grid, lng_grid)
         
-        print("🔢 Generando puntos en la grid usando numpy")
+        # Generando puntos en la grid usando numpy
 
         # Hacemos flatten debido a como se generan los puntos en numpy (2D)
         flat_lat = lat_mesh.flatten()[:max_points]
@@ -108,16 +108,24 @@ class DataGenerator:
             response = geospatial_pb2.GetColumnarDataResponse()
             response.total_count = len(columnar_data['x'])
             
-           # Dejamos los arreglos con flatten 
-            flat_data = []
-            for i in range(len(columnar_data['x'])):
-                flat_data.extend([
-                    columnar_data['x'][i],
-                    columnar_data['y'][i], 
-                    columnar_data['z'][i]
-                ])
+            # Enviar como Float32Array binario optimizado para el frontend
+            num_points = len(columnar_data['x'])
+            flat_numpy = np.zeros(num_points * 3, dtype=np.float32, order='C')
             
-            response.data.extend(flat_data)
+            # Llenar el array eficientemente usando operaciones numpy
+            flat_numpy[0::3] = np.array(columnar_data['x'], dtype=np.float32)  # coordenadas x
+            flat_numpy[1::3] = np.array(columnar_data['y'], dtype=np.float32)  # coordenadas y  
+            flat_numpy[2::3] = np.array(columnar_data['z'], dtype=np.float32)  # coordenadas z
+            
+            # Asegurar que el array sea contiguo
+            aligned_array = np.ascontiguousarray(flat_numpy, dtype=np.float32)
+            
+            # Convertir a bytes para protobuf
+            binary_data = aligned_array.tobytes()
+            
+            # Configurar campos de respuesta
+            response.binary_data = binary_data
+            response.data_length = len(aligned_array)
             
             # Calculamos los limites para el gráfico y los seteamos en la response
             # 
@@ -133,7 +141,7 @@ class DataGenerator:
             return response
             
         except Exception as e:
-            print(f"❌ Error en get_batch_data_flat: {e}")
+            # Error en el procesamiento de datos
             if context:
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details(f"Error de datos en formato flat: {str(e)}")
