@@ -3,6 +3,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/template/AppSidebar";
 import { WindowProvider, useWindows } from "@/contexts/WindowContext";
 import { DragWindow } from "@/components/ui/drag-window";
+import Footer from "@/components/template/Footer";
 
 function BaseLayoutContent({
   children,
@@ -35,8 +36,10 @@ function BaseLayoutContent({
             {window.component}
           </DragWindow>
         ))}
+        <Footer/>
       </main>
     </SidebarProvider>
+
   );
 }
 

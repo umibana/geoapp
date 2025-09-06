@@ -235,7 +235,7 @@ export function VisualizacionDatos({
 
 
   // Test sizes for child process
-  const testSizes = [1000, 5000, 10000, 25000, 50000, 100000,500000, 2000000];
+  const testSizes = [1000, 5000, 10000, 25000, 50000, 100000,500000, 1000000, 15000000];
 
   return (
     <div className="w-full space-y-4">
