@@ -72,6 +72,14 @@ export function registerBackendListeners() {
     }
   });
 
+  ipcMain.handle(BACKEND_CHANNELS.REST_GET_COLUMNAR_DATA_MSGPACK, async (_, request: { data_types: string[]; max_points: number }) => {
+    try {
+      return await mainRestApiClient.getColumnarDataMsgpack(request);
+    } catch (error) {
+      throw new Error(`REST get columnar data msgpack failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  });
+
   ipcMain.handle(BACKEND_CHANNELS.REST_GET_PROJECTS, async () => {
     try {
       return await mainRestApiClient.getProjects();

@@ -17,6 +17,12 @@ script_dir = Path(__file__).parent.absolute()
 sys.path.insert(0, str(script_dir))
 sys.path.insert(0, str(script_dir / 'generated'))
 
+try:
+    import msgpack
+except ImportError:
+    print("⚠️ Warning: msgpack not installed. Install with: pip install msgpack")
+    msgpack = None
+
 import grpc
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -264,6 +270,31 @@ def rest_get_columnar_data():
     print(f"Tamaño JSON: {json_payload_size:,} bytes ({json_payload_size/1024:.2f} KB) para {data.get('max_points', 1000):,} puntos")
     
     return columnar_data
+
+@app.route('/api/columnar-data-msgpack', methods=['POST'])
+def rest_get_columnar_data_msgpack():
+    """ getColumnarData con MessagePack en vez de JSON o protobuf"""
+    if not msgpack:
+        return jsonify({"error": "MessagePack not available. Install with: pip install msgpack"}), 500
+    
+    data = request.get_json()
+    
+    columnar_data = servicer_instance.data_generator.get_columnar_data_JSON(
+        max_points=data.get('max_points', 1000),
+        seed=data.get('seed')
+    )
+    
+    # Pack data with MessagePack
+    msgpack_data = msgpack.packb(columnar_data)
+    
+    # Debug: Calculate MessagePack payload size vs JSON
+    json_payload_size = len(json.dumps(columnar_data))
+    msgpack_payload_size = len(msgpack_data)
+    compression_ratio = (json_payload_size - msgpack_payload_size) / json_payload_size * 100
+    
+    # Return binary MessagePack data with proper content type
+    from flask import Response
+    return Response(msgpack_data, content_type='application/msgpack')
 
 # =============================================================================
 # FLASK REST ENDPOINTS - PROJECT MANAGEMENT

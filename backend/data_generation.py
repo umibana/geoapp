@@ -96,8 +96,10 @@ class DataGenerator:
     def get_columnar_data(self, request, context=None) -> geospatial_pb2.GetColumnarDataResponse:
         try:
             # Generate the columnar data first
+            seed = request.seed if hasattr(request, 'seed') and request.seed > 0 else None
             columnar_data = self.generate_columnar_data(
-                max_points=request.max_points
+                max_points=request.max_points,
+                seed=seed
             )
             
             # Create response
@@ -135,6 +137,15 @@ class DataGenerator:
             response.bounds['z'].max_value = np.max(columnar_data['z'])
 
             response.generated_at = time.time()
+            
+            # CRÍTICO: Calcular el tamaño del mensaje Protocol Buffer completo serializado
+            # Esto incluye binary_data + metadata (total_count, bounds, generated_at, etc.)
+            serialized_message = response.SerializeToString()
+            
+            # Agregar el tamaño del mensaje serializado completo para medición justa
+            # Esto asegura que comparemos el mismo concepto: el payload completo de red
+            response.message_size_bytes = len(serialized_message)
+            
             return response
             
         except Exception as e:

@@ -7,28 +7,25 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 // NOTE: Now using window.electronBackend.rest instead of restApiClient for fair IPC comparison
 
+interface FormatResult {
+  responseTime: number;
+  transmissionTime: number;
+  networkPayloadSize?: number;
+  frontendMemorySize: number;
+  parsingTime: number;
+  data: any;
+}
+
 interface PerformanceResult {
   method: string;
-  grpc?: {
-    responseTime: number;
-    transmissionTime: number;
-    frontendMemorySize: number;
-    parsingTime: number;
-    data: any;
-  };
-  rest?: {
-    responseTime: number;
-    transmissionTime: number;
-    networkPayloadSize: number;
-    frontendMemorySize: number;
-    parsingTime: number;
-    data: any;
-  };
+  grpc?: FormatResult;
+  restJson?: FormatResult;
+  restMsgpack?: FormatResult;
   error?: string;
   dataConsistency?: {
-    totalCountMatch: boolean;
-    boundsMatch: boolean;
-    sampleDataMatch: boolean;
+    grpcJsonMatch: boolean;
+    grpcMsgpackMatch: boolean;
+    jsonMsgpackMatch: boolean;
     details: string;
   };
 }
@@ -125,9 +122,10 @@ export function PerformanceComparison() {
       let grpcFrontendSize = 0;
       
       if (grpcResponse.binary_data && grpcResponse.data_length) {
-        // Phase 1: Convert binary data to flat array (Protocol Buffer parsing)
-        const float32Array = new Float32Array(grpcResponse.binary_data);
-        const flatArray = Array.from(float32Array);
+        // Phase 1: Convert binary data to flat array (Protocol Buffer parsing)  
+        // ÓPTIMO: binary_data_f32 ya es Float32Array optimizado por el generador automático
+        // ⚡ Zero-copy y memory-aligned cuando es posible
+        const flatArray = grpcResponse.binary_data_f32 || new Float32Array(grpcResponse.binary_data);
         
         if (options?.rawParsingOnly) {
           // MODO RAW PARSING: Solo mide la conversión del protocolo
@@ -302,9 +300,22 @@ export function PerformanceComparison() {
     // - Medición de memoria frontend final
     // Propósito: Rendimiento real que experimentaría el usuario final
     await runTest(
-      `GetColumnarData (${testSize.toLocaleString()} points)`,
+      `GetColumnarData JSON (${testSize.toLocaleString()} points)`,
       () => window.autoGrpc.getColumnarData({ data_types: ['elevation'], max_points: testSize }),
       () => window.electronBackend.rest.getColumnarData({ data_types: ['elevation'], max_points: testSize })
+    );
+  };
+
+  const testDataGenerationMsgpack = async () => {
+    // PRUEBA MESSAGEPACK: Compara Protocol Buffer vs MessagePack
+    // - Transmisión por red con MessagePack binario
+    // - Parsing MessagePack → JavaScript object
+    // - Mismo procesamiento de aplicación que JSON
+    // Propósito: Evaluar MessagePack como alternativa a JSON
+    await runTest(
+      `GetColumnarData MessagePack (${testSize.toLocaleString()} points)`,
+      () => window.autoGrpc.getColumnarData({ data_types: ['elevation'], max_points: testSize }),
+      () => window.electronBackend.rest.getColumnarDataMsgpack({ data_types: ['elevation'], max_points: testSize })
     );
   };
 
@@ -376,10 +387,21 @@ export function PerformanceComparison() {
           <Card className="p-4">
             <div className="space-y-2">
               <Button onClick={testDataGeneration} disabled={isLoading} className="w-full">
-                Test Data Generation ({testSize.toLocaleString()} puntos)
+                Test JSON Data ({testSize.toLocaleString()} puntos)
               </Button>
               <p className="text-sm text-muted-foreground">
-                Flujo completo: Red + Parsing + Procesamiento de aplicación. Mide rendimiento real
+                Protocol Buffer vs JSON. Flujo completo: Red + Parsing + Procesamiento
+              </p>
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <div className="space-y-2">
+              <Button onClick={testDataGenerationMsgpack} disabled={isLoading} className="w-full">
+                Test MessagePack ({testSize.toLocaleString()} puntos)
+              </Button>
+              <p className="text-sm text-muted-foreground">
+                Protocol Buffer vs MessagePack. Compara formatos binarios compactos
               </p>
             </div>
           </Card>
@@ -463,9 +485,15 @@ export function PerformanceComparison() {
                             </div>
                             
                             <div className="space-y-1">
-                              <p><span className="font-medium">Payload de Red:</span> {result.grpc.data?.binary_data ? `${(result.grpc.data.binary_data.length / 1024).toFixed(1)} KB` : 'N/A'}</p>
+                              <p><span className="font-medium">Payload de Red:</span> {
+                                result.grpc.data?.message_size_bytes 
+                                  ? `${(result.grpc.data.message_size_bytes / 1024).toFixed(1)} KB (mensaje completo)` 
+                                  : result.grpc.data?.binary_data 
+                                    ? `${(result.grpc.data.binary_data.length / 1024).toFixed(1)} KB (solo datos)`
+                                    : 'N/A'
+                              }</p>
                               <p className="text-xs text-muted-foreground pl-4">
-                                📦 Tamaño del payload binario Protocol Buffer tal como se transmite por la red (sin compresión).
+                                📦 Tamaño del mensaje Protocol Buffer completo serializado tal como se transmite por la red (incluye datos + metadata).
                               </p>
                             </div>
                           </div>

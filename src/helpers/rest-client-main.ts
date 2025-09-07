@@ -1,5 +1,6 @@
 // REST API client for main process - handles HTTP calls for fair IPC comparison
 import { net } from 'electron';
+import { decode } from '@msgpack/msgpack';
 
 export interface RestApiResponse<T> {
   data: T;
@@ -111,6 +112,106 @@ export class MainRestApiClient {
     });
   }
 
+  private async callMethodMsgpack<TRequest, TResponse>(
+    endpoint: string,
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'POST',
+    request?: TRequest
+  ): Promise<RestApiResponse<TResponse>> {
+    const startTime = performance.now();
+    
+    return new Promise((resolve, reject) => {
+      const url = method === 'GET' && request 
+        ? `${this.baseUrl}${endpoint}?${new URLSearchParams(request as any)}`
+        : `${this.baseUrl}${endpoint}`;
+
+      const netRequest = net.request({
+        method,
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/msgpack',
+        }
+      });
+
+      let responseBuffer = Buffer.alloc(0);
+      let timeoutId: NodeJS.Timeout;
+
+      netRequest.on('response', (response) => {
+        clearTimeout(timeoutId);
+        const networkEndTime = performance.now();
+        
+        response.on('data', (chunk: Buffer) => {
+          responseBuffer = Buffer.concat([responseBuffer, chunk]);
+        });
+
+        response.on('end', () => {
+          try {
+            if (response.statusCode && response.statusCode >= 400) {
+              let errorMessage = `HTTP ${response.statusCode}: ${response.statusMessage}`;
+              try {
+                const errorText = responseBuffer.toString();
+                const errorData = JSON.parse(errorText);
+                if (errorData.error) {
+                  errorMessage = errorData.error;
+                }
+              } catch {
+                // Use default error message if JSON parsing fails
+              }
+              reject(new Error(errorMessage));
+              return;
+            }
+
+            // Measure network payload size
+            const networkPayloadSize = responseBuffer.length;
+            
+            // Measure MessagePack parsing time
+            const parseStartTime = performance.now();
+            const data = decode(responseBuffer) as TResponse;
+            const parseEndTime = performance.now();
+            
+            // Measure frontend memory representation size  
+            const frontendMemorySize = JSON.stringify(data).length;
+            
+            // Calculate transmission time if server provides timestamp
+            const receivedAt = Date.now();
+            const serverData = data as any;
+            const transmissionTime = serverData.generated_at ? 
+              receivedAt - (serverData.generated_at * 1000) : 0;
+
+            resolve({
+              data,
+              responseTime: networkEndTime - startTime,
+              networkPayloadSize,
+              frontendMemorySize,
+              parsingTime: parseEndTime - parseStartTime,
+              transmissionTime,
+            });
+          } catch (error) {
+            reject(new Error(`MessagePack parsing failed: ${error instanceof Error ? error.message : 'Unknown error'}`));
+          }
+        });
+      });
+
+      netRequest.on('error', (error) => {
+        clearTimeout(timeoutId);
+        reject(new Error(`REST MessagePack API call failed: ${error.message}`));
+      });
+
+      // Set manual timeout
+      timeoutId = setTimeout(() => {
+        netRequest.destroy();
+        reject(new Error('REST MessagePack API call timed out'));
+      }, 180000);
+
+      // Send request body if needed
+      if (request && method !== 'GET') {
+        netRequest.write(JSON.stringify(request));
+      }
+      
+      netRequest.end();
+    });
+  }
+
   // =============================================================================
   // BASIC TESTING METHODS
   // =============================================================================
@@ -152,6 +253,22 @@ export class MainRestApiClient {
     generated_at: number;
   }>> {
     return this.callMethod('/columnar-data', 'POST', request);
+  }
+
+  async getColumnarDataMsgpack(request: {
+    data_types: string[];
+    max_points: number;
+  }): Promise<RestApiResponse<{
+    data: number[];
+    total_count: number;
+    bounds: {
+      x: { min_value: number; max_value: number };
+      y: { min_value: number; max_value: number };
+      z: { min_value: number; max_value: number };
+    };
+    generated_at: number;
+  }>> {
+    return this.callMethodMsgpack('/columnar-data-msgpack', 'POST', request);
   }
 
   // =============================================================================

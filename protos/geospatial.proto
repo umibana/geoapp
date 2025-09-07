@@ -49,6 +49,7 @@ message HealthCheckResponse {
 message getColumnarDataRequest {
   repeated string data_types = 2;
   int32 max_points = 3;
+  optional int32 seed = 4;
 }
 // Establesco los limites para el gráfico
 message Bounds {
@@ -62,5 +63,6 @@ message GetColumnarDataResponse {
   int32 data_length = 5;        // Number of elements in the array
   int32 total_count = 2;        // Numéro de puntos
   double generated_at = 6;      // Timestamp when the response was generated
-  map<string, Bounds> bounds = 3; 
+  map<string, Bounds> bounds = 3;
+  int32 message_size_bytes = 7; // Size of complete serialized message for fair comparison
 }

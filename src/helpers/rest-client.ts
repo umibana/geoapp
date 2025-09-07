@@ -1,5 +1,6 @@
 // REST API client for performance comparison with gRPC
 // Uses JSON over HTTP instead of Protocol Buffers over gRPC
+import { encode, decode } from '@msgpack/msgpack';
 
 export interface RestApiResponse<T> {
   data: T;
@@ -80,6 +81,74 @@ export class RestApiClient {
     }
   }
 
+  private async callMethodMsgpack<TRequest, TResponse>(
+    endpoint: string,
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'POST',
+    request?: TRequest
+  ): Promise<RestApiResponse<TResponse>> {
+    const startTime = performance.now();
+    
+    const options: RequestInit = {
+      method,
+      headers: {
+        'Content-Type': 'application/json', // Request still JSON
+        'Accept': 'application/msgpack', // Response is MessagePack
+      },
+      signal: AbortSignal.timeout(180000),
+    };
+
+    if (request && method !== 'GET') {
+      options.body = JSON.stringify(request);
+    }
+
+    const url = method === 'GET' && request 
+      ? `${this.baseUrl}${endpoint}?${new URLSearchParams(request as any)}`
+      : `${this.baseUrl}${endpoint}`;
+
+    try {
+      const response = await fetch(url, options);
+      
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          const errorText = await response.text();
+          const errorData = JSON.parse(errorText);
+          if (errorData.error) {
+            errorMessage = errorData.error;
+          }
+        } catch {
+          // Fallback to status text
+        }
+        throw new Error(errorMessage);
+      }
+
+      // Get binary MessagePack data
+      const arrayBuffer = await response.arrayBuffer();
+      const networkEndTime = performance.now();
+      
+      // Measure network payload size
+      const networkPayloadSize = arrayBuffer.byteLength;
+      
+      // Measure MessagePack parsing time
+      const parseStartTime = performance.now();
+      const data = decode(new Uint8Array(arrayBuffer)) as TResponse;
+      const parseEndTime = performance.now();
+      
+      // Measure frontend memory representation size
+      const frontendMemorySize = JSON.stringify(data).length;
+      
+      return {
+        data,
+        responseTime: networkEndTime - startTime,
+        networkPayloadSize,
+        frontendMemorySize,
+        parsingTime: parseEndTime - parseStartTime,
+      };
+    } catch (error) {
+      throw new Error(`REST MessagePack API call failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   // =============================================================================
   // BASIC TESTING METHODS
   // =============================================================================
@@ -120,6 +189,21 @@ export class RestApiClient {
     };
   }>> {
     return this.callMethod('/columnar-data', 'POST', request);
+  }
+
+  async getColumnarDataMsgpack(request: {
+    data_types: string[];
+    max_points: number;
+  }): Promise<RestApiResponse<{
+    data: number[];
+    total_count: number;
+    bounds: {
+      x: { min_value: number; max_value: number };
+      y: { min_value: number; max_value: number };
+      z: { min_value: number; max_value: number };
+    };
+  }>> {
+    return this.callMethodMsgpack('/columnar-data-msgpack', 'POST', request);
   }
 
   // =============================================================================

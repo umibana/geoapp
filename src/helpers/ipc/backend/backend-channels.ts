@@ -8,6 +8,7 @@ export const BACKEND_CHANNELS = {
   REST_HELLO_WORLD: 'backend:rest-hello-world', 
   REST_ECHO_PARAMETER: 'backend:rest-echo-parameter',
   REST_GET_COLUMNAR_DATA: 'backend:rest-get-columnar-data',
+  REST_GET_COLUMNAR_DATA_MSGPACK: 'backend:rest-get-columnar-data-msgpack',
   REST_GET_PROJECTS: 'backend:rest-get-projects',
   REST_CREATE_PROJECT: 'backend:rest-create-project',
   REST_GET_PROJECT: 'backend:rest-get-project',
