@@ -87,10 +87,6 @@ class DataGenerator:
             'x': flat_lng.tolist(),    # X = longitude
             'y': flat_lat.tolist(),    # Y = latitude
             'z': z_values.tolist(),    # Z = elevacion
-            'id_value': [f'sensor_{i % 10}' for i in range(actual_count)],
-            'value1': value1.tolist(), 
-            'value2': value2.tolist(), 
-            'value3': value3.tolist()  
         }
         
         return columnar_data
@@ -119,7 +115,7 @@ class DataGenerator:
             
             # Asegurar que el array sea contiguo
             aligned_array = np.ascontiguousarray(flat_numpy, dtype=np.float32)
-            
+            # Si no, es método gRPC/Protobuf, preparamos la respuesta
             # Convertir a bytes para protobuf
             binary_data = aligned_array.tobytes()
             
@@ -137,7 +133,8 @@ class DataGenerator:
             
             response.bounds['z'].min_value = np.min(columnar_data['z'])
             response.bounds['z'].max_value = np.max(columnar_data['z'])
-            
+
+            response.generated_at = time.time()
             return response
             
         except Exception as e:
@@ -146,4 +143,47 @@ class DataGenerator:
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details(f"Error de datos en formato flat: {str(e)}")
             return geospatial_pb2.GetColumnarDataResponse()
+    
+
+
+
+    def get_columnar_data_JSON(self, max_points: int = 1000, seed: int = None) -> geospatial_pb2.GetColumnarDataResponse:
+            # Generate the columnar data first
+            columnar_data = self.generate_columnar_data(
+                max_points=max_points,
+                seed=seed
+            )
+            
+            # Enviar como Float32Array binario optimizado para el frontend
+            num_points = len(columnar_data['x'])
+            flat_numpy = np.zeros(num_points * 3, dtype=np.float32, order='C')
+            
+            # Llenar el array eficientemente usando operaciones numpy
+            flat_numpy[0::3] = np.array(columnar_data['x'], dtype=np.float32)  # coordenadas x
+            flat_numpy[1::3] = np.array(columnar_data['y'], dtype=np.float32)  # coordenadas y  
+            flat_numpy[2::3] = np.array(columnar_data['z'], dtype=np.float32)  # coordenadas z
+            
+            # Asegurar que el array sea contiguo
+            aligned_array = np.ascontiguousarray(flat_numpy, dtype=np.float32)
+            array_list = aligned_array.tolist()
+            return {
+                    'data': array_list,
+                    'total_count': num_points,
+                    'bounds': {
+                        'x': {
+                            'min_value': np.min(columnar_data['x']),
+                            'max_value': np.max(columnar_data['x'])
+                        },
+                        'y': {
+                            'min_value': np.min(columnar_data['y']),
+                            'max_value': np.max(columnar_data['y'])
+                        },
+                        'z': {
+                            'min_value': np.min(columnar_data['z']),
+                            'max_value': np.max(columnar_data['z'])
+                        }
+                    },
+                    # Agregamos el tiempo de cuando estuvo lista la respuesta, para calcular tiempo de respuesta 
+                    'generated_at': time.time()
+                }
     

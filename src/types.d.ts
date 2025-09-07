@@ -19,10 +19,45 @@ interface ElectronWindow {
   getSize: () => Promise<{ width: number; height: number }>;
 }
 
+interface RestApiResponse<T> {
+  data: T;
+  responseTime: number;
+  networkPayloadSize: number;
+  frontendMemorySize: number;
+  parsingTime: number;
+  transmissionTime: number;
+}
+
 interface ElectronBackend {
   getBackendUrl: () => Promise<string | null>;
   healthCheck: () => Promise<boolean>;
   restartBackend: () => Promise<{ port: number; url: string }>;
+  
+  // REST API calls through IPC for fair performance comparison
+  rest: {
+    healthCheck: () => Promise<RestApiResponse<any>>;
+    helloWorld: (request: { message: string }) => Promise<RestApiResponse<{ message: string }>>;
+    echoParameter: (request: { value: number; operation: string }) => Promise<RestApiResponse<{ 
+      original_value: number; 
+      processed_value: number; 
+      operation: string 
+    }>>;
+    getColumnarData: (request: { data_types: string[]; max_points: number }) => Promise<RestApiResponse<{
+      data: number[];
+      total_count: number;
+      bounds: {
+        x: { min_value: number; max_value: number };
+        y: { min_value: number; max_value: number };
+        z: { min_value: number; max_value: number };
+      };
+      generated_at: number;
+    }>>;
+    getProjects: () => Promise<RestApiResponse<{ projects: any[] }>>;
+    createProject: (request: { name: string; description: string }) => Promise<RestApiResponse<{ project: any }>>;
+    getProject: (projectId: string) => Promise<RestApiResponse<{ project: any }>>;
+    updateProject: (projectId: string, request: { name: string; description: string }) => Promise<RestApiResponse<{ project: any }>>;
+    deleteProject: (projectId: string) => Promise<RestApiResponse<{ success: boolean }>>;
+  };
 }
 
 interface ElectronAPI {

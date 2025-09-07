@@ -2,17 +2,11 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as echarts from 'echarts';
 import { Button } from './ui/button';
 import { toast } from 'sonner';
+import type { GetColumnarDataResponse } from '../generated/geospatial';
 
 // Type definitions
 type EChartsParams = {
   data: [number, number, number] | Record<string, unknown>;
-};
-
-type GetColumnarDataResponse = {
-  binary_data: Uint8Array;   // Binary Float32Array data
-  data_length: number;       // Number of Float32 elements
-  total_count: number;
-  bounds: { [key: string]: { min_value: number; max_value: number } };
 };
 
 interface VisualizationProps {
@@ -196,8 +190,9 @@ export function VisualizacionDatos({
 
     try {
       const result = await window.autoGrpc.getColumnarData({
+        data_types: ['elevation'],
         max_points: testMaxPoints
-      }) as GetColumnarDataResponse;
+      });
 
       // Extract bounds from gRPC response
       const bounds = {
@@ -210,11 +205,10 @@ export function VisualizacionDatos({
       // Crear Float32Array alineado desde datos binarios del backend
       // gRPC (protobuf) nos da un Float32Array desalineado, por lo que hay que alinearlo
 
-      const alignedBuffer = result.binary_data.buffer.slice(
-        result.binary_data.byteOffset, 
-        result.binary_data.byteOffset + result.data_length * 4
-      );
-      const dataToUse = new Float32Array(alignedBuffer);
+      const dataToUse =
+  result.binary_data_f32 ??
+  new Float32Array(result.binary_data.buffer, result.binary_data.byteOffset, result.data_length);
+
       
       // Actualizar gráfico con los datos recibidos
       updateChart(dataToUse, bounds, result.total_count);

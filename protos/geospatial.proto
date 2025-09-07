@@ -62,5 +62,6 @@ message GetColumnarDataResponse {
   int32 data_length = 5;        // Number of elements in the array
   
   int32 total_count = 2;        // Numéro de puntos
+  double generated_at = 6;      // Timestamp when the response was generated
   map<string, Bounds> bounds = 3; 
 }

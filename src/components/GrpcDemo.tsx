@@ -91,7 +91,7 @@ export function GrpcDemo() {
                         }
                         const response = await window.autoGrpc.echoParameter({ value, operation: 'square' });
                         toast.success('Respuesta Parámetro Echo', {
-                          description: `${response.originalValue} al cuadrado = ${response.processedValue}`
+                          description: `${response.original_value} al cuadrado = ${response.processed_value}`
                         });
                         setEchoParamInput(''); // Limpiar usando setState
                       } catch (error) {

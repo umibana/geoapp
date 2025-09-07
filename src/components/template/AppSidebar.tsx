@@ -1,4 +1,4 @@
-import {  Home, TestTube, TestTube2, TestTubeDiagonal, Wifi, FolderOpen } from "lucide-react"
+import {  Home, TestTube, TestTube2, TestTubeDiagonal, Wifi, FolderOpen, Zap } from "lucide-react"
 
 import {
   Sidebar,
@@ -30,6 +30,11 @@ const navigationItems = [
     title: "Projects",
     url: "/projects",
     icon: FolderOpen,
+  },
+  {
+    title: "Performance",
+    url: "/performance",
+    icon: Zap,
   },
 ]
 
