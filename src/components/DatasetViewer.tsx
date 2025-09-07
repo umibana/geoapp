@@ -42,6 +42,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
   const [dataset, setDataset] = useState<GetDatasetDataResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [timetook, setTimetook] = useState(0);
   const [refetching, setRefetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedValueColumn, setSelectedValueColumn] = useState<string>('z');
@@ -132,10 +133,13 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       setError(null);
 
       // Get dataset data with binary format - request currently selected columns
+
+      const timetook = performance.now();
       const response = await window.autoGrpc.getDatasetData({
         dataset_id: datasetInfo.id,
         columns: [selectedXAxis, selectedYAxis, selectedValueColumn]
       }) as GetDatasetDataResponse;
+      setTimetook((performance.now() - timetook));
 
       if (response.binary_data && response.data_length > 0) {
         setDataset(response);
@@ -327,6 +331,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           </Button>
           <div>
             <h2 className="text-2xl font-bold tracking-tight">{datasetInfo.file_name}</h2>
+            <h2> Tiempo de carga: {timetook.toFixed(2)} ms</h2>
             <p className="text-muted-foreground">
               {dataset?.total_count?.toLocaleString() || datasetInfo.total_rows.toLocaleString()} puntos de datos
             </p>

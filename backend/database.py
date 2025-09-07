@@ -502,52 +502,41 @@ class DatabaseManager:
                 session.refresh(dataset)
             return dataset
 
-    def get_dataset_data_from_duckdb(self, dataset_id: str, columns: List[str]) -> Tuple[List[Dict[str, Any]], int, int]:
-        """
-        Get dataset data directly from DuckDB table with pagination
-        
-        Args:
-            dataset_id: Dataset ID to get data for
-            
-        Returns:
-            Tuple of (rows, total_rows, total_pages)        """
+    def get_dataset_data_from_duckdb(self, dataset_id: str, columns: List[str]) -> np.ndarray:
         try:
-            # Get dataset to find DuckDB table name
             dataset = self.get_dataset_by_id(dataset_id)
             if not dataset:
-                return [], 0, 0
-            
+                return np.array([], dtype=np.float32)
+
             table_name = dataset.duckdb_table_name
-            
+
             with self.engine.connect() as conn:
-                # Get first 3 rows
-                data_query = text(f"SELECT {','.join(columns)} FROM {table_name}")
-                result = conn.execute(data_query)
-                
-                # Fetch all rows and convert to numpy arrays
-                import numpy as np
-                rows_data = result.fetchall()
-                
-                if not rows_data:
-                    return np.array([], dtype=np.float32)
-                
-                # Convert to numpy arrays per column (assuming x,y,z order)
-                x_data = np.array([row[0] for row in rows_data], dtype=np.float32)
-                y_data = np.array([row[1] for row in rows_data], dtype=np.float32) 
-                z_data = np.array([row[2] for row in rows_data], dtype=np.float32)
-                
-                # Create flat array [x1,y1,z1, x2,y2,z2, ...]
-                num_points = len(rows_data)
-                flat_numpy = np.zeros(num_points * 3, dtype=np.float32)
-                flat_numpy[0::3] = x_data
-                flat_numpy[1::3] = y_data  
-                flat_numpy[2::3] = z_data
-                
-                return flat_numpy
-                
+                duckdb_conn = conn.connection.connection
+                rows_data = duckdb_conn.sql(
+                    f"SELECT {','.join(columns)} FROM {table_name}"
+                ).fetchnumpy()
+
+            # If no rows returned
+            if not rows_data or len(rows_data[columns[0]]) == 0:
+                return np.array([], dtype=np.float32)
+
+            # Extract column arrays
+            x_data = rows_data[columns[0]].astype(np.float32, copy=False)
+            y_data = rows_data[columns[1]].astype(np.float32, copy=False)
+            z_data = rows_data[columns[2]].astype(np.float32, copy=False)
+
+            # Stack into flat array [x1,y1,z1, x2,y2,z2, ...]
+            flat_numpy = np.empty(x_data.size * 3, dtype=np.float32)
+            flat_numpy[0::3] = x_data
+            flat_numpy[1::3] = y_data
+            flat_numpy[2::3] = z_data
+
+            return flat_numpy
+
         except Exception as e:
             print(f"❌ Error getting dataset data from DuckDB: {e}")
-            return [], 0, 0
+            return np.array([], dtype=np.float32)
+
     
     def get_dataset_boundaries(self, dataset_id: str) -> Dict[str, Dict[str, float]]:
         """
