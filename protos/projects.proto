@@ -193,17 +193,14 @@ message DataBoundaries {
 // Get dataset data with pagination
 message GetDatasetDataRequest {
   string dataset_id = 1;
-  int32 page = 2;
-  int32 page_size = 3;
+  repeated string columns = 2;
 }
 
 message GetDatasetDataResponse {
-  repeated DataRow rows = 1;  // Dynamic row data
-  int32 total_rows = 2;
-  int32 current_page = 3;
-  int32 total_pages = 4;
-  repeated ColumnMapping column_mappings = 5;
-  repeated DataBoundaries data_boundaries = 6;  // Min/max values for each numeric column
+  bytes binary_data = 1;  // Dynamic row data
+  int32 data_length = 2;
+  int32 total_count = 3;
+  repeated DataBoundaries data_boundaries = 4;
 }
 
 // Note: DataBoundaries are now included directly in GetDatasetDataResponse

@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 from typing import List, Dict, Any
+import numpy as np
 
 # Importar tipos protobuf
 from generated import projects_pb2
@@ -442,7 +443,9 @@ class ProjectManager:
     def get_dataset_data(self, request: projects_pb2.GetDatasetDataRequest) -> projects_pb2.GetDatasetDataResponse:
         """Obtener datos del dataset con paginación desde DuckDB"""
         try:
-            print(f"📊 Obteniendo datos del dataset: {request.dataset_id}, página {request.page}")
+            if not request.columns:
+                request.columns.extend(["x", "y", "z"])
+            print(f"📊 Obteniendo datos del dataset: {request.dataset_id}, columns: {request.columns}")
             
             # Obtener información del dataset primero
             dataset = self.db.get_dataset_by_id(request.dataset_id)
@@ -451,53 +454,21 @@ class ProjectManager:
                 return response
             
             # Obtener datos paginados desde DuckDB
-            rows, total_rows, total_pages = self.db.get_dataset_data_from_duckdb(
+            data = self.db.get_dataset_data_from_duckdb(
                 request.dataset_id, 
-                request.page or 1, 
-                request.page_size or 100
+                request.columns, 
             )
+            aligned_array = np.ascontiguousarray(data, dtype=np.float32)
             
+            # Convertir a bytes para protobuf
+            binary_data = aligned_array.tobytes()
+            
+            # Configurar campos de respuesta
             response = projects_pb2.GetDatasetDataResponse()
-            response.total_rows = total_rows
-            response.current_page = request.page or 1
-            response.total_pages = total_pages
-            
-            print(f"🔧 Agregando {len(rows)} filas a la respuesta...")
-            
-            # Agregar filas (convertir todos los valores a strings para protobuf)
-            for i, row_data in enumerate(rows):
-                try:
-                    row = response.rows.add()
-                    # Convertir todos los valores a strings para protobuf map<string, string>
-                    string_fields = {}
-                    for k, v in row_data.items():
-                        try:
-                            string_fields[k] = str(v)
-                        except Exception as field_e:
-                            print(f"❌ Error convirtiendo campo {k}={v} (tipo: {type(v)}): {field_e}")
-                            string_fields[k] = "ERROR_CONVERTING"
-                    
-                    row.fields.update(string_fields)
-                    if i == 0:  # Log primera fila para debug
-                        print(f"🔧 Campos primera fila: {string_fields}")
-                except Exception as row_e:
-                    print(f"❌ Error agregando fila {i}: {row_e}")
-                    break
-            
-            print(f"🔧 Agregando mapeos de columnas...")
-            
-            # Agregar mapeos de columnas
-            try:
-                column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
-                for mapping_dict in column_mappings:
-                    mapping = response.column_mappings.add()
-                    mapping.column_name = mapping_dict['column_name']
-                    mapping.column_type = mapping_dict['column_type']
-                    mapping.mapped_field = mapping_dict['mapped_field']
-                    mapping.is_coordinate = mapping_dict['is_coordinate']
-            except Exception as mapping_e:
-                print(f"❌ Error agregando mapeos de columnas: {mapping_e}")
-            
+            response.binary_data = binary_data
+            response.data_length = len(aligned_array)
+            response.total_count = len(aligned_array) // 3  # Each point has 3 values (x,y,z)
+   
             # Obtener límites de datos desde estadísticas de tabla DuckDB
             try:
                 table_name = dataset.duckdb_table_name
@@ -512,7 +483,6 @@ class ProjectManager:
             except Exception as e:
                 print(f"⚠️  No se pudieron obtener límites: {e}")
             
-            print(f"✅ Obtenidas {len(rows)} filas del dataset desde DuckDB")
             return response
             
         except Exception as e:

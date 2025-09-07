@@ -471,7 +471,7 @@ function generateSimpleMainClient(services) {
       stream.on('data', async (data) => {
         try {
           alignBytesInPlace(data, '${m.responseType}');
-          if ('${m.responseType}' === 'GetColumnarDataResponse') maybeAttachFloat32View(data);
+          if ('${m.responseType}' === 'GetColumnarDataResponse' || '${m.responseType}' === 'GetDatasetDataResponse') maybeAttachFloat32View(data);
           results.push(data);
           if ((++n & 255) === 0) await yieldSoon(); // yield every 256 chunks
         } catch (e) {
@@ -490,7 +490,7 @@ function generateSimpleMainClient(services) {
         if (error) return reject(error);
         try {
           alignBytesInPlace(response, '${m.responseType}');
-          if ('${m.responseType}' === 'GetColumnarDataResponse') maybeAttachFloat32View(response);
+          if ('${m.responseType}' === 'GetColumnarDataResponse' || '${m.responseType}' === 'GetDatasetDataResponse') maybeAttachFloat32View(response);
         } catch (e) {
           console.error('align/attach failed:', e);
         }

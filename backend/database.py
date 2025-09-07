@@ -502,18 +502,15 @@ class DatabaseManager:
                 session.refresh(dataset)
             return dataset
 
-    def get_dataset_data_from_duckdb(self, dataset_id: str, page: int = 1, page_size: int = 100) -> Tuple[List[Dict[str, Any]], int, int]:
+    def get_dataset_data_from_duckdb(self, dataset_id: str, columns: List[str]) -> Tuple[List[Dict[str, Any]], int, int]:
         """
         Get dataset data directly from DuckDB table with pagination
         
         Args:
             dataset_id: Dataset ID to get data for
-            page: Page number (1-based)
-            page_size: Number of rows per page
             
         Returns:
-            Tuple of (rows, total_rows, total_pages)
-        """
+            Tuple of (rows, total_rows, total_pages)        """
         try:
             # Get dataset to find DuckDB table name
             dataset = self.get_dataset_by_id(dataset_id)
@@ -521,37 +518,32 @@ class DatabaseManager:
                 return [], 0, 0
             
             table_name = dataset.duckdb_table_name
-            offset = (page - 1) * page_size
             
             with self.engine.connect() as conn:
-                # Get total row count
-                count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
-                total_rows = int(count_result[0])
-                
-                # Get paginated data
-                data_query = text(f"SELECT * FROM {table_name} LIMIT {page_size} OFFSET {offset}")
+                # Get first 3 rows
+                data_query = text(f"SELECT {','.join(columns)} FROM {table_name}")
                 result = conn.execute(data_query)
                 
-                # Convert to list of dictionaries with type conversion
-                columns = [desc[0] for desc in result.cursor.description]
-                rows = []
-                for row in result:
-                    row_dict = {}
-                    for i, value in enumerate(row):
-                        # Convert DuckDB types to Python native types for protobuf compatibility
-                        if value is None:
-                            row_dict[columns[i]] = ""
-                        elif isinstance(value, (int, float)):
-                            row_dict[columns[i]] = float(value) if isinstance(value, float) else int(value)
-                        else:
-                            # Convert everything else to string
-                            row_dict[columns[i]] = str(value)
-                    rows.append(row_dict)
+                # Fetch all rows and convert to numpy arrays
+                import numpy as np
+                rows_data = result.fetchall()
                 
-                total_pages = (total_rows + page_size - 1) // page_size
+                if not rows_data:
+                    return np.array([], dtype=np.float32)
                 
-                print(f"📊 Retrieved {len(rows)} rows from DuckDB table '{table_name}' (page {page}/{total_pages})")
-                return rows, total_rows, total_pages
+                # Convert to numpy arrays per column (assuming x,y,z order)
+                x_data = np.array([row[0] for row in rows_data], dtype=np.float32)
+                y_data = np.array([row[1] for row in rows_data], dtype=np.float32) 
+                z_data = np.array([row[2] for row in rows_data], dtype=np.float32)
+                
+                # Create flat array [x1,y1,z1, x2,y2,z2, ...]
+                num_points = len(rows_data)
+                flat_numpy = np.zeros(num_points * 3, dtype=np.float32)
+                flat_numpy[0::3] = x_data
+                flat_numpy[1::3] = y_data  
+                flat_numpy[2::3] = z_data
+                
+                return flat_numpy
                 
         except Exception as e:
             print(f"❌ Error getting dataset data from DuckDB: {e}")

@@ -338,8 +338,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
   if (currentView === 'dataset-viewer' && selectedDataset) {
     return (
       <DatasetViewer
-        datasetId={selectedDataset.id}
-        datasetName={selectedDataset.file_name}
+        DatasetInfo={selectedDataset}
         onBack={handleBackToProjects}
       />
     );
