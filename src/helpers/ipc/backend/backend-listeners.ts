@@ -15,9 +15,9 @@ export function registerBackendListeners() {
     }
     
     try {
-      const res = await autoMainGrpcClient.healthCheck();
+      const res = await autoMainGrpcClient.healthCheck({});
       return res;
-    } catch (error) {
+    } catch {
       return { healthy: false, status: 'gRPC connection failed' };
     }
   });

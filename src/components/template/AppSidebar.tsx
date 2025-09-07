@@ -1,4 +1,4 @@
-import {  Home, TestTube, TestTube2, TestTubeDiagonal, Wifi, FolderOpen } from "lucide-react"
+import {  Home, TestTube, TestTube2, TestTubeDiagonal, Wifi, FolderOpen, Zap } from "lucide-react"
 
 import {
   Sidebar,

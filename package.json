@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron-forge start",
     "prestart": "npm run generate:protos",
-    "dev": "source venv/bin/activate && npm run generate:protos && npm start",
+    "dev": "source venv/bin/activate && npm run generate:full-stack && npm start",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "premake": "npm run generate:protos",
@@ -27,7 +27,7 @@
     "setup:backend": "source venv/bin/activate && cd backend && pip install -r requirements.txt",
     "generate:protos": "source venv/bin/activate && node scripts/generate-protos.js",
     "generate:simple": "source venv/bin/activate && node scripts/generate-full-stack.js",
-    "generate:full-stack": "source venv/bin/activate && node scripts/generate-full-stack.js",
+    "generate:full-stack": "source venv/bin/activate && node scripts/generate-full-stack-optimized.js",
     "test:simplified": "node scripts/test-simplified-system.js"
   },
   "author": "Hans Villarroel <hans.villarroel@usach.cl>",
@@ -90,6 +90,7 @@
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-toggle": "^1.1.6",
     "@radix-ui/react-toggle-group": "^1.1.7",
     "@radix-ui/react-tooltip": "^1.2.7",
