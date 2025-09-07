@@ -42,6 +42,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
   const [dataset, setDataset] = useState<GetDatasetDataResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refetching, setRefetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedValueColumn, setSelectedValueColumn] = useState<string>('z');
   const [selectedXAxis, setSelectedXAxis] = useState<string>('x');
@@ -61,7 +62,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
   useEffect(() => {
     loadDataset();
-  }, [datasetInfo.id]);
+  }, [datasetInfo.id, selectedXAxis, selectedYAxis, selectedValueColumn]);
 
   useEffect(() => {
     if (dataset && selectedValueColumn && selectedXAxis && selectedYAxis) {
@@ -71,6 +72,9 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
   // Initialize chart when div is available and data is ready
   useEffect(() => {
+    // Don't reload chart during refetch to prevent double reload
+    if (refetching) return;
+    
     const canRenderChart = chartData && chartData.length > 0 && selectedXAxis && selectedYAxis && selectedValueColumn;
     
     
@@ -115,23 +119,25 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         chartInstanceRef.current = null;
       }
     };
-  }, [chartData, selectedXAxis, selectedYAxis, selectedValueColumn]);
+  }, [chartData, selectedXAxis, selectedYAxis, selectedValueColumn, refetching]);
 
   const loadDataset = async () => {
     try {
-      setLoading(true);
+      // Use different loading state for refetches vs initial load
+      if (dataset) {
+        setRefetching(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
 
-      // Get dataset data with binary format - request coordinate columns
+      // Get dataset data with binary format - request currently selected columns
       const response = await window.autoGrpc.getDatasetData({
         dataset_id: datasetInfo.id,
-        columns: ["x", "y", "z"]
+        columns: [selectedXAxis, selectedYAxis, selectedValueColumn]
       }) as GetDatasetDataResponse;
 
       if (response.binary_data && response.data_length > 0) {
-        // Capture data boundaries for chart scaling
-        const dataBoundaries = response.data_boundaries || [];
-
         setDataset(response);
       }
     } catch (err) {
@@ -139,6 +145,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       setError('Error al cargar el dataset');
     } finally {
       setLoading(false);
+      setRefetching(false);
     }
   };
 
@@ -426,7 +433,8 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       {/* Chart Visualization */}
       <Card>
         <CardHeader>
-          <CardTitle>Gráfico de Dispersión 2D</CardTitle>
+          <CardTitle className="flex flex-row items-center">
+          {refetching ? (<Activity className="mr-2 h-4 w-4 animate-spin" />) : ''} Gráfico de Dispersión 2D</CardTitle>
           <CardDescription>
             {selectedXAxis} vs {selectedYAxis} • Valores: {selectedValueColumn}
           </CardDescription>
