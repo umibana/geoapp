@@ -112,7 +112,6 @@ export function GrpcDemo() {
       <div className="mt-8 border-t pt-6">
         <VisualizacionDatos 
           title="🚀 Transmisión de Datos Columnar - Rendimiento Optimizado"
-          maxPoints={2000000}
         />
       </div>
     </div>

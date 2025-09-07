@@ -46,7 +46,7 @@ message HealthCheckResponse {
 // Se recibe el dato que se quiere como z (data_types)
 // el número de puntos máximos a obtener (max_points)
 
-message GetBatchDataRequest {
+message getColumnarDataRequest {
   repeated string data_types = 2;
   int32 max_points = 3;
 }
@@ -60,7 +60,6 @@ message GetColumnarDataResponse {
   // Binary approach for Float32Array
   bytes binary_data = 4;        // Raw Float32Array as binary data
   int32 data_length = 5;        // Number of elements in the array
-  
   int32 total_count = 2;        // Numéro de puntos
   double generated_at = 6;      // Timestamp when the response was generated
   map<string, Bounds> bounds = 3; 

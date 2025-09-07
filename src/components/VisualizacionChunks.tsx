@@ -205,9 +205,7 @@ export function VisualizacionDatos({
       // Crear Float32Array alineado desde datos binarios del backend
       // gRPC (protobuf) nos da un Float32Array desalineado, por lo que hay que alinearlo
 
-      const dataToUse =
-  result.binary_data_f32 ??
-  new Float32Array(result.binary_data.buffer, result.binary_data.byteOffset, result.data_length);
+      const dataToUse = result.binary_data_f32 ?? new Float32Array(result.binary_data.buffer, result.binary_data.byteOffset, result.data_length);
 
       
       // Actualizar gráfico con los datos recibidos

@@ -308,16 +308,6 @@ export function PerformanceComparison() {
     );
   };
 
-  const testExtremeDataGeneration = async () => {
-    // Test gRPC with very large dataset (REST should also work now)
-    const extremeSize = 10000000; // 10M points - both should work with new 30M limit
-    
-    await runTest(
-      `Extreme Test: GetColumnarData (${extremeSize.toLocaleString()} points)`,
-      () => window.autoGrpc.getColumnarData({ data_types: ['elevation'], max_points: extremeSize }),
-      () => window.electronBackend.rest.getColumnarData({ data_types: ['elevation'], max_points: extremeSize })
-    );
-  };
 
   const testProjectMethods = async () => {
     // Test GetProjects
@@ -390,17 +380,6 @@ export function PerformanceComparison() {
               </Button>
               <p className="text-sm text-muted-foreground">
                 Flujo completo: Red + Parsing + Procesamiento de aplicación. Mide rendimiento real
-              </p>
-            </div>
-          </Card>
-
-          <Card className="p-4">
-            <div className="space-y-2">
-              <Button onClick={testExtremeDataGeneration} disabled={isLoading} variant="secondary" className="w-full">
-                Extreme Test (10M points)
-              </Button>
-              <p className="text-sm text-muted-foreground">
-                Prueba datasets masivos (10M puntos) para medir rendimiento a escala y límites de protocolo
               </p>
             </div>
           </Card>
