@@ -30,6 +30,7 @@ interface BenchmarkSession {
   runs: BenchmarkRun[];
   stats?: {
     avgResponseTime: number;
+    totalResponseTime: number; // NUEVO: Tiempo total acumulado
     avgTransmissionTime: number;
     avgParsingTime: number;
     avgNetworkPayloadSize: number;
@@ -74,6 +75,7 @@ export function SingleFormatBenchmark() {
         // ÓPTIMO: binary_data_f32 ya es Float32Array optimizado por el generador automático
         // ⚡ Zero-copy y memory-aligned cuando es posible
         flatArray = rawData.binary_data_f32 || new Float32Array(rawData.binary_data);
+        // flatArray = rawData.binary_data || new Float32Array(rawData.binary_data);
         originalData = rawData;
       } else {
         flatArray = [];
@@ -112,7 +114,6 @@ export function SingleFormatBenchmark() {
       let response: any;
       let networkResponse: any;
       const startTime = performance.now();
-      const receivedAt = Date.now();
 
       // Llamar a la API apropiada según el formato
       switch (format) {
@@ -145,6 +146,7 @@ export function SingleFormatBenchmark() {
       }
 
       const endTime = performance.now();
+      const receivedAt = Date.now();  // ✅ AHORA está en el lugar correcto
       const processed = processData(response, format);
 
       // Calcular métricas de manera consistente entre formatos
@@ -191,11 +193,13 @@ export function SingleFormatBenchmark() {
 
     const responseTimes = validRuns.map(run => run.responseTime);
     const avgResponseTime = responseTimes.reduce((a, b) => a + b, 0) / validRuns.length;
+    const totalResponseTime = responseTimes.reduce((a, b) => a + b, 0); // NUEVO: Tiempo total acumulado
     const variance = responseTimes.reduce((a, b) => a + Math.pow(b - avgResponseTime, 2), 0) / validRuns.length;
     const stdDevResponseTime = Math.sqrt(variance);
 
     return {
       avgResponseTime,
+      totalResponseTime, // NUEVO: Tiempo total acumulado
       avgTransmissionTime: validRuns.reduce((a, b) => a + b.transmissionTime, 0) / validRuns.length,
       avgParsingTime: validRuns.reduce((a, b) => a + b.parsingTime, 0) / validRuns.length,
       avgNetworkPayloadSize: validRuns.reduce((a, b) => a + b.networkPayloadSize, 0) / validRuns.length,
@@ -448,13 +452,14 @@ export function SingleFormatBenchmark() {
                     {/* Statistics summary */}
                     <div>
                       <h4 className="font-semibold mb-3">📊 Estadísticas de Rendimiento</h4>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                         <div className="space-y-1">
                           <p className="font-medium">Tiempo de Respuesta:</p>
                           <p>Prom: {formatTime(session.stats.avgResponseTime)}</p>
                           <p>Mín: {formatTime(session.stats.minResponseTime)}</p>
                           <p>Máx: {formatTime(session.stats.maxResponseTime)}</p>
                           <p>DesvEst: {formatTime(session.stats.stdDevResponseTime)}</p>
+                          <p className="text-blue-600 font-semibold">Total: {formatTime(session.stats.totalResponseTime)}</p>
                         </div>
                         <div className="space-y-1">
                           <p className="font-medium">Red:</p>
@@ -465,11 +470,6 @@ export function SingleFormatBenchmark() {
                           <p className="font-medium">Procesamiento:</p>
                           <p>Parseo: {formatTime(session.stats.avgParsingTime)}</p>
                           <p>Memoria: {formatSize(session.stats.avgFrontendMemorySize)}</p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="font-medium">Confiabilidad:</p>
-                          <p>Tasa Éxito: {((session.runs.length - session.runs.filter(r => r.error).length) / session.runs.length * 100).toFixed(1)}%</p>
-                          <p>Errores: {session.runs.filter(r => r.error).length}</p>
                         </div>
                       </div>
                     </div>
