@@ -1,6 +1,46 @@
-# Aplicación Geoespacial Desktop (Electron + React + gRPC Python)
+# Geospatial Desktop App (Electron + React + gRPC Python)
 
-**Aplicación de escritorio geoespacial moderna** construida con Electron que combina un frontend React con un backend Python gRPC. La aplicación maneja procesamiento y visualización de datos geoespaciales con capacidades de **streaming ultra-responsivo** usando **comunicación gRPC completamente auto-generada** y **formato de datos columnar eficiente**.
+This repository contains an example of an application with the purpose of handling high data throughput and visualizing the data.
+
+
+## Tech stack
+
+Due to having to handle big data fetching, the architecture and technologies used in this app differ from the common JSON + REST pattern we see frequently used in webapps.
+
+### [Protocol Buffers](https://protobuf.dev/)
+
+Instead of using JSON for this application we decide to use Protocol Buffers, a serialization protocol developed by Google. (will be referenced as protobufs from now on)
+The decision here is mainly made due to protobuf's binary serialization, which can reduce our data that is being transferred over the network almost 3 times and decrease the time spent parsing the data. (**See test runs**)
+
+Of course, using protobufs has its advantages and disavantages:
+
+1. **Schema definition** We need to define the schema in .proto files, for example, for a simple helloWorld function it would look like this:
+```proto
+syntax = "proto3";
+
+message HelloWorldRequest {
+  string message = 1;
+}
+
+message HelloWorldResponse {
+  string message = 1;
+}
+service HelloWorldService {
+  rpc HelloWorld(HelloWorldRequest) returns (HelloWorldResponse);
+  #
+  # Other rpc methods...
+  #
+}
+```
+In this case, the request and response specifies what is being sent and received, in this case a string.
+
+2. **Code generation**
+
+
+
+
+
+
 
 ## 🏗️ Arquitectura Moderna
 

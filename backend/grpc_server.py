@@ -5,7 +5,6 @@ Contiene la definición de los servicios de la aplicación
 """
 import sys
 import time
-import socket
 from pathlib import Path
 from concurrent import futures
 
@@ -198,13 +197,18 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
 
 # Servidor gRPC
 # Utilizamos el puerto 50077 para el servidor gRPC
-# tambien configuramos el tamaño de los mensajes a 500MB
+# tambien configuramos el tamaño de los mensajes a 1GB
 def serve():
     try:
         port = 50077
         options = [
-            ('grpc.max_send_message_length', 500 * 1024 * 1024),  # 500MB
-            ('grpc.max_receive_message_length', 500 * 1024 * 1024),  # 500MB
+            ('grpc.max_message_length', 1024 * 1024 * 1024),  # 1GB
+            # ('grpc.max_receive_message_length', 500 * 1024 * 1024),  # 500MB
+            # ('grpc.default_compression_level', 1),  # Nivel de compresión, uso 6, pero podría usar 1 si queremos menor latencia
+            # ('grpc.compression_algorithm', grpc.Compression.Gzip),  # Al
+            # Con 6 me toma 2-3s 1 million datos
+            # con 1 me toma 1.8-2.3s
+            # Sin compresion me toma 1.2-1.5s
         ]
         ## Definimos el servidor gRPC con el maximo de workers 10 y las opciones de maximo de mensaje
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=10), options=options)
