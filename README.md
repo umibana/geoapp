@@ -39,33 +39,9 @@ In this case, the request and response specifies what is being sent and received
 
 
 
+----- README WORK IN PROGRESS ----
 
 
-
-## 🏗️ Arquitectura Moderna
-
-### Stack Tecnológico Actual
-- **Frontend**: Electron 36 + React 19 + TypeScript + Tailwind CSS 4 + shadcn/ui
-- **Backend**: Servidor gRPC puro (Python) con generación de datos numpy - sin Django/REST API
-- **Comunicación**: ✅ **Sistema gRPC Completamente Auto-generado** via Protocol Buffers con IPC seguro de Electron
-- **Formato de Datos**: ✅ **Formato columnar** para 70% reducción de memoria y rendimiento óptimo
-- **Rendimiento**: ✅ **Arquitectura de streaming dual** para datasets de 100K-5M+ puntos sin bloquear la UI
-- **Generación de Datos**: Generador numpy sintético con datos geoespaciales (elevación, temperatura, presión, ruido, ondas senoidales)
-- **Testing**: Vitest (unit), Playwright (e2e), React Testing Library
-- **Build**: Vite 6, Electron Forge, PyInstaller
-- **Visualización**: ECharts para gráficos scatter interactivos de alto rendimiento
-- **Base de Datos**: SQLite para gestión de proyectos y datasets
-
-### Patrones de Arquitectura Clave
-
-1. **✅ Sistema gRPC Completamente Auto-generado**: API completa con clientes, handlers, context bridges y tipos TypeScript generados automáticamente desde archivos `.proto`
-2. **✅ Formato de Datos Columnar**: Estructura de arrays eficiente que reduce el uso de memoria en 70% comparado con formato de objetos
-3. **✅ Arquitectura de Procesamiento Dual**:
-   - **Streaming Columnar**: Para 100K-2M puntos con API `getBatchDataColumnar/Streamed`
-4. **✅ Comunicación IPC Modular**: Sistema IPC organizado por dominios (backend, theme, window) con context bridges seguros
-5. **✅ Integración Protocol Buffer**: Definiciones `.proto` como fuente única de verdad para TypeScript y Python
-6. **✅ Gestión de Procesos Desktop**: Servidor gRPC como ejecutable PyInstaller gestionado por el proceso principal de Electron
-7. **✅ Gestión de Proyectos**: Sistema completo de proyectos con almacenamiento SQLite y procesamiento de archivos CSV
 
 ### Flujo de Comunicación
 ```
@@ -127,24 +103,6 @@ await window.autoGrpc.sendFile({
   z_variable: "elevation" 
 });
 ```
-
-### Arquitecturas de Procesamiento
-
-#### 1. **Streaming Columnar** (100K-2M puntos) 🟢 RECOMENDADO
-- **Componente**: `ChildProcessVisualization`
-- **API**: `getBatchDataColumnarStreamed`
-- **Ventajas**: Formato columnar eficiente, streaming por chunks de 25K puntos, 70% menos memoria
-- **UI**: Tema verde, "Columnar Data Streaming"
-- **Ideal para**: Datasets medianos a grandes con eficiencia garantizada
-
-
-### Tipos de Datos en el Sistema
-
-#### 🏗️ **Datos de Producción** (Flujo Principal)
-El flujo principal del proyecto trabaja con **archivos CSV reales**:
-- **Mapeo de Coordenadas**: Configuración manual de columnas CSV a coordenadas `x`, `y`, `z`
-- **Datos Reales**: Archivos cargados por usuarios con datos geoespaciales reales
-- **Componentes**: `ProjectWorkflow` → `ProjectManager` → `EnhancedCsvProcessor` → `DatasetViewer`
 
 ### Cómo Añadir Nuevos Métodos
 
@@ -250,53 +208,6 @@ La aplicación usa un entorno virtual Python en `venv/` para dependencias aislad
 - **Desarrollo**: `source venv/bin/activate` (automático en scripts npm)
 - **Dependencias**: grpcio≥1.73.0, numpy≥1.24.0, pandas≥1.5.0, protobuf≥6.30.0
 
-## 🚀 Ejemplo de Uso Completo
-
-```typescript
-// Ejemplo en un componente React
-import { useState } from 'react';
-
-function MiComponente() {
-  const [datos, setDatos] = useState(null);
-  const [progreso, setProgreso] = useState(0);
-
-  const cargarDatos = async () => {
-    const bounds = {
-      northeast: { latitude: 37.8, longitude: -122.3 },
-      southwest: { latitude: 37.7, longitude: -122.5 }
-    };
-
-    try {
-      // Para datasets grandes (recomendado)
-      const resultado = await window.autoGrpc.getBatchDataColumnarStreamed({
-        bounds,
-        data_types: ['elevation', 'temperature'],
-        max_points: 1000000,
-        resolution: 25
-      }, (chunk) => {
-        // Callback de progreso en tiempo real
-        const porcentaje = ((chunk.chunk_number + 1) / chunk.total_chunks) * 100;
-        setProgreso(porcentaje);
-        console.log(`Procesando chunk ${chunk.chunk_number + 1}/${chunk.total_chunks}`);
-      });
-
-      console.log(`✅ Procesados ${resultado.length} chunks exitosamente`);
-      setDatos(resultado);
-      
-    } catch (error) {
-      console.error('Error cargando datos:', error);
-    }
-  };
-
-  return (
-    <div>
-      <button onClick={cargarDatos}>Cargar Datos Geoespaciales</button>
-      {progreso > 0 && <progress value={progreso} max={100} />}
-      {datos && <p>Datos cargados: {datos.length} chunks</p>}
-    </div>
-  );
-}
-```
 
 ## 📦 Empaquetado y Distribución
 
@@ -316,19 +227,6 @@ npm run make                     # 2. Crea distributables de Electron (incluye b
 - Electron Forge incluye automáticamente el backend como recurso extra
 - La aplicación empaquetada es completamente portable (no requiere Python instalado)
 
-## ⚡ Características de Rendimiento
-
-### Optimizaciones Implementadas
-- **✅ Formato Columnar**: 70% menos uso de memoria vs formato de objetos
-- **✅ Streaming por Chunks**: Procesa 5M+ puntos sin bloquear UI
-- **✅ Caché de Gráficos**: Transferencia eficiente de datos de visualización
-- **✅ Compresión gRPC**: Transferencia optimizada de datos
-- **✅ Sampling Inteligente**: Máximo 10K puntos para gráficos manteniendo representatividad
-
-### Benchmarks Típicos
-- **100K puntos**: ~0.5s (streaming columnar)
-- **1M puntos**: ~2-3s (streaming columnar)
-
 ## 🛡️ Seguridad
 
 ### Medidas de Seguridad Implementadas
@@ -337,39 +235,6 @@ npm run make                     # 2. Crea distributables de Electron (incluye b
 - **Process Isolation**: Backend gRPC ejecuta en proceso separado
 - **No Remote Access**: gRPC server solo acepta conexiones localhost
 - **Type Safety**: Tipos TypeScript auto-generados previenen errores
-
-## 🔧 Resolución de Problemas
-
-### Problemas Comunes
-
-#### Backend no inicia
-```bash
-# Verificar Python y dependencias
-source venv/bin/activate
-python backend/grpc_server.py
-
-# Reinstalar dependencias
-npm run setup:backend
-```
-
-#### Errores de generación de código
-```bash
-# Limpiar y regenerar
-npm run generate:full-stack
-```
-
-#### Tests E2E fallan
-```bash
-# Los tests E2E requieren app empaquetada
-npm run make
-npm run test:e2e
-```
-
-### Logs y Debugging
-- **Backend**: Logs detallados en consola con emojis
-- **Frontend**: DevTools de Electron con logs estructurados
-- **gRPC**: Logs de conectividad y rendimiento
-
 ## 📚 Recursos Adicionales
 
 ### Documentación Técnica

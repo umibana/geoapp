@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 /**
- * Simple Protocol Buffer Generator (enhanced: dynamic imports, zero-copy, no renderer streaming)
+ * Simple Protocol Buffer Generator (enhanced: dynamic imports, zero-copy, TRUE streaming to renderer)
  *
  * Generates:
  * 1) Protobuf stubs (TS + Python) for ALL .proto files
- * 2) Typed renderer client (unary API only; streaming aggregated in main)
+ * 2) Typed renderer client:
+ *      - Unary methods -> Promise<T>
+ *      - Server-streaming methods -> AsyncIterable<T> (true streaming)
  * 3) Main-process gRPC client
- * 4) IPC handlers (zero-copy for byte-heavy/streaming responses via postMessage + transfer list)
+ * 4) IPC handlers:
+ *      - Unary: zero-copy via postMessage + transfer list (for large/binary responses)
+ *      - Streaming: per-chunk delivery + cancellation
  * 5) Context bridge + types
  * 6) Byte-alignment helper (auto) + optional Float32Array view
  */
@@ -252,10 +256,17 @@ function generateTypedClient(services, allMessages, typeToFileBase) {
     const bytey = hasBytesDeep(m.responseType);
     const isStreaming = m.serverStreaming || m.clientStreaming;
 
-    // Renderer API is unary-only; streaming is aggregated in main and returned as Resp[]
-    if (isStreaming || bytey) {
-      return `  async ${camel}(request: ${m.requestType}): Promise<${m.responseType}${isStreaming ? '[]' : ''}> {
-    return this.callBigUnary<'${channel}', ${m.requestType}, ${m.responseType}${isStreaming ? '[]' : ''}>('${channel}', request);
+    if (isStreaming) {
+      // Streaming → AsyncIterable on the renderer
+      return `  ${camel}(request: ${m.requestType}): AsyncIterable<${m.responseType}> {
+    return this.callStream<'${channel}', ${m.requestType}, ${m.responseType}>('${channel}', request);
+  }`;
+    }
+
+    // Unary + "bytey" → big-unary via postMessage (zero-copy)
+    if (bytey) {
+      return `  async ${camel}(request: ${m.requestType}): Promise<${m.responseType}> {
+    return this.callBigUnary<'${channel}', ${m.requestType}, ${m.responseType}>('${channel}', request);
   }`;
     }
     // Small non-byte unary uses invoke/handle
@@ -282,7 +293,7 @@ export class AutoGrpcClient {
     return ipcRenderer.invoke(channel, request);
   }
 
-  // event + postMessage path (zero-copy via transfer list). Used for bytey & streaming.
+  // event + postMessage path (zero-copy via transfer list). Used for bytey unary responses.
   private async callBigUnary<C extends Channel, Req, Res>(channel: C, request: Req): Promise<Res> {
     return new Promise((resolve, reject) => {
       const requestId = \`unary-\${Date.now()}-\${Math.random()}\`;
@@ -310,6 +321,77 @@ export class AutoGrpcClient {
     });
   }
 
+  // Streaming path → AsyncIterable<Res>, channel names include requestId
+  private callStream<C extends Channel, Req, Res>(channel: C, request: Req): AsyncIterable<Res> {
+    const self = this;
+    return {
+      [Symbol.asyncIterator](): AsyncIterator<Res> {
+        const requestId = \`stream-\${Date.now()}-\${Math.random()}\`;
+        const dataChannel  = \`grpc-stream-data-\${requestId}\`;
+        const endChannel   = \`grpc-stream-end-\${requestId}\`;
+        const errorChannel = \`grpc-stream-error-\${requestId}\`;
+
+        const queue: Res[] = [];
+        let done = false;
+        let err: Error | null = null;
+
+        const onData = (_: any, msg: any) => {
+          if (msg?.requestId !== requestId) return;
+          queue.push(msg.payload as Res);
+        };
+        const onEnd = (_: any, msg: any) => {
+          if (msg?.requestId !== requestId) return;
+          done = true;
+        };
+        const onErr = (_: any, msg: any) => {
+          if (msg?.requestId !== requestId) return;
+          err = new Error(msg.error || 'Stream error');
+          done = true;
+        };
+
+        ipcRenderer.on(dataChannel, onData);
+        ipcRenderer.on(endChannel, onEnd);
+        ipcRenderer.on(errorChannel, onErr);
+
+        // Start stream
+        ipcRenderer.send(channel, { requestId, ...(request as any) });
+
+        const next = async (): Promise<IteratorResult<Res>> => {
+          while (!queue.length && !done && !err) {
+            await new Promise(r => setTimeout(r, 0));
+          }
+          if (err) {
+            // cancel on error
+            ipcRenderer.send(\`grpc-stream-cancel-\${requestId}\`);
+            cleanup();
+            throw err;
+          }
+          if (queue.length) {
+            const value = queue.shift()!;
+            return { value, done: false };
+          }
+          cleanup();
+          return { value: undefined as any, done: true };
+        };
+
+        const cleanup = () => {
+          ipcRenderer.removeAllListeners(dataChannel);
+          ipcRenderer.removeAllListeners(endChannel);
+          ipcRenderer.removeAllListeners(errorChannel);
+        };
+
+        const returnFn = async () => {
+          // consumer broke early → cancel
+          ipcRenderer.send(\`grpc-stream-cancel-\${requestId}\`);
+          cleanup();
+          return { value: undefined, done: true };
+        };
+
+        return { next, return: returnFn } as AsyncIterator<Res>;
+      }
+    } as AsyncIterable<Res>;
+  }
+
 ${methods}
 }
 
@@ -330,7 +412,44 @@ function generateSimpleHandlers(services, allMessages) {
     const isStreaming = m.serverStreaming || m.clientStreaming;
     const bytey = hasBytesDeep(m.responseType);
 
-    if (isStreaming || bytey) {
+    if (isStreaming) {
+      // TRUE streaming: per-chunk send() + cancel support
+      return `  ipcMain.on('${channel}', (event, request) => {
+    const requestId = request.requestId;
+    let cancelFn = null;
+
+    try {
+      cancelFn = autoMainGrpcClient.stream${m.name}(
+        request,
+        (chunk) => {
+          try {
+            event.sender.send(\`grpc-stream-data-\${requestId}\`, { requestId, payload: chunk });
+          } catch (e) {
+            // Surface as stream error if the webContents is gone, etc.
+            try { event.sender.send(\`grpc-stream-error-\${requestId}\`, { requestId, error: e.message || String(e) }); } catch {}
+          }
+        },
+        () => {
+          try { event.sender.send(\`grpc-stream-end-\${requestId}\`, { requestId }); } catch {}
+          ipcMain.removeAllListeners(\`grpc-stream-cancel-\${requestId}\`);
+        },
+        (err) => {
+          try { event.sender.send(\`grpc-stream-error-\${requestId}\`, { requestId, error: err?.message || String(err) }); } catch {}
+          ipcMain.removeAllListeners(\`grpc-stream-cancel-\${requestId}\`);
+        }
+      );
+
+      // allow renderer to cancel
+      ipcMain.once(\`grpc-stream-cancel-\${requestId}\`, () => {
+        try { cancelFn && cancelFn(); } catch {}
+      });
+    } catch (error) {
+      try { event.sender.send(\`grpc-stream-error-\${requestId}\`, { requestId, error: error.message || String(error) }); } catch {}
+    }
+  });`;
+    }
+
+    if (bytey) {
       // Big unary via postMessage + transfer list (zero-copy)
       return `  ipcMain.on('${channel}', async (event, request) => {
     try {
@@ -432,7 +551,7 @@ function generateAutoContextTypes(services, allMessages, typeToFileBase) {
     const camel = m.name.charAt(0).toLowerCase() + m.name.slice(1);
     const isStreaming = m.serverStreaming || m.clientStreaming;
     if (isStreaming) {
-      return `  ${camel}: (request: ${m.requestType}) => Promise<${m.responseType}[]>;`;
+      return `  ${camel}: (request: ${m.requestType}) => AsyncIterable<${m.responseType}>;`;
     } else {
       return `  ${camel}: (request: ${m.requestType}) => Promise<${m.responseType}>;`;
     }
@@ -460,27 +579,25 @@ function generateSimpleMainClient(services) {
     const camel = m.name.charAt(0).toLowerCase() + m.name.slice(1);
 
     if (m.serverStreaming || m.clientStreaming) {
-      // Collect streaming data into array; yield periodically to keep UI responsive
-      return `  async ${camel}(request) {
-    return new Promise((resolve, reject) => {
-      const client = this.ensureClient();
-      const stream = client.${m.name}(request);
-      const results = [];
-      let n = 0;
-      const yieldSoon = () => new Promise(res => setImmediate(res));
-      stream.on('data', async (data) => {
-        try {
-          alignBytesInPlace(data, '${m.responseType}');
-          if ('${m.responseType}' === 'GetColumnarDataResponse' || '${m.responseType}' === 'GetDatasetDataResponse') maybeAttachFloat32View(data);
-          results.push(data);
-          if ((++n & 255) === 0) await yieldSoon(); // yield every 256 chunks
-        } catch (e) {
-          console.error('align/attach failed:', e);
+      // Streaming: push chunks via callbacks; return cancel() fn
+      return `  stream${m.name}(request, onData, onEnd, onError) {
+    const client = this.ensureClient();
+    const stream = client.${m.name}(request);
+
+    stream.on('data', (data) => {
+      try {
+        alignBytesInPlace(data, '${m.responseType}');
+        if ('${m.responseType}' === 'GetColumnarDataResponse' || '${m.responseType}' === 'GetDatasetDataResponse') {
+          maybeAttachFloat32View(data);
         }
-      });
-      stream.on('end', () => resolve(results));
-      stream.on('error', (err) => reject(err));
+      } catch (e) { console.error('align/attach failed:', e); }
+      onData && onData(data);
     });
+    stream.on('end', () => onEnd && onEnd());
+    stream.on('error', (err) => onError && onError(err));
+
+    // return cancel function
+    return () => { try { stream.cancel(); } catch {} };
   }`;
     } else {
       return `  async ${camel}(request) {

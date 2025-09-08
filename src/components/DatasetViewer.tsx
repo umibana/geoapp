@@ -73,14 +73,16 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
   // Initialize chart when div is available and data is ready
   useEffect(() => {
-    // Don't reload chart during refetch to prevent double reload
-    if (refetching) return;
-    
     const canRenderChart = chartData && chartData.length > 0 && selectedXAxis && selectedYAxis && selectedValueColumn;
     
-    
     if (!canRenderChart) {
-      // Dispose existing chart if conditions are no longer met
+      // Keep chart instance during refetch but show loading if refetching
+      if (refetching && chartInstanceRef.current) {
+        // Chart exists but no data yet - this is handled in loadDataset
+        return;
+      }
+      
+      // Dispose existing chart if conditions are no longer met and not refetching
       if (chartInstanceRef.current) {
         chartInstanceRef.current.dispose();
         chartInstanceRef.current = null;
@@ -92,9 +94,11 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       return;
     }
     
-    // Don't reinitialize if chart already exists
     if (chartInstanceRef.current) {
-      updateChart();
+      // Don't update chart if we're still refetching - wait for data to be ready
+      if (!refetching) {
+        updateChart();
+      }
       return;
     }
     
@@ -110,8 +114,10 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     };
     window.addEventListener('resize', handleResize);
 
-    // Update chart with data
-    updateChart();
+    // Update chart with data - only if not refetching
+    if (!refetching) {
+      updateChart();
+    }
 
     // Cleanup function
     return () => {
@@ -127,6 +133,12 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       // Use different loading state for refetches vs initial load
       if (dataset) {
         setRefetching(true);
+        // Show ECharts loading indicator when changing data - delay slightly to ensure chart exists
+        setTimeout(() => {
+          if (chartInstanceRef.current) {
+            chartInstanceRef.current.showLoading('default', { text: 'Cargando datos...' });
+          }
+        }, 10);
       } else {
         setLoading(true);
       }
@@ -149,6 +161,10 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       setError('Error al cargar el dataset');
     } finally {
       setLoading(false);
+      // Hide ECharts loading indicator and update chart
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.hideLoading();
+      }
       setRefetching(false);
     }
   };
@@ -290,7 +306,9 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       }]
     };
     
+
     chartInstanceRef.current.setOption(option);
+
   };
 
   if (loading) {
