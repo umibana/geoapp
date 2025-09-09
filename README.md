@@ -34,7 +34,11 @@ service HelloWorldService {
 ```
 In this case, the request and response specifies what is being sent and received, in this case a string.
 
-2. **Code generation**
+2. **Code generation** Protocol buffers need to be compiled so we can use it on our code (In this case, we use ```protoc``` but there are alternatives, like ```buf```)
+For example, after compiling the above schema using the following command to compile for typescript ``` protoc --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out="./" --ts_proto_opt=lowerCaseServiceMethods=true,snakeToCamel=false --proto_path= ./protos/myproto.proto ``` will generate a file that the language can use to decode and encode the data.
+
+
+### [gRPC](https://grpc.io/docs/what-is-grpc/introduction/)
 
 
 
