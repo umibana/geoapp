@@ -11,6 +11,7 @@ import json
 import threading
 from pathlib import Path
 from concurrent import futures
+from flask import Response
 
 # Añadir el directorio actual al path de Python para encontrar archivos generados
 script_dir = Path(__file__).parent.absolute()
@@ -253,8 +254,9 @@ def rest_echo_parameter():
     return jsonify(convert_protobuf_to_dict(response))
 
 # =============================================================================
-# FLASK REST ENDPOINTS - DATA GENERATION
+# FLASK REST ENDPOINT
 # =============================================================================
+
 
 @app.route('/api/columnar-data', methods=['POST'])
 def rest_get_columnar_data():
@@ -265,7 +267,7 @@ def rest_get_columnar_data():
         max_points=data.get('max_points', 1000),
         seed=data.get('seed')
     )
-    # Debug: Calculate JSON payload size
+    # Debug: Calcular tamaño del payload JSON (Debería verificar con Wireshark!)
     json_payload_size = len(json.dumps(columnar_data))
     print(f"Tamaño JSON: {json_payload_size:,} bytes ({json_payload_size/1024:.2f} KB) para {data.get('max_points', 1000):,} puntos")
     
@@ -288,12 +290,10 @@ def rest_get_columnar_data_msgpack():
     msgpack_data = msgpack.packb(columnar_data)
     
     # Debug: Calculate MessagePack payload size vs JSON
-    json_payload_size = len(json.dumps(columnar_data))
     msgpack_payload_size = len(msgpack_data)
-    compression_ratio = (json_payload_size - msgpack_payload_size) / json_payload_size * 100
+    print(f"Tamaño MessagePack: {msgpack_payload_size:,} bytes ({msgpack_payload_size/1024:.2f} KB) para {data.get('max_points', 1000):,} puntos")
     
     # Return binary MessagePack data with proper content type
-    from flask import Response
     return Response(msgpack_data, content_type='application/msgpack')
 
 # =============================================================================
@@ -421,6 +421,9 @@ def rest_process_dataset():
     request_obj.dataset_id = data.get('dataset_id', '')
     response = servicer_instance.ProcessDataset(request_obj, create_mock_context())
     return jsonify(convert_protobuf_to_dict(response))
+
+
+
 
 def run_flask_server():
     """Ejecutar el servidor Flask en un hilo separado"""
