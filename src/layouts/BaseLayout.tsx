@@ -15,29 +15,31 @@ function BaseLayoutContent({
   return (
     <SidebarProvider>
       <AppSidebar />
-      <main className="flex flex-1 flex-col relative overflow-y-auto">
-        <SidebarTrigger />
-        {children}
-        
-        {/* Render all open windows */}
-        {windows.map((window) => (
-          <DragWindow
-            key={window.id}
-            title={window.title}
-            initialPosition={window.initialPosition}
-            initialSize={window.initialSize}
-            minSize={window.minSize}
-            maxSize={window.maxSize}
-            useWindowMaxSize={window.useWindowMaxSize}
-            zIndex={window.zIndex}
-            onClose={() => closeWindow(window.id)}
-            onFocus={() => bringToFront(window.id)}
-          >
-            {window.component}
-          </DragWindow>
-        ))}
+      <div className="flex flex-1 flex-col min-h-screen">
+        <main className="flex flex-1 flex-col relative overflow-y-auto">
+          <SidebarTrigger />
+          {children}
+          
+          {/* Render all open windows */}
+          {windows.map((window) => (
+            <DragWindow
+              key={window.id}
+              title={window.title}
+              initialPosition={window.initialPosition}
+              initialSize={window.initialSize}
+              minSize={window.minSize}
+              maxSize={window.maxSize}
+              useWindowMaxSize={window.useWindowMaxSize}
+              zIndex={window.zIndex}
+              onClose={() => closeWindow(window.id)}
+              onFocus={() => bringToFront(window.id)}
+            >
+              {window.component}
+            </DragWindow>
+          ))}
+        </main>
         <Footer/>
-      </main>
+      </div>
     </SidebarProvider>
 
   );

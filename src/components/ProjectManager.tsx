@@ -337,10 +337,12 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
   // Conditional rendering based on current view
   if (currentView === 'dataset-viewer' && selectedDataset) {
     return (
-      <DatasetViewer
-        DatasetInfo={selectedDataset}
-        onBack={handleBackToProjects}
-      />
+      <div className="min-h-screen flex flex-col">
+        <DatasetViewer
+          DatasetInfo={selectedDataset}
+          onBack={handleBackToProjects}
+        />
+      </div>
     );
   }
 

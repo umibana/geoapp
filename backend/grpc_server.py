@@ -203,7 +203,8 @@ def serve():
         port = 50077
         options = [
             ('grpc.max_message_length', 1024 * 1024 * 1024),  # 1GB
-            # ('grpc.max_receive_message_length', 500 * 1024 * 1024),  # 500MB
+            ('grpc.max_receive_message_length', 1024 * 1024 * 1024),  # 1GB
+            ('grpc.max_send_message_length', 1024 * 1024 * 1024),  # 1GB
             # ('grpc.default_compression_level', 1),  # Nivel de compresión, uso 6, pero podría usar 1 si queremos menor latencia
             # ('grpc.compression_algorithm', grpc.Compression.Gzip),  # Al
             # Con 6 me toma 2-3s 1 million datos

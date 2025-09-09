@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import * as echarts from 'echarts';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import ReactECharts from 'echarts-for-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, BarChart3, Activity } from 'lucide-react';
-
 import { GetDatasetDataResponse, DatasetInfo } from '@/generated/projects';
 
 /**
@@ -49,6 +48,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
   const [selectedXAxis, setSelectedXAxis] = useState<string>('x');
   const [selectedYAxis, setSelectedYAxis] = useState<string>('y');
   const [chartData, setChartData] = useState<Float32Array | null>(null);
+  const chartRef = useRef<ReactECharts>(null);
 
   // Initialize selected columns when coordinate columns change
   useEffect(() => {
@@ -56,10 +56,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     if (coordinateColumns.y && selectedYAxis === 'y') setSelectedYAxis(coordinateColumns.y);
     if (coordinateColumns.z && selectedValueColumn === 'z') setSelectedValueColumn(coordinateColumns.z);
   }, [coordinateColumns, selectedXAxis, selectedYAxis, selectedValueColumn]);
-
-  // Chart refs
-  const chartRef = useRef<HTMLDivElement>(null);
-  const chartInstanceRef = useRef<echarts.EChartsType | null>(null);
 
   useEffect(() => {
     loadDataset();
@@ -71,74 +67,40 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     }
   }, [dataset, selectedValueColumn, selectedXAxis, selectedYAxis]);
 
-  // Initialize chart when div is available and data is ready
+  // Resize chart when container size changes with debouncing
   useEffect(() => {
-    const canRenderChart = chartData && chartData.length > 0 && selectedXAxis && selectedYAxis && selectedValueColumn;
+    let resizeTimeout: NodeJS.Timeout;
     
-    if (!canRenderChart) {
-      // Keep chart instance during refetch but show loading if refetching
-      if (refetching && chartInstanceRef.current) {
-        // Chart exists but no data yet - this is handled in loadDataset
-        return;
-      }
-      
-      // Dispose existing chart if conditions are no longer met and not refetching
-      if (chartInstanceRef.current) {
-        chartInstanceRef.current.dispose();
-        chartInstanceRef.current = null;
-      }
-      return;
-    }
-    
-    if (!chartRef.current) {
-      return;
-    }
-    
-    if (chartInstanceRef.current) {
-      // Don't update chart if we're still refetching - wait for data to be ready
-      if (!refetching) {
-        updateChart();
-      }
-      return;
-    }
-    
-    const chart = echarts.init(chartRef.current, undefined, {
-      renderer: 'canvas',
-      useDirtyRect: true,
-    });
-    chartInstanceRef.current = chart;
-
-    // Handle window resize
-    const handleResize = () => {
-      chart.resize();
+    const debouncedResize = () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        if (chartRef.current) {
+          const chartInstance = chartRef.current.getEchartsInstance();
+          chartInstance.resize();
+        }
+      }, 150); // 150ms debounce delay
     };
-    window.addEventListener('resize', handleResize);
 
-    // Update chart with data - only if not refetching
-    if (!refetching) {
-      updateChart();
-    }
-
-    // Cleanup function
+    window.addEventListener('resize', debouncedResize);
     return () => {
-      if (chartInstanceRef.current) {
-        chartInstanceRef.current.dispose();
-        chartInstanceRef.current = null;
-      }
+      window.removeEventListener('resize', debouncedResize);
+      clearTimeout(resizeTimeout);
     };
-  }, [chartData, selectedXAxis, selectedYAxis, selectedValueColumn, refetching]);
+  }, []);
+
+  // Trigger resize after chart data changes
+  useEffect(() => {
+    if (chartData && chartRef.current) {
+      const chartInstance = chartRef.current.getEchartsInstance();
+      setTimeout(() => chartInstance.resize(), 100);
+    }
+  }, [chartData]);
 
   const loadDataset = async () => {
     try {
       // Use different loading state for refetches vs initial load
       if (dataset) {
         setRefetching(true);
-        // Show ECharts loading indicator when changing data - delay slightly to ensure chart exists
-        setTimeout(() => {
-          if (chartInstanceRef.current) {
-            chartInstanceRef.current.showLoading('default', { text: 'Cargando datos...' });
-          }
-        }, 10);
       } else {
         setLoading(true);
       }
@@ -161,10 +123,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       setError('Error al cargar el dataset');
     } finally {
       setLoading(false);
-      // Hide ECharts loading indicator and update chart
-      if (chartInstanceRef.current) {
-        chartInstanceRef.current.hideLoading();
-      }
       setRefetching(false);
     }
   };
@@ -175,19 +133,15 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     if (!dataset || !selectedValueColumn || !selectedXAxis || !selectedYAxis) {
       return;
     }
-    
-        // Create Float32Array from binary data
+    // Create Float32Array from binary data
     const float32Data = new Float32Array(dataset.binary_data.buffer, dataset.binary_data.byteOffset, dataset.data_length);
-    console.log('Float32Data:', float32Data);
-
     
     setChartData(float32Data);
   };
 
-  const updateChart = () => {
-    if (!chartInstanceRef.current || !chartData || chartData.length === 0) {
-      return;
-    }
+  // Generate chart options - memoized for performance
+  const chartOptions = useMemo(() => {
+    if (!chartData || chartData.length === 0) return null;
 
     // Get boundaries for automatic scaling
     const getBoundaryForColumn = (columnName: string) => {
@@ -199,15 +153,11 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     const yBoundary = getBoundaryForColumn(selectedYAxis);
     const valueBoundary = getBoundaryForColumn(selectedValueColumn);
 
-    // Calculate total points from Float32Array (each point has 3 values: x,y,z)
-    const totalPoints = chartData.length / 3;
 
-    // 2D Scatter plot with Float32Array data and automatic scaling
-    const option = {
+    return {
       animation: false,
       title: {
         text: `${datasetInfo.file_name} - Visualización 2D`,
-        subtext: `${totalPoints.toLocaleString()} puntos de datos`,
         left: 'center',
         textStyle: {
           fontSize: 16,
@@ -217,7 +167,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       visualMap: {
         min: valueBoundary?.min_value ?? 0,
         max: valueBoundary?.max_value ?? 100,
-        dimension: 2, // Use the third dimension (value) for color mapping
+        dimension: 2,
         orient: 'vertical',
         right: 10,
         top: 'center',
@@ -268,17 +218,20 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       dataZoom: [
         {
           type: 'inside',
-          xAxisIndex: 0
+          xAxisIndex: 0,
+          filterMode: 'filter',
+          throttle: 30,
         },
         {
           type: 'inside',
-          yAxisIndex: 0
+          yAxisIndex: 0,
+          filterMode: 'filter',
+          throttle: 30,
         }
       ],
       series: [{
         name: `${selectedValueColumn} values`,
         type: 'scatter',
-        // Use Float32Array directly - ECharts supports binary data natively
         data: chartData,
         animation: false,
         itemStyle: {
@@ -289,7 +242,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         emphasis: {
           animation: false,
           itemStyle: {
-          animation: false,
+            animation: false,
             borderColor: '#000',
             borderWidth: 1,
             opacity: 1.0
@@ -297,19 +250,13 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         },
         large: true,
         largeThreshold: 20000,
-        progressive: 100000,
+        progressive: 30000,
         progressiveThreshold: 20000,
-        progressiveChunkMode: 'sequential',
         symbolSize: 4,
-        blendMode: 'screen',
         dimensions: [selectedXAxis, selectedYAxis, selectedValueColumn],
       }]
     };
-    
-
-    chartInstanceRef.current.setOption(option);
-
-  };
+  }, [chartData, selectedXAxis, selectedYAxis, selectedValueColumn, dataset, datasetInfo.file_name]);
 
   if (loading) {
     return (
@@ -339,9 +286,9 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col h-full p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-shrink-0">
         <div className="flex items-center space-x-4">
           <Button variant="outline" onClick={onBack}>
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -362,7 +309,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       </div>
 
       {/* Controls */}
-      <Card>
+      <Card className="flex-shrink-0">
         <CardHeader>
           <CardTitle className="flex items-center">
             <BarChart3 className="mr-2 h-5 w-5" />
@@ -454,26 +401,31 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       </Card>
 
       {/* Chart Visualization */}
-      <Card>
-        <CardHeader>
+      <Card className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <CardHeader className="flex-shrink-0">
           <CardTitle className="flex flex-row items-center">
           {refetching ? (<Activity className="mr-2 h-4 w-4 animate-spin" />) : ''} Gráfico de Dispersión 2D</CardTitle>
           <CardDescription>
             {selectedXAxis} vs {selectedYAxis} • Valores: {selectedValueColumn}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex-1 flex flex-col min-h-0 p-0">
           {(() => {
             const canRenderChart = chartData && chartData.length > 0 && selectedXAxis && selectedYAxis && selectedValueColumn;
             
-            return canRenderChart ? (
-              <div 
-                ref={chartRef}
-                className="h-96 w-full"
-                style={{ minHeight: '400px' }}
-              />
+            return canRenderChart && chartOptions ? (
+              <div className="flex-1 w-full p-6" style={{ minHeight: '400px', height: '100%' }}>
+                <ReactECharts
+                  ref={chartRef}
+                  option={chartOptions}
+                  style={{ height: '100%', width: '100%', minHeight: '400px' }}
+                  showLoading={refetching}
+                  loadingOption={{ text: 'Cargando datos...' }}
+                  opts={{ renderer: 'canvas' }}
+                />
+              </div>
             ) : (
-              <div className="h-96 bg-gray-50 rounded-lg flex items-center justify-center">
+              <div className="flex-1 bg-gray-50 rounded-lg flex items-center justify-center m-6">
                 <div className="text-center">
                   <Activity className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                   <p className="text-gray-600">No hay datos del gráfico disponibles</p>

@@ -30,11 +30,11 @@ export default function App() {
 const root = createRoot(document.getElementById("app")!);
 root.render(
   // StrictMode desactivado ya que quería un benchmark sobre las requests
-  // <React.StrictMode>
-  // Tanstack query venía con el template,
-  // Se deja en caso que se necesite, aunque todas las requests deberian ser por IPC y no por renderer
-    // <QueryClientProvider client={queryClient}>
+   <React.StrictMode>
+  {/* // Tanstack query venía con el template, */}
+  {/* // Se deja en caso que se necesite, aunque todas las requests deberian ser por IPC y no por renderer */}
+    {/* // <QueryClientProvider client={queryClient}> */}
       <App />
-    // </QueryClientProvider>
-  // </React.StrictMode>,
+    {/* // </QueryClientProvider> */}
+  </React.StrictMode>,
 );
