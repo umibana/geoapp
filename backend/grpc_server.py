@@ -15,11 +15,14 @@ sys.path.insert(0, str(script_dir / 'generated'))
 
 import grpc
 
+from grpc_reflection.v1alpha import reflection
+
 # Importar los archivos protobuf generados
 import geospatial_pb2
 import files_pb2
 import projects_pb2
 import main_service_pb2_grpc
+import main_service_pb2
 
 from database import DatabaseManager
 from data_generation import DataGenerator
@@ -218,6 +221,14 @@ def serve():
         main_service_pb2_grpc.add_GeospatialServiceServicer_to_server(
             GeospatialServicer(), server
         )
+
+        # Esto se hace para que el servidor gRPC sea reflectivo (Osea, exponga metodos en servicio)
+        # Muy util para probar API con grpc_cli/grpcurl o Kreya 
+        SERVICE_NAMES = (
+            main_service_pb2.DESCRIPTOR.services_by_name['GeospatialService'].full_name,
+            reflection.SERVICE_NAME,
+        )
+        reflection.enable_server_reflection(SERVICE_NAMES, server)
         
         listen_addr = f'127.0.0.1:{port}'
         server.add_insecure_port(listen_addr)

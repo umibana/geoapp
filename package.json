@@ -117,6 +117,7 @@
     "tailwindcss-animate": "^1.0.7",
     "ts-proto": "^2.7.7",
     "uplot": "^1.6.32",
-    "zod": "^3.24.3"
+    "zod": "^3.24.3",
+    "zustand": "^5.0.8"
   }
 }

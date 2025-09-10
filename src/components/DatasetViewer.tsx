@@ -133,8 +133,8 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     if (!dataset || !selectedValueColumn || !selectedXAxis || !selectedYAxis) {
       return;
     }
-    // Create Float32Array from binary data
-    const float32Data = new Float32Array(dataset.binary_data.buffer, dataset.binary_data.byteOffset, dataset.data_length);
+    // Creamos el Float32Array desde el binary_data_f32 si existe (deberia!), sino desde el binary_data
+    const float32Data = dataset.binary_data_f32 ?? new Float32Array(dataset.binary_data.buffer, dataset.binary_data.byteOffset, dataset.data_length);
     
     setChartData(float32Data);
   };

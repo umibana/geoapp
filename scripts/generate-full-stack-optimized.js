@@ -455,14 +455,16 @@ function generateSimpleHandlers(services, allMessages) {
     try {
       const response = await autoMainGrpcClient.${camel}(request);
       // Collect ArrayBuffers to transfer (deep)
-      const transfers = [];
-      (function collect(x) {
-        if (!x) return;
-        if (x instanceof Uint8Array) { transfers.push(x.buffer); return; }
-        if (Array.isArray(x)) { for (const it of x) collect(it); return; }
-        if (typeof x === 'object') { for (const k of Object.keys(x)) collect(x[k]); }
-      })(response);
-      event.sender.postMessage('grpc-unary-data', { requestId: request.requestId, payload: response }, transfers);
+          const transferSet = new Set<ArrayBuffer>();
+        (function collect(x: any) {
+          if (!x) return;
+          if (ArrayBuffer.isView(x)) { transferSet.add(x.buffer); return; } // any TypedArray/DataView
+          if (x instanceof ArrayBuffer) { transferSet.add(x); return; }
+          if (Array.isArray(x)) { for (const it of x) collect(it); return; }
+          if (typeof x === 'object') { for (const k of Object.keys(x)) collect((x as any)[k]); }
+        })(response);
+        const transfers = [...transferSet];
+      event.sender.postMessage('grpc-unary-data', { requestId: request.requestId, payload: response }, [...transferSet]);
     } catch (error) {
       event.sender.postMessage('grpc-unary-error', { requestId: request.requestId, error: error.message || String(error) });
     }
