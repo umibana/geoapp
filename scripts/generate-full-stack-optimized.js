@@ -748,12 +748,12 @@ async function generateOriginalProtos() {
     `--proto_path=${PROTO_DIR} ${protoList}`;
   const frontendSuccess = runCommand(frontendCommand, 'Generating TypeScript protobuf files with ts-proto');
 
-  // Python via grpc_tools.protoc
+  // Python via grpc_tools.protoc with type stubs
   const backendCommand =
-    `python3 -m grpc_tools.protoc ` +
-    `--python_out=${BACKEND_OUT_DIR} --grpc_python_out=${BACKEND_OUT_DIR} ` +
+    `python -m grpc_tools.protoc ` +
+    `--python_out=${BACKEND_OUT_DIR} --grpc_python_out=${BACKEND_OUT_DIR} --pyi_out=${BACKEND_OUT_DIR} ` +
     `--proto_path=${PROTO_DIR} ${protoList}`;
-  const backendSuccess = runCommand(backendCommand, 'Generating Python protobuf files');
+  const backendSuccess = runCommand(backendCommand, 'Generating Python protobuf files with type stubs (.pyi)');
 
   return frontendSuccess && backendSuccess;
 }
