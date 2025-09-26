@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -44,28 +44,31 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
   const [timetook, setTimetook] = useState(0);
   const [refetching, setRefetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedValueColumn, setSelectedValueColumn] = useState<string>('z');
-  const [selectedXAxis, setSelectedXAxis] = useState<string>('x');
-  const [selectedYAxis, setSelectedYAxis] = useState<string>('y');
-  const [chartData, setChartData] = useState<Float32Array | null>(null);
+  // Initialize selected columns with coordinate mappings
+  const [selectedValueColumn, setSelectedValueColumn] = useState<string>(() => 
+    coordinateColumns.z || 'z'
+  );
+  const [selectedXAxis, setSelectedXAxis] = useState<string>(() => 
+    coordinateColumns.x || 'x'
+  );
+  const [selectedYAxis, setSelectedYAxis] = useState<string>(() => 
+    coordinateColumns.y || 'y'
+  );
   const chartRef = useRef<ReactECharts>(null);
 
-  // Initialize selected columns when coordinate columns change
-  useEffect(() => {
-    if (coordinateColumns.x && selectedXAxis === 'x') setSelectedXAxis(coordinateColumns.x);
-    if (coordinateColumns.y && selectedYAxis === 'y') setSelectedYAxis(coordinateColumns.y);
-    if (coordinateColumns.z && selectedValueColumn === 'z') setSelectedValueColumn(coordinateColumns.z);
-  }, [coordinateColumns, selectedXAxis, selectedYAxis, selectedValueColumn]);
+  // Chart data preparation using useMemo instead of useEffect
+  const chartData = useMemo(() => {
+    if (!dataset || !selectedValueColumn || !selectedXAxis || !selectedYAxis || !dataset.binary_data) {
+      return null;
+    }
+    // Create Float32Array from binary data
+    return new Float32Array(dataset.binary_data.buffer, dataset.binary_data.byteOffset, dataset.data_length);
+  }, [dataset, selectedValueColumn, selectedXAxis, selectedYAxis]);
 
   useEffect(() => {
     loadDataset();
   }, [datasetInfo.id, selectedXAxis, selectedYAxis, selectedValueColumn]);
 
-  useEffect(() => {
-    if (dataset && selectedValueColumn && selectedXAxis && selectedYAxis) {
-      prepareChartData();
-    }
-  }, [dataset, selectedValueColumn, selectedXAxis, selectedYAxis]);
 
   // Resize chart when container size changes with debouncing
   useEffect(() => {
@@ -78,7 +81,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           const chartInstance = chartRef.current.getEchartsInstance();
           chartInstance.resize();
         }
-      }, 150); // 150ms debounce delay
+      }, 100); // Delay para actualizar el gráfico
     };
 
     window.addEventListener('resize', debouncedResize);
@@ -88,10 +91,9 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     };
   }, []);
 
-  // Trigger resize after chart data changes
-  useEffect(() => {
-    if (chartData && chartRef.current) {
-      const chartInstance = chartRef.current.getEchartsInstance();
+  // Chart resize callback
+  const handleChartReady = useCallback((chartInstance: { resize: () => void }) => {
+    if (chartData) {
       setTimeout(() => chartInstance.resize(), 100);
     }
   }, [chartData]);
@@ -113,6 +115,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         dataset_id: datasetInfo.id,
         columns: [selectedXAxis, selectedYAxis, selectedValueColumn]
       }) as GetDatasetDataResponse;
+      console.log('response', response);
       setTimetook((performance.now() - timetook));
 
       if (response.binary_data && response.data_length > 0) {
@@ -129,15 +132,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
 
 
-  const prepareChartData = () => {
-    if (!dataset || !selectedValueColumn || !selectedXAxis || !selectedYAxis) {
-      return;
-    }
-    // Create Float32Array from binary data
-    const float32Data = new Float32Array(dataset.binary_data.buffer, dataset.binary_data.byteOffset, dataset.data_length);
-    
-    setChartData(float32Data);
-  };
 
   // Generate chart options - memoized for performance
   const chartOptions = useMemo(() => {
@@ -422,6 +416,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
                   showLoading={refetching}
                   loadingOption={{ text: 'Cargando datos...' }}
                   opts={{ renderer: 'canvas' }}
+                  onChartReady={handleChartReady}
                 />
               </div>
             ) : (
