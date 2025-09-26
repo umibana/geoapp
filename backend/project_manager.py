@@ -20,14 +20,12 @@ class ProjectManager:
     
     def __init__(self, db_manager):
         self.db = db_manager
-        print("📁 ProjectManager inicializado")
     
     # ========== Métodos de gestión de proyectos ==========
     
     def create_project(self, request: projects_pb2.CreateProjectRequest) -> projects_pb2.CreateProjectResponse:
         """Crear un nuevo proyecto"""
         try:
-            print(f"Creando proyecto: {request.name}")
             
             # Llamar a la función create_project para crear el proyecto
             project_data = self.db.create_project(request.name, request.description)
@@ -44,11 +42,9 @@ class ProjectManager:
             project.created_at = project_data.created_at
             project.updated_at = project_data.updated_at
             
-            print(f"Proyecto creado: {project.id}")
             return response
             
         except Exception as e:
-            print(f"❌ Error creando proyecto: {e}")
             response = projects_pb2.CreateProjectResponse()
             response.success = False
             response.error_message = str(e)
@@ -57,7 +53,6 @@ class ProjectManager:
     def get_projects(self, request: projects_pb2.GetProjectsRequest) -> projects_pb2.GetProjectsResponse:
         """Obtener proyectos con paginación"""
         try:
-            print(f"📁 Obteniendo proyectos: limit={request.limit}, offset={request.offset}")
             
             projects_data, total_count = self.db.get_projects(request.limit or 100, request.offset)
             
@@ -72,18 +67,15 @@ class ProjectManager:
                 project.created_at = project_data.created_at
                 project.updated_at = project_data.updated_at
             
-            print(f"✅ Obtenidos {len(projects_data)} proyectos")
             return response
             
         except Exception as e:
-            print(f"❌ Error obteniendo proyectos: {e}")
             response = projects_pb2.GetProjectsResponse()
             return response
     
     def get_project(self, request: projects_pb2.GetProjectRequest) -> projects_pb2.GetProjectResponse:
         """Obtener un proyecto específico"""
         try:
-            print(f"📁 Obteniendo proyecto: {request.project_id}")
             
             project_data = self.db.get_project(request.project_id)
             
@@ -103,7 +95,6 @@ class ProjectManager:
             return response
             
         except Exception as e:
-            print(f"❌ Error obteniendo proyecto: {e}")
             response = projects_pb2.GetProjectResponse()
             response.success = False
             response.error_message = str(e)
@@ -112,7 +103,6 @@ class ProjectManager:
     def update_project(self, request: projects_pb2.UpdateProjectRequest) -> projects_pb2.UpdateProjectResponse:
         """Actualizar un proyecto"""
         try:
-            print(f"📁 Actualizando proyecto: {request.project_id}")
             
             updated_project = self.db.update_project(request.project_id, request.name, request.description)
             
@@ -132,7 +122,6 @@ class ProjectManager:
             return response
             
         except Exception as e:
-            print(f"❌ Error actualizando proyecto: {e}")
             response = projects_pb2.UpdateProjectResponse()
             response.success = False
             response.error_message = str(e)
@@ -141,7 +130,6 @@ class ProjectManager:
     def delete_project(self, request: projects_pb2.DeleteProjectRequest) -> projects_pb2.DeleteProjectResponse:
         """Eliminar un proyecto"""
         try:
-            print(f"📁 Eliminando proyecto: {request.project_id}")
             
             success = self.db.delete_project(request.project_id)
             
@@ -153,7 +141,6 @@ class ProjectManager:
             return response
             
         except Exception as e:
-            print(f"❌ Error eliminando proyecto: {e}")
             response = projects_pb2.DeleteProjectResponse()
             response.success = False
             response.error_message = str(e)
@@ -164,7 +151,6 @@ class ProjectManager:
     def create_file(self, request: projects_pb2.CreateFileRequest) -> projects_pb2.CreateFileResponse:
         """Crear un nuevo archivo con importación directa a DuckDB"""
         try:
-            print(f"📄 Creando archivo: {request.name} para proyecto {request.project_id}")
             
             # Crear archivo con importación inmediata a DuckDB
             file_data, duckdb_table_name, column_statistics = self.db.create_file_with_csv(
@@ -175,9 +161,6 @@ class ProjectManager:
                 request.file_content
             )
             
-            # Guardar estadísticas en base de datos si el análisis fue exitoso
-            if column_statistics:
-                print(f"📈 Estadísticas generadas para {len(column_statistics)} columnas desde tabla DuckDB: {duckdb_table_name}")
             
             response = projects_pb2.CreateFileResponse()
             response.success = True
@@ -191,11 +174,9 @@ class ProjectManager:
             response.file.file_size = file_data.file_size
             response.file.created_at = file_data.created_at
             
-            print(f"✅ Archivo creado: {response.file.id}")
             return response
             
         except Exception as e:
-            print(f"❌ Error creando archivo: {e}")
             response = projects_pb2.CreateFileResponse()
             response.success = False
             response.error_message = str(e)
@@ -204,7 +185,6 @@ class ProjectManager:
     def get_project_files(self, request: projects_pb2.GetProjectFilesRequest) -> projects_pb2.GetProjectFilesResponse:
         """Obtener todos los archivos de un proyecto"""
         try:
-            print(f"📄 Obteniendo archivos para proyecto: {request.project_id}")
             
             files_data = self.db.get_project_files(request.project_id)
             
@@ -220,18 +200,15 @@ class ProjectManager:
                 file.file_size = file_data.file_size
                 file.created_at = file_data.created_at
             
-            print(f"✅ Obtenidos {len(files_data)} archivos")
             return response
             
         except Exception as e:
-            print(f"❌ Error obteniendo archivos del proyecto: {e}")
             response = projects_pb2.GetProjectFilesResponse()
             return response
 
     def get_project_datasets(self, request: projects_pb2.GetProjectDatasetsRequest) -> projects_pb2.GetProjectDatasetsResponse:
         """Obtener todos los datasets de un proyecto"""
         try:
-            print(f"📊 Obteniendo datasets para proyecto: {request.project_id}")
             
             datasets = self.db.get_datasets_by_project(request.project_id)
             
@@ -256,18 +233,15 @@ class ProjectManager:
                     col_mapping.mapped_field = mapping['mapped_field']
                     col_mapping.is_coordinate = mapping['is_coordinate']
             
-            print(f"✅ Encontrados {len(datasets)} datasets")
             return response
             
         except Exception as e:
-            print(f"❌ Error obteniendo datasets del proyecto: {e}")
             response = projects_pb2.GetProjectDatasetsResponse()
             return response
     
     def delete_file(self, request: projects_pb2.DeleteFileRequest) -> projects_pb2.DeleteFileResponse:
         """Eliminar un archivo"""
         try:
-            print(f"📄 Eliminando archivo: {request.file_id}")
             
             success = self.db.delete_file(request.file_id)
             
@@ -279,7 +253,6 @@ class ProjectManager:
             return response
             
         except Exception as e:
-            print(f"❌ Error eliminando archivo: {e}")
             response = projects_pb2.DeleteFileResponse()
             response.success = False
             response.error_message = str(e)
@@ -290,7 +263,6 @@ class ProjectManager:
     def analyze_csv_for_project(self, request: projects_pb2.AnalyzeCsvForProjectRequest) -> projects_pb2.AnalyzeCsvForProjectResponse:
         """Analizar archivo CSV para proyecto con detección mejorada de tipos de columna"""
         try:
-            print(f"📊 Analizando CSV para archivo del proyecto: {request.file_id}")
             
             # Validar que file_id no esté vacío
             if not request.file_id:
@@ -319,7 +291,6 @@ class ProjectManager:
                     row_count = int(count_result[0])
                     
             except Exception as e:
-                print(f"⚠️  Tabla DuckDB no encontrada para archivo {request.file_id}: {e}")
                 response = projects_pb2.AnalyzeCsvForProjectResponse()
                 response.success = False
                 response.error_message = "El archivo necesita ser re-subido para análisis."
@@ -362,11 +333,9 @@ class ProjectManager:
             response.suggested_mappings.update(suggested_mappings)
             response.total_rows = row_count
             
-            print(f"✅ CSV analizado: {len(headers)} columnas, {row_count} filas")
             return response
             
         except Exception as e:
-            print(f"❌ Error analizando CSV: {e}")
             response = projects_pb2.AnalyzeCsvForProjectResponse()
             response.success = False
             response.error_message = str(e)
@@ -375,7 +344,6 @@ class ProjectManager:
     def process_dataset(self, request: projects_pb2.ProcessDatasetRequest) -> projects_pb2.ProcessDatasetResponse:
         """Procesar dataset con mapeos de columnas - datos ya en DuckDB"""
         try:
-            print(f"📊 Procesando dataset para archivo: {request.file_id}")
             
             # Obtener el nombre de la tabla DuckDB para este archivo
             table_name = f"data_{request.file_id.replace('-', '_')}"
@@ -386,7 +354,6 @@ class ProjectManager:
                     from sqlalchemy import text
                     count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
                     total_rows = int(count_result[0])
-                    print(f"📊 Tabla DuckDB '{table_name}' encontrada con {total_rows:,} filas")
             except Exception as e:
                 response = projects_pb2.ProcessDatasetResponse()
                 response.success = False
@@ -408,7 +375,18 @@ class ProjectManager:
             dataset_data = self.db.create_dataset(request.file_id, table_name, total_rows, column_mappings_list)
             dataset_id = dataset_data.id
             
-            print(f"✅ Dataset creado: {dataset_id} → tabla DuckDB '{table_name}'")
+            # Generate and store column statistics for the dataset using pandas describe
+            try:
+                # We need to get the original file content to run pandas describe
+                # For now, let's regenerate statistics directly from DuckDB using SQL queries
+                column_statistics = self._generate_statistics_from_duckdb(table_name)
+                
+                if column_statistics:
+                    self.db.store_column_statistics(dataset_id, column_statistics)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+            
             
             response = projects_pb2.ProcessDatasetResponse()
             response.success = True
@@ -430,28 +408,20 @@ class ProjectManager:
                 mapping.mapped_field = mapping_dict['mapped_field']
                 mapping.is_coordinate = mapping_dict['is_coordinate']
             
-            print(f"✅ Procesamiento de dataset completo: {total_rows:,} filas → tabla DuckDB '{table_name}'")
             return response
             
         except Exception as e:
-            print(f"❌ Error procesando dataset: {e}")
             response = projects_pb2.ProcessDatasetResponse()
             response.success = False
             response.error_message = str(e)
             return response
     
+    
+    
     def get_dataset_data(self, request: projects_pb2.GetDatasetDataRequest) -> projects_pb2.GetDatasetDataResponse:
-        """
-        ULTRA-OPTIMIZED: Get dataset data using revolutionary combined query
-        - Uses combined data + statistics query (~50% speedup)
-        - Native DuckDB connection for maximum performance
-        - Eliminated separate statistics query overhead
-        - Removed unnecessary np.ascontiguousarray() copying
-        """
         try:
             # Use default columns if not specified
             columns = list(request.columns) if request.columns else ["x", "y", "z"]
-            print(f"🚀 ULTRA-OPTIMIZED dataset retrieval: {request.dataset_id}, columns: {columns}")
             
             # Obtener información del dataset primero
             dataset = self.db.get_dataset_by_id(request.dataset_id)
@@ -459,7 +429,6 @@ class ProjectManager:
                 response = projects_pb2.GetDatasetDataResponse()
                 return response
             
-            # REVOLUTIONARY: Get data + statistics in ONE combined query
             data, boundaries = self.db.get_dataset_data_and_stats_combined(
                 request.dataset_id, 
                 columns
@@ -482,7 +451,6 @@ class ProjectManager:
                 boundary.max_value = float(stats['max_value'])
                 boundary.valid_count = int(stats['valid_count'])
             
-            print(f"🚀 ULTRA-OPTIMIZED response: {response.total_count:,} points + boundaries")
             return response
             
         except Exception as e:
