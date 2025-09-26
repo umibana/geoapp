@@ -61,17 +61,14 @@ class DatasetColumnStats(SQLModel, table=True):
     null_count: Optional[int] = None
     unique_count: Optional[int] = None
     created_at: int
-
-
+        
+# Nota: uso la conexión de SQLAlchemy pero accedo a raw DuckDB para performance
 class DatabaseManager:
     def __init__(self, db_path: str = "geospatial.db"):
         self.db_path = db_path
         self.db_url = f"duckdb:///{self.db_path}"
         self.engine = create_engine(self.db_url)
-        
-        # Note: We use SQLAlchemy's connection but access raw DuckDB for performance
-        # This avoids connection conflicts while still getting fetchnumpy() benefits
-        
+
         # Create SQLModel tables
         SQLModel.metadata.create_all(self.engine)
 
@@ -81,21 +78,7 @@ class DatabaseManager:
     def get_timestamp(self) -> int:
         return int(time.time())
     
-    
-    def __enter__(self):
-        """Context manager entry"""
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit - cleanup connections"""
-        self.close()
-    
-    def close(self):
-        """Explicit cleanup method"""
-        # No need to close anything - SQLAlchemy handles connection management
-        print("🔌 DatabaseManager cleanup complete")
-    
-    def import_csv_to_duckdb(self, file_content: bytes, table_name: str) -> Tuple[int, List[str]]:
+    def import_csv_to_duckdb(self, file_content: bytes, table_name: str) -> bool:
         """
         Import CSV content directly into DuckDB table
         
@@ -107,7 +90,7 @@ class DatabaseManager:
             Tuple of (row_count, column_names)
         """
         try:
-            # Write CSV content to temporary file for DuckDB to read
+            # escribo el contenido del CSV en un archivo temporal para que DuckDB lo lea
             import tempfile
             import os
             
@@ -116,29 +99,20 @@ class DatabaseManager:
                 temp_csv_path = temp_file.name
             
             try:
-                # Use SQLAlchemy connection with explicit transaction
+                # uso la conexión de SQLAlchemy para usar duckdb
                 with self.engine.connect() as conn:
-                    with conn.begin():  # Explicit transaction
-                        # Use DuckDB's CSV auto-detection
+                    with conn.begin():  #
                         conn.execute(text(f"""
                             CREATE OR REPLACE TABLE {table_name} AS 
                             SELECT * FROM read_csv_auto('{temp_csv_path}')
                         """))
-                        
-                        # Get row count and column names
-                        row_count = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()[0]
-                        columns_result = conn.execute(text(f"SELECT * FROM {table_name} LIMIT 0"))
-                        columns = [desc[0] for desc in columns_result.cursor.description]
-                
-                print(f"✅ Imported CSV to DuckDB table '{table_name}': {row_count:,} rows, {len(columns)} columns")
-                return row_count, columns
+                return True
                 
             finally:
-                # Clean up temp file
+                # elimino el archivo temporal
                 os.unlink(temp_csv_path)
                 
         except Exception as e:
-            print(f"❌ Error importing CSV to DuckDB: {e}")
             raise e
     
     def analyze_csv_and_store(self, file_content: bytes, sample_size: int = 10000) -> Tuple[Dict[str, Any], List[str], List[str]]:
@@ -160,12 +134,9 @@ class DatabaseManager:
             df = pd.read_csv(io.BytesIO(file_content))
             total_rows = len(df)
             
-            print(f"📊 Analyzing CSV: {total_rows:,} rows × {len(df.columns)} columns")
-            
             # Use sample for large datasets
             if sample_size < total_rows and sample_size > 0:
                 df_sample = df.sample(n=min(sample_size, total_rows), random_state=42)
-                print(f"📊 Using sample of {len(df_sample):,} rows for analysis")
             else:
                 df_sample = df
             
@@ -211,102 +182,13 @@ class DatabaseManager:
                     'total_rows': total_rows
                 }
             
-            print(f"✅ CSV analysis complete: {len(column_statistics)} columns analyzed")
             return column_statistics, numeric_columns, categorical_columns
             
         except Exception as e:
-            print(f"❌ Error analyzing CSV: {e}")
             raise e
     
-    def get_duckdb_table_statistics(self, table_name: str) -> Dict[str, Any]:
-        """
-        OPTIMIZED: Get comprehensive statistics using native DuckDB connection
-        - Uses native DuckDB API for faster schema introspection
-        - Optimized query execution for better performance
-        
-        Args:
-            table_name: Name of the DuckDB table
-            
-        Returns:
-            Dictionary of column statistics
-        """
-        try:
-            column_statistics = {}
-            
-            # Use SQLAlchemy connection but access raw DuckDB for better performance
-            with self.engine.connect() as conn:
-                duckdb_conn = conn.connection.connection
-                
-                # Get table schema using raw DuckDB
-                schema_result = duckdb_conn.execute(f"DESCRIBE {table_name}").fetchall()
-                columns_info = [(row[0], row[1]) for row in schema_result]
-                
-                for column_name, column_type in columns_info:
-                    # Determine if column is numeric
-                    is_numeric = any(t in column_type.upper() for t in ['INT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'NUMERIC', 'BIGINT'])
-                    
-                    if is_numeric:
-                        # Get comprehensive numeric statistics using raw DuckDB
-                        stats_query = f"""
-                        SELECT 
-                            COUNT({column_name}) as count,
-                            AVG({column_name}) as mean,
-                            STDDEV({column_name}) as std,
-                            MIN({column_name}) as min,
-                            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY {column_name}) as q25,
-                            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {column_name}) as q50,
-                            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY {column_name}) as q75,
-                            MAX({column_name}) as max,
-                            COUNT(*) - COUNT({column_name}) as null_count,
-                            COUNT(DISTINCT {column_name}) as unique_count
-                        FROM {table_name}
-                        """
-                        
-                        result = duckdb_conn.execute(stats_query).fetchone()
-                        
-                        column_statistics[column_name] = {
-                            'column_type': 'numeric',
-                            'count': float(result[0]) if result[0] else 0,
-                            'mean': float(result[1]) if result[1] else None,
-                            'std': float(result[2]) if result[2] else None,
-                            'min': float(result[3]) if result[3] else None,
-                            '25%': float(result[4]) if result[4] else None,
-                            '50%': float(result[5]) if result[5] else None,
-                            '75%': float(result[6]) if result[6] else None,
-                            'max': float(result[7]) if result[7] else None,
-                            'null_count': int(result[8]) if result[8] else 0,
-                            'unique_count': int(result[9]) if result[9] else 0
-                        }
-                    else:
-                        # Get basic categorical statistics using raw DuckDB
-                        stats_query = f"""
-                        SELECT 
-                            COUNT({column_name}) as count,
-                            COUNT(*) - COUNT({column_name}) as null_count,
-                            COUNT(DISTINCT {column_name}) as unique_count
-                        FROM {table_name}
-                        """
-                        
-                        result = duckdb_conn.execute(stats_query).fetchone()
-                        
-                        column_statistics[column_name] = {
-                            'column_type': 'categorical',
-                            'count': float(result[0]) if result[0] else 0,
-                            'null_count': int(result[1]) if result[1] else 0,
-                            'unique_count': int(result[2]) if result[2] else 0
-                        }
-            
-            print(f"🚀 OPTIMIZED DuckDB statistics for {len(column_statistics)} columns")
-            return column_statistics
-            
-        except Exception as e:
-            print(f"❌ Error getting DuckDB table statistics: {e}")
-            return {}
-
     # ---------- Manejo de proyectos ----------
     # Manejamos el CRUD para crear un proyecto
-
-
 
     def create_project(self, name: str, description: str = "") -> Project:
         project = Project(
@@ -378,18 +260,13 @@ class DatabaseManager:
         
         # 1. Import CSV to DuckDB first (this is the source of truth)
         try:
-            print(f"🔄 Starting DuckDB import for table '{table_name}'")
-            row_count, columns = self.import_csv_to_duckdb(file_content, table_name)
-            print(f"📊 Successfully imported to DuckDB table '{table_name}': {row_count:,} rows, {len(columns)} columns")
+            self.import_csv_to_duckdb(file_content, table_name)
             
             # Verify table was created
-            if self.check_duckdb_table_exists(table_name):
-                print(f"✅ Verified: DuckDB table '{table_name}' exists and is accessible")
-            else:
-                print(f"❌ ERROR: DuckDB table '{table_name}' was not created properly")
+            if not self.check_duckdb_table_exists(table_name):
+                raise Exception(f"DuckDB table '{table_name}' was not created properly")
                 
         except Exception as e:
-            print(f"❌ DuckDB import failed for table '{table_name}': {e}")
             raise e
         
         # 2. Create File metadata record (no file_content stored)
@@ -408,12 +285,10 @@ class DatabaseManager:
             session.commit()
             session.refresh(file)
         
-        # 3. Generate statistics from DuckDB table
+        # 3. Generate statistics using pandas describe() on the original CSV
         try:
-            column_statistics = self.get_duckdb_table_statistics(table_name)
-            print(f"📈 Generated statistics for {len(column_statistics)} columns from DuckDB")
+            column_statistics, numeric_columns, categorical_columns = self.analyze_csv_and_store(file_content)
         except Exception as e:
-            print(f"⚠️  Statistics generation failed: {e}")
             column_statistics = {}
         
         return file, table_name, column_statistics
@@ -430,10 +305,8 @@ class DatabaseManager:
         try:
             with self.engine.connect() as conn:
                 conn.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1"))
-                print(f"🔍 Table '{table_name}' exists and is accessible")
                 return True
         except Exception as e:
-            print(f"🔍 Table '{table_name}' check failed: {e}")
             return False
     
 
@@ -452,46 +325,34 @@ class DatabaseManager:
         with Session(self.engine) as session:
             f = session.get(File, file_id)
             if not f:
-                print(f"❌ File {file_id} not found")
                 return False
-            
-            print(f"🗑️  Starting deletion process for file: {file_id}")
             
             # First, manually delete all datasets and their statistics that reference this file
             datasets = session.exec(select(Dataset).where(Dataset.file_id == file_id)).all()
-            print(f"🗑️  Found {len(datasets)} datasets to delete")
             
             for dataset in datasets:
-                print(f"🗑️  Deleting dataset: {dataset.id}")
-                
                 # Delete dataset column statistics first
                 stats = session.exec(select(DatasetColumnStats).where(DatasetColumnStats.dataset_id == dataset.id)).all()
                 for stat in stats:
                     session.delete(stat)
-                print(f"🗑️  Deleted {len(stats)} column statistics for dataset {dataset.id}")
                 
                 # Delete the dataset
                 session.delete(dataset)
-                print(f"🗑️  Deleted dataset: {dataset.id}")
             
             # Commit the dataset deletions first
             session.commit()
-            print(f"✅ Committed deletion of {len(datasets)} datasets and their statistics")
             
             # Also delete associated DuckDB table
             table_name = f"data_{file_id.replace('-', '_')}"
             try:
                 with self.engine.connect() as conn:
                     conn.execute(text(f"DROP TABLE IF EXISTS {table_name}"))
-                print(f"🗑️  Dropped DuckDB table: {table_name}")
-            except Exception as e:
-                print(f"⚠️  Could not drop DuckDB table {table_name}: {e}")
+            except Exception:
+                pass  # Ignore errors when dropping table
             
             # Now delete the file
-            print(f"🗑️  Now deleting file: {file_id}")
             session.delete(f)
             session.commit()
-            print(f"✅ File {file_id} deleted successfully")
             return True
 
     # ========== Manejo de datasets ==========
@@ -525,59 +386,9 @@ class DatabaseManager:
                 session.refresh(dataset)
             return dataset
 
-    def get_dataset_data_from_duckdb(self, dataset_id: str, columns: List[str]) -> np.ndarray:
-        """
-        ULTRA-OPTIMIZED: Native DuckDB connection for maximum performance
-        - Uses native duckdb.connect() instead of SQLAlchemy (3-50x speedup)
-        - Optimized memory operations with pre-allocated arrays
-        - Zero-copy numpy operations where possible
-        """
-        try:
-            dataset = self.get_dataset_by_id(dataset_id)
-            if not dataset:
-                return np.array([], dtype=np.float32)
-
-            table_name = dataset.duckdb_table_name
-
-            # Use SQLAlchemy connection but access raw DuckDB for fetchnumpy()
-            with self.engine.connect() as conn:
-                duckdb_conn = conn.connection.connection
-                rows_data = duckdb_conn.execute(
-                    f"SELECT {','.join(columns)} FROM {table_name}"
-                ).fetchnumpy()
-
-            # If no rows returned
-            if not rows_data or len(rows_data[columns[0]]) == 0:
-                return np.array([], dtype=np.float32)
-
-            # Extract column arrays with zero-copy operations
-            x_data = rows_data[columns[0]]
-            y_data = rows_data[columns[1]]
-            z_data = rows_data[columns[2]]
-            
-            # Pre-allocate flat array for optimal memory performance
-            num_points = len(x_data)
-            flat_numpy = np.empty(num_points * 3, dtype=np.float32)
-            
-            # Direct strided assignment for optimal cache performance
-            flat_numpy[0::3] = x_data.astype(np.float32, copy=False)
-            flat_numpy[1::3] = y_data.astype(np.float32, copy=False)
-            flat_numpy[2::3] = z_data.astype(np.float32, copy=False)
-
-            print(f"🚀 ULTRA-OPTIMIZED retrieval: {num_points:,} points ({flat_numpy.nbytes / 1024 / 1024:.1f} MB)")
-            return flat_numpy
-
-        except Exception as e:
-            print(f"❌ Error getting dataset data from DuckDB (ultra-optimized): {e}")
-            return np.array([], dtype=np.float32)
 
     def get_dataset_data_and_stats_combined(self, dataset_id: str, columns: List[str]) -> Tuple[np.ndarray, Dict[str, Dict[str, float]]]:
-        """
-        REVOLUTIONARY: Single combined query architecture with window functions
-        - Gets data + statistics in ONE query (~50% speedup)
-        - Uses DuckDB window functions for optimal performance
-        - Eliminates separate statistics query overhead
-        """
+
         try:
             dataset = self.get_dataset_by_id(dataset_id)
             if not dataset:
@@ -585,35 +396,24 @@ class DatabaseManager:
 
             table_name = dataset.duckdb_table_name
             
-            # Revolutionary combined query using window functions
-            combined_query = f"""
-            WITH data_with_stats AS (
-                SELECT
-                    {columns[0]}, {columns[1]}, {columns[2]},
-                    MIN({columns[0]}) OVER() as {columns[0]}_min, MAX({columns[0]}) OVER() as {columns[0]}_max,
-                    MIN({columns[1]}) OVER() as {columns[1]}_min, MAX({columns[1]}) OVER() as {columns[1]}_max,
-                    MIN({columns[2]}) OVER() as {columns[2]}_min, MAX({columns[2]}) OVER() as {columns[2]}_max,
-                    COUNT(*) OVER() as total_count
-                FROM {table_name}
-            )
-            SELECT * FROM data_with_stats
-            """
+            # consigo las columnas que necesito
+            data_query = f"SELECT {columns[0]}, {columns[1]}, {columns[2]} FROM {table_name}"
 
-            # Use SQLAlchemy connection but access raw DuckDB for fetchnumpy()
+            # obtengo los datos usando DuckDB's fetchnumpy para optimizar el rendimiento
             with self.engine.connect() as conn:
                 duckdb_conn = conn.connection.connection
-                rows_data = duckdb_conn.execute(combined_query).fetchnumpy()
+                rows_data = duckdb_conn.execute(data_query).fetchnumpy()
 
-            # If no rows returned
+            # si no hay datos, devuelvo un array vacío
             if not rows_data or len(rows_data[columns[0]]) == 0:
                 return np.array([], dtype=np.float32), {}
 
-            # Extract data columns with zero-copy operations
+            # obtengo las columnas que necesito
             x_data = rows_data[columns[0]]
             y_data = rows_data[columns[1]]
             z_data = rows_data[columns[2]]
             
-            # Pre-allocate flat array for optimal memory performance
+            # pre-alloco un array para optimizar el rendimiento
             num_points = len(x_data)
             flat_numpy = np.empty(num_points * 3, dtype=np.float32)
             
@@ -622,95 +422,28 @@ class DatabaseManager:
             flat_numpy[1::3] = y_data.astype(np.float32, copy=False)
             flat_numpy[2::3] = z_data.astype(np.float32, copy=False)
 
-            # Extract statistics from window function results (all rows have same stats)
+            # obtengo las estadisticas desde la base de datos (pandas)
             boundaries = {}
-            if num_points > 0:
-                for col in columns:
-                    boundaries[col] = {
-                        'min_value': float(rows_data[f"{col}_min"][0]),
-                        'max_value': float(rows_data[f"{col}_max"][0]),
-                        'valid_count': int(rows_data['total_count'][0])
-                    }
+            with Session(self.engine) as session:
+                stats = session.exec(
+                    select(DatasetColumnStats)
+                    .where(DatasetColumnStats.dataset_id == dataset_id)
+                    .where(DatasetColumnStats.column_type == "numeric")
+                ).all()
+                
+                for stat in stats:
+                    if stat.column_name in columns and stat.min_value is not None and stat.max_value is not None:
+                        boundaries[stat.column_name] = {
+                            'min_value': float(stat.min_value),
+                            'max_value': float(stat.max_value),
+                            'valid_count': int(stat.count) if stat.count else num_points
+                        }
 
-            print(f"🚀 REVOLUTIONARY combined query: {num_points:,} points + stats in ONE query ({flat_numpy.nbytes / 1024 / 1024:.1f} MB)")
             return flat_numpy, boundaries
 
         except Exception as e:
-            print(f"❌ Error in combined data+stats query: {e}")
             return np.array([], dtype=np.float32), {}
 
-    
-    def get_dataset_boundaries(self, dataset_id: str) -> Dict[str, Dict[str, float]]:
-        """
-        Calculate min/max boundaries for numeric columns in a dataset for chart scaling.
-        Returns a dictionary with column names as keys and boundary info as values.
-        
-        Args:
-            dataset_id: The dataset ID to calculate boundaries for
-            
-        Returns:
-            Dict with structure: {
-                "column_name": {
-                    "min_value": float,
-                    "max_value": float, 
-                    "valid_count": int
-                }
-            }
-        """
-        try:
-            boundaries = {}
-            
-            with Session(self.engine) as session:
-                # Get all data rows for this dataset
-                rows = session.exec(
-                    select(DatasetData.data)
-                    .where(DatasetData.dataset_id == dataset_id)
-                ).all()
-                
-                if not rows:
-                    return boundaries
-                
-                # Parse all JSON data
-                all_data = [json.loads(row_data) for row_data in rows]
-                
-                # Collect all column names that appear in the data
-                all_columns = set()
-                for row in all_data:
-                    all_columns.update(row.keys())
-                
-                # Calculate boundaries for each column
-                for column_name in all_columns:
-                    numeric_values = []
-                    
-                    # Extract numeric values from this column
-                    for row in all_data:
-                        if column_name in row:
-                            value = row[column_name]
-                            try:
-                                # Try to convert to float
-                                if value is not None and str(value).strip() != '':
-                                    numeric_value = float(value)
-                                    # Check if it's a valid number (not NaN or infinite)
-                                    if not (math.isnan(numeric_value) or math.isinf(numeric_value)):
-                                        numeric_values.append(numeric_value)
-                            except (ValueError, TypeError):
-                                # Skip non-numeric values
-                                continue
-                    
-                    # Only create boundaries for columns with numeric data
-                    if numeric_values:
-                        boundaries[column_name] = {
-                            'min_value': float(min(numeric_values)),
-                            'max_value': float(max(numeric_values)),
-                            'valid_count': len(numeric_values)
-                        }
-                
-                print(f"📐 Calculated boundaries for {len(boundaries)} numeric columns")
-                return boundaries
-                
-        except Exception as e:
-            print(f"❌ Error calculating dataset boundaries: {e}")
-            return {}
     
     def store_column_statistics(self, dataset_id: str, column_stats: Dict[str, Dict[str, Any]]):
         """
@@ -722,7 +455,8 @@ class DatabaseManager:
         """
         try:
             with Session(self.engine) as session:
-                # Delete existing stats for this dataset using SQLModel query
+                # elimino las estadisticas existentes para este dataset
+                # se utiliza cuando se agrega nuevas columnas (recalcular todo....)
                 existing_stats = session.exec(
                     select(DatasetColumnStats).where(DatasetColumnStats.dataset_id == dataset_id)
                 ).all()
@@ -737,7 +471,6 @@ class DatabaseManager:
                         min_val = stats.get('min')
                         max_val = stats.get('max')
                         if min_val is None or max_val is None:
-                            print(f"⚠️  Skipping statistics for '{column_name}' - no valid min/max values")
                             continue
                     
                     stat_record = DatasetColumnStats(
@@ -760,52 +493,7 @@ class DatabaseManager:
                     session.add(stat_record)
                 
                 session.commit()
-                print(f"✅ Stored statistics for {len(column_stats)} columns")
                 
         except Exception as e:
-            print(f"❌ Error storing column statistics: {e}")
-    
-    def get_dataset_boundaries(self, dataset_id: str) -> Dict[str, Dict[str, float]]:
-        """
-        Get dataset boundaries from stored pandas describe() statistics.
-
-        Args:
-            dataset_id: The dataset ID to get boundaries for
-            
-        Returns:
-            Dict with structure: {
-                "column_name": {
-                    "min_value": float,
-                    "max_value": float, 
-                    "valid_count": int
-                }
-            }
-        """
-        try:
-            boundaries = {}
-            
-            with Session(self.engine) as session:
-                # Get stored statistics for numeric columns
-                stats = session.exec(
-                    select(DatasetColumnStats)
-                    .where(DatasetColumnStats.dataset_id == dataset_id)
-                    .where(DatasetColumnStats.column_type == "numeric")
-                    .where(DatasetColumnStats.min_value.is_not(None))
-                    .where(DatasetColumnStats.max_value.is_not(None))
-                ).all()
-                
-                for stat in stats:
-                    boundaries[stat.column_name] = {
-                        'min_value': float(stat.min_value),
-                        'max_value': float(stat.max_value),
-                        'valid_count': int(stat.count) if stat.count else 0
-                    }
-                
-                print(f"📐 Retrieved boundaries for {len(boundaries)} columns from stored statistics")
-                return boundaries
-                
-        except Exception as e:
-            print(f"❌ Error getting dataset boundaries from stored stats: {e}")
-            # Fallback to the old calculation method if stored stats are not available
-            return self._calculate_boundaries_fallback(dataset_id)
+            raise e
     
