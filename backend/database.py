@@ -327,22 +327,28 @@ class DatabaseManager:
             if not f:
                 return False
             
-            # First, manually delete all datasets and their statistics that reference this file
+            # Get all datasets associated with this file
             datasets = session.exec(select(Dataset).where(Dataset.file_id == file_id)).all()
             
+            # Delete in proper order to respect foreign key constraints
             for dataset in datasets:
-                # Delete dataset column statistics first
-                stats = session.exec(select(DatasetColumnStats).where(DatasetColumnStats.dataset_id == dataset.id)).all()
-                for stat in stats:
+                # 1. First delete ALL statistics for this dataset
+                stats_to_delete = session.exec(
+                    select(DatasetColumnStats)
+                    .where(DatasetColumnStats.dataset_id == dataset.id)
+                ).all()
+                
+                for stat in stats_to_delete:
                     session.delete(stat)
                 
-                # Delete the dataset
+                # 2. Commit statistics deletion before deleting dataset
+                session.commit()
+                
+                # 3. Now safely delete the dataset
                 session.delete(dataset)
+                session.commit()
             
-            # Commit the dataset deletions first
-            session.commit()
-            
-            # Also delete associated DuckDB table
+            # Delete associated DuckDB table
             table_name = f"data_{file_id.replace('-', '_')}"
             try:
                 with self.engine.connect() as conn:
@@ -350,7 +356,7 @@ class DatabaseManager:
             except Exception:
                 pass  # Ignore errors when dropping table
             
-            # Now delete the file
+            # Finally delete the file
             session.delete(f)
             session.commit()
             return True
@@ -496,4 +502,45 @@ class DatabaseManager:
                 
         except Exception as e:
             raise e
+    
+    def get_dataset_boundaries(self, dataset_id: str) -> Dict[str, Dict[str, float]]:
+        """
+        Get dataset boundaries from stored pandas describe() statistics.
+
+        Args:
+            dataset_id: The dataset ID to get boundaries for
+            
+        Returns:
+            Dict with structure: {
+                "column_name": {
+                    "min_value": float,
+                    "max_value": float, 
+                    "valid_count": int
+                }
+            }
+        """
+        try:
+            boundaries = {}
+            
+            with Session(self.engine) as session:
+                # Get stored statistics for numeric columns
+                stats = session.exec(
+                    select(DatasetColumnStats)
+                    .where(DatasetColumnStats.dataset_id == dataset_id)
+                    .where(DatasetColumnStats.column_type == "numeric")
+                    .where(DatasetColumnStats.min_value.is_not(None))
+                    .where(DatasetColumnStats.max_value.is_not(None))
+                ).all()
+                
+                for stat in stats:
+                    boundaries[stat.column_name] = {
+                        'min_value': float(stat.min_value),
+                        'max_value': float(stat.max_value),
+                        'valid_count': int(stat.count) if stat.count else 0
+                    }
+                
+                return boundaries
+                
+        except Exception as e:
+            return {}
     

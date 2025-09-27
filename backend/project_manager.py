@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from typing import List, Dict, Any
 import numpy as np
+import pandas as pd
 
 # Importar tipos protobuf
 from generated import projects_pb2
@@ -340,6 +341,75 @@ class ProjectManager:
             response.success = False
             response.error_message = str(e)
             return response
+    
+    def _generate_statistics_from_duckdb(self, table_name: str) -> Dict[str, Dict[str, Any]]:
+        """
+        Generate statistics using DuckDB to_df() + pandas describe()
+        
+        Args:
+            table_name: Name of the DuckDB table
+            
+        Returns:
+            Dictionary of column statistics compatible with store_column_statistics
+        """
+        try:
+            # Use DuckDB's to_df() method for efficient DataFrame conversion
+            with self.db.engine.connect() as conn:
+                duckdb_conn = conn.connection.connection
+                # Get all data as DataFrame using DuckDB's native to_df()
+                result = duckdb_conn.execute(f"SELECT * FROM {table_name}")
+                df = result.df()
+            
+            if df.empty:
+                return {}
+                
+            # Use pandas describe() for comprehensive statistics
+            numeric_describe = df.select_dtypes(include=[np.number]).describe()
+            
+            # Track column types
+            numeric_columns = list(numeric_describe.columns)
+            categorical_columns = [col for col in df.columns if col not in numeric_columns]
+            
+            # Build statistics dictionary compatible with store_column_statistics
+            column_statistics = {}
+            
+            # Statistics for numeric columns
+            for col in numeric_columns:
+                if col in numeric_describe.columns:
+                    col_stats = numeric_describe[col]
+                    count = col_stats.get('count', 0)
+                    
+                    if count > 0:  # Only store columns with valid data
+                        column_statistics[col] = {
+                            'column_type': 'numeric',
+                            'count': float(count),
+                            'mean': float(col_stats.get('mean', 0)) if not pd.isna(col_stats.get('mean')) else None,
+                            'std': float(col_stats.get('std', 0)) if not pd.isna(col_stats.get('std')) else None,
+                            'min': float(col_stats.get('min', 0)) if not pd.isna(col_stats.get('min')) else None,
+                            '25%': float(col_stats.get('25%', 0)) if not pd.isna(col_stats.get('25%')) else None,
+                            '50%': float(col_stats.get('50%', 0)) if not pd.isna(col_stats.get('50%')) else None,
+                            '75%': float(col_stats.get('75%', 0)) if not pd.isna(col_stats.get('75%')) else None,
+                            'max': float(col_stats.get('max', 0)) if not pd.isna(col_stats.get('max')) else None,
+                            'null_count': int(df[col].isnull().sum()),
+                            'unique_count': int(df[col].nunique()),
+                            'total_rows': len(df)
+                        }
+            
+            # Statistics for categorical columns  
+            for col in categorical_columns:
+                column_statistics[col] = {
+                    'column_type': 'categorical',
+                    'count': float(df[col].count()),
+                    'null_count': int(df[col].isnull().sum()),
+                    'unique_count': int(df[col].nunique()),
+                    'total_rows': len(df)
+                }
+            
+            return column_statistics
+            
+        except Exception as e:
+            print(f"❌ Error generating statistics from DuckDB with pandas: {e}")
+            return {}
     
     def process_dataset(self, request: projects_pb2.ProcessDatasetRequest) -> projects_pb2.ProcessDatasetResponse:
         """Procesar dataset con mapeos de columnas - datos ya en DuckDB"""
