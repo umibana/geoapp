@@ -200,20 +200,22 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         type: 'value',
         nameLocation: 'middle',
         nameGap: 30,
-        ...(xBoundary && {
-          min: xBoundary.min_value,
-          max: xBoundary.max_value
-        })
+        scale:true
+        // ...(xBoundary && {
+        //   min: xBoundary.min_value,
+        //   max: xBoundary.max_value
+        // })
       },
       yAxis: {
         name: selectedYAxis,
         type: 'value',
         nameLocation: 'middle',
+        scale:true,
         nameGap: 50,
-        ...(yBoundary && {
-          min: yBoundary.min_value,
-          max: yBoundary.max_value
-        })
+        // ...(yBoundary && {
+        //   min: yBoundary.min_value,
+        //   max: yBoundary.max_value
+        // })
       },
       dataZoom: [
         {
@@ -229,6 +231,12 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           throttle: 30,
         }
       ],
+      brush: {
+        toolbox: ['rect', 'clear'],
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        throttleType: 'debounce'
+      },
       series: [{
         name: `${selectedValueColumn} values`,
         type: 'scatter',
@@ -422,6 +430,47 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
                   showLoading={refetching}
                   loadingOption={{ text: 'Cargando datos...' }}
                   opts={{ renderer: 'canvas' }}
+                  onEvents={{
+                    'brushSelected': (params: {batch?: {areas?: {coordRange?: number[][]}[], selected?: {dataIndex: number[]}[]}[]}) => {
+                      console.log('Brush selection:', params);
+                      if (params.batch && params.batch.length > 0) {
+                        const batch = params.batch[0];
+                        
+                        // Log coordinate bounds
+                        if (batch.areas) {
+                          batch.areas.forEach((area, index) => {
+                            if (area.coordRange && area.coordRange.length >= 2) {
+                              const xRange = area.coordRange[0]; // [x1, x2] in data coordinates
+                              const yRange = area.coordRange[1]; // [y1, y2] in data coordinates
+                              
+                              const rectangle = {
+                                x1: xRange[0],
+                                x2: xRange[1], 
+                                y1: yRange[0],
+                                y2: yRange[1]
+                              };
+                              
+                              console.log(`Rectangle ${index + 1} vertices (data coordinates):`, rectangle);
+                              console.log(`Query bounds: X between ${rectangle.x1} and ${rectangle.x2}, Y between ${rectangle.y1} and ${rectangle.y2}`);
+                            }
+                          });
+                        }
+                        
+                        // Log selected data points
+                        if (batch.selected && batch.selected.length > 0) {
+                          const selectedData = batch.selected[0].dataIndex;
+                          console.log('Selected data indices:', selectedData);
+                          console.log('Selected points:', selectedData.map((index: number) => ({
+                            index,
+                            x: chartData![index * 3],
+                            y: chartData![index * 3 + 1], 
+                            value: chartData![index * 3 + 2]
+                          })));
+                          console.log(`Total selected points: ${selectedData.length}`);
+                        }
+                      }
+                    }
+                  }}
                 />
               </div>
             ) : (
