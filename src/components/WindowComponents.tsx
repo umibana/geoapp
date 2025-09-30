@@ -251,3 +251,6 @@ export function Prueba3D() {
 
 // Export the gRPC Demo component
 export { GrpcDemo };
+
+// Export the Brushed Data Viewer component
+export { default as BrushedDataViewer } from './BrushedDataViewer';

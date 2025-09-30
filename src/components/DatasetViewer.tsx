@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, BarChart3, Activity } from 'lucide-react';
+import { ArrowLeft, BarChart3, Activity, Brush, X, Filter } from 'lucide-react';
 import { GetDatasetDataResponse, DatasetInfo } from '@/generated/projects';
+import { useBrushStore } from '@/stores/brushStore';
 
 /**
  * Propiedades del componente DatasetViewer
@@ -22,19 +23,25 @@ interface DatasetViewerProps {
  * con escalado automático basado en límites calculados en el backend
  */
 const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) => {
+  console.log('🔄 DatasetViewer RENDER - NO ZUSTAND SUBSCRIPTIONS');
+
   const datasetInfo = DatasetInfo; // For consistency with the rest of the code
+
+  // CRITICAL: Don't use any Zustand hooks - access store imperatively to prevent re-renders
+  // We use useBrushStore.getState() directly instead to avoid subscribing to store updates
+
   // Memoize column calculations
   const availableColumns = useMemo(() => {
     return datasetInfo.column_mappings
       ?.filter(mapping => mapping.column_type !== 3) // Not UNUSED
       ?.map(mapping => mapping.column_name) || [];
   }, [datasetInfo.column_mappings]);
-    
+
   // Find coordinate columns from mappings
   const coordinateColumns = useMemo(() => {
     return {
       x: datasetInfo.column_mappings?.find(m => m.mapped_field === 'x')?.column_name || 'x',
-      y: datasetInfo.column_mappings?.find(m => m.mapped_field === 'y')?.column_name || 'y', 
+      y: datasetInfo.column_mappings?.find(m => m.mapped_field === 'y')?.column_name || 'y',
       z: datasetInfo.column_mappings?.find(m => m.mapped_field === 'z')?.column_name || 'z'
     };
   }, [datasetInfo.column_mappings]);
@@ -45,35 +52,158 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
   const [refetching, setRefetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Initialize selected columns with coordinate mappings
-  const [selectedValueColumn, setSelectedValueColumn] = useState<string>(() => 
+  const [selectedValueColumn, setSelectedValueColumn] = useState<string>(() =>
     coordinateColumns.z || 'z'
   );
-  const [selectedXAxis, setSelectedXAxis] = useState<string>(() => 
+  const [selectedXAxis, setSelectedXAxis] = useState<string>(() =>
     coordinateColumns.x || 'x'
   );
-  const [selectedYAxis, setSelectedYAxis] = useState<string>(() => 
+  const [selectedYAxis, setSelectedYAxis] = useState<string>(() =>
     coordinateColumns.y || 'y'
   );
+  const [showOnlyBrushed, setShowOnlyBrushed] = useState(false);
+  const [, forceUpdate] = useState({}); // Minimal state for forcing UI updates without affecting chart
   const chartRef = useRef<ReactECharts>(null);
 
-  // Chart data preparation using useMemo instead of useEffect
-  const chartData = useMemo(() => {
+  // Flag to prevent infinite loop when applying brush programmatically
+  const isApplyingBrushProgrammatically = useRef(false);
+
+  // Track last brush update to prevent rapid-fire updates
+  const lastBrushUpdateTime = useRef(0);
+  const BRUSH_UPDATE_DEBOUNCE = 500; // milliseconds
+
+  // Use a ref to store brush info so it doesn't trigger re-renders
+  // Only read from store when explicitly needed (filter toggle, render badge)
+  const brushInfoRef = useRef<{ count: number; selection: any } | null>(null);
+
+  // Update ref when columns or dataset change, or manually on filter toggle
+  const updateBrushInfoRef = useCallback(() => {
+    const { getBrushSelection, columnsMatch } = useBrushStore.getState();
+    const selection = getBrushSelection(datasetInfo.id);
+    if (!selection) {
+      brushInfoRef.current = null;
+      return;
+    }
+    if (!columnsMatch(datasetInfo.id, selectedXAxis, selectedYAxis, selectedValueColumn)) {
+      brushInfoRef.current = null;
+      return;
+    }
+    brushInfoRef.current = {
+      count: selection.selectedIndices.length,
+      selection: selection
+    };
+  }, [datasetInfo.id, selectedXAxis, selectedYAxis, selectedValueColumn]);
+
+  // Update brush info ref on mount and when columns change
+  useEffect(() => {
+    updateBrushInfoRef();
+  }, [updateBrushInfoRef]);
+
+  // For rendering, just check if we have a brush (no dependency on timestamp)
+  const hasBrush = brushInfoRef.current !== null;
+  const brushCount = brushInfoRef.current?.count || 0;
+
+  console.log('📊 brushInfo from ref:', hasBrush ? `${brushCount} points` : 'none');
+
+  // Full dataset - never changes based on brush
+  const fullData = useMemo(() => {
+    console.log('🔢 fullData useMemo recalculating - deps:', {
+      hasDataset: !!dataset,
+      selectedValueColumn,
+      selectedXAxis,
+      selectedYAxis
+    });
     if (!dataset || !selectedValueColumn || !selectedXAxis || !selectedYAxis || !dataset.binary_data) {
       return null;
     }
-    // Create Float32Array from binary data
     return new Float32Array(dataset.binary_data.buffer, dataset.binary_data.byteOffset, dataset.data_length);
   }, [dataset, selectedValueColumn, selectedXAxis, selectedYAxis]);
+
+  // Chart data - switches between full and filtered based on toggle
+  const chartData = useMemo(() => {
+    console.log('📈 chartData useMemo recalculating - showOnlyBrushed:', showOnlyBrushed);
+    if (!fullData) return null;
+
+    // If filter is enabled and we have a brush selection, show only brushed points
+    if (showOnlyBrushed && brushInfoRef.current) {
+      return brushInfoRef.current.selection.selectedPoints;
+    }
+
+    return fullData;
+  }, [fullData, showOnlyBrushed]); // No dependency on brush timestamp to prevent re-render
 
   useEffect(() => {
     loadDataset();
   }, [datasetInfo.id, selectedXAxis, selectedYAxis, selectedValueColumn]);
 
 
+  // Apply brush selection from store ONLY on initial mount when full data is ready
+  // Don't apply brush when showing filtered data
+  useEffect(() => {
+    if (!chartRef.current || !fullData || showOnlyBrushed) return;
+
+    // Get the current brush selection from store imperatively
+    const { getBrushSelection } = useBrushStore.getState();
+    const selection = getBrushSelection(datasetInfo.id);
+    if (!selection) return;
+
+    // Only apply if columns match
+    if (
+      selection.columns.xAxis !== selectedXAxis ||
+      selection.columns.yAxis !== selectedYAxis ||
+      selection.columns.value !== selectedValueColumn
+    ) {
+      return;
+    }
+
+    const chartInstance = chartRef.current.getEchartsInstance();
+
+    // Small delay to ensure chart is fully rendered
+    const timer = setTimeout(() => {
+      try {
+        console.log('Applying initial brush selection from store:', selection);
+
+        // Set flag to prevent triggering brushSelected event
+        isApplyingBrushProgrammatically.current = true;
+
+        // Apply brush programmatically using dispatchAction
+        chartInstance.dispatchAction({
+          type: 'brush',
+          areas: [{
+            brushType: 'rect',
+            coordRange: [
+              [selection.coordRange.x1, selection.coordRange.x2],
+              [selection.coordRange.y1, selection.coordRange.y2]
+            ],
+            xAxisIndex: 0,
+            yAxisIndex: 0
+          }]
+        });
+
+        console.log('Initial brush applied successfully');
+
+        // Reset flag after a short delay
+        setTimeout(() => {
+          isApplyingBrushProgrammatically.current = false;
+        }, 100);
+      } catch (err) {
+        console.error('Error applying initial brush:', err);
+        isApplyingBrushProgrammatically.current = false;
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [fullData, showOnlyBrushed]); // Don't apply brush when filter is active
+
+  // Note: Real-time synchronization disabled to prevent infinite loop
+  // Brush selections are still shared via the store and applied on component mount
+  // If you need real-time sync, you would need to implement a more sophisticated
+  // debouncing/throttling mechanism or use a different approach
+
   // Resize chart when container size changes with debouncing
   useEffect(() => {
     let resizeTimeout: NodeJS.Timeout;
-    
+
     const debouncedResize = () => {
       clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(() => {
@@ -234,11 +364,35 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           throttle: 30,
         }
       ],
+      toolbox: {
+        feature: {
+          brush: {
+            type: ['rect', 'clear'],
+            title: {
+              rect: 'Selección rectangular',
+              clear: 'Limpiar selección'
+            }
+          },
+          saveAsImage: {
+            title: 'Guardar como imagen'
+          }
+        },
+        right: 20,
+        top: 20
+      },
       brush: {
         toolbox: ['rect', 'clear'],
         xAxisIndex: 0,
         yAxisIndex: 0,
-        throttleType: 'debounce'
+        throttleType: 'debounce',
+        throttleDelay: 300,
+        brushStyle: {
+          borderWidth: 2,
+          borderColor: 'rgba(59, 130, 246, 0.8)',
+          color: 'rgba(59, 130, 246, 0.2)'
+        },
+        transformable: true,
+        removeOnClick: false
       },
       series: [{
         name: `${selectedValueColumn} values`,
@@ -268,6 +422,112 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       }]
     };
   }, [chartData, selectedXAxis, selectedYAxis, selectedValueColumn, dataset, datasetInfo.file_name]);
+
+  // Memoized chart component that only re-renders when chart props actually change
+  const MemoizedChart = useMemo(() => {
+    console.log('🎨 Creating memoized chart component');
+    return (
+      <ReactECharts
+        ref={chartRef}
+        option={chartOptions}
+        style={{ height: '100%', width: '100%', minHeight: '400px' }}
+        showLoading={refetching}
+        loadingOption={{ text: 'Cargando datos...' }}
+        opts={{ renderer: 'canvas' }}
+        onEvents={{
+          'brushSelected': (params: {batch?: {areas?: {coordRange?: number[][]}[], selected?: {dataIndex: number[]}[]}[]}) => {
+            // Ignore brush events triggered by programmatic actions
+            if (isApplyingBrushProgrammatically.current) {
+              console.log('❌ Ignoring programmatic brush event');
+              return;
+            }
+
+            // Debounce brush updates to prevent rapid-fire events
+            const now = Date.now();
+            if (now - lastBrushUpdateTime.current < BRUSH_UPDATE_DEBOUNCE) {
+              console.log('⏱️ Debouncing brush event');
+              return;
+            }
+
+            console.log('🖱️ Brush selection event received:', params);
+
+            if (params.batch && params.batch.length > 0) {
+              const batch = params.batch[0];
+
+              // Extract coordinate bounds and selected data
+              if (batch.areas && batch.areas.length > 0 && batch.selected && batch.selected.length > 0) {
+                const area = batch.areas[0];
+                const selectedData = batch.selected[0].dataIndex;
+
+                if (area.coordRange && area.coordRange.length >= 2 && selectedData.length > 0) {
+                  const xRange = area.coordRange[0]; // [x1, x2] in data coordinates
+                  const yRange = area.coordRange[1]; // [y1, y2] in data coordinates
+
+                  const rectangle = {
+                    x1: xRange[0],
+                    x2: xRange[1],
+                    y1: yRange[0],
+                    y2: yRange[1]
+                  };
+
+                  console.log(`📐 Brush rectangle:`, rectangle);
+                  console.log(`📊 Total selected points: ${selectedData.length}`);
+
+                  // Extract the actual point data from chartData Float32Array
+                  const selectedPointsData = new Float32Array(selectedData.length * 3);
+                  selectedData.forEach((idx: number, i: number) => {
+                    selectedPointsData[i * 3] = chartData![idx * 3];         // x
+                    selectedPointsData[i * 3 + 1] = chartData![idx * 3 + 1]; // y
+                    selectedPointsData[i * 3 + 2] = chartData![idx * 3 + 2]; // z/value
+                  });
+
+                  // Update timestamp and save to brush store
+                  lastBrushUpdateTime.current = now;
+                  console.log('💾 Creating brush selection object...');
+
+                  const brushSelection = {
+                    datasetId: datasetInfo.id,
+                    coordRange: rectangle,
+                    selectedIndices: selectedData,
+                    selectedPoints: selectedPointsData,
+                    columns: {
+                      xAxis: selectedXAxis,
+                      yAxis: selectedYAxis,
+                      value: selectedValueColumn
+                    },
+                    timestamp: now
+                  };
+
+                  console.log('🗄️ Saving to Zustand store...');
+                  // Use getState() to avoid subscribing to the store
+                  const { setBrushSelection } = useBrushStore.getState();
+                  setBrushSelection(datasetInfo.id, brushSelection);
+                  console.log('✅ Saved to Zustand store');
+
+                  console.log('📝 Updating brushInfoRef...');
+                  // Update ref immediately without triggering re-render
+                  brushInfoRef.current = {
+                    count: selectedData.length,
+                    selection: brushSelection
+                  };
+                  console.log('✅ brushInfoRef updated');
+
+                  // Force minimal re-render to show badge (doesn't change chartData/chartOptions)
+                  console.log('🔄 Forcing minimal re-render to update badge UI...');
+                  forceUpdate({});
+
+                  console.log('🏁 Brush selection saved and UI updated');
+                }
+              }
+              // Note: We intentionally don't clear the brush from the store when
+              // batch.areas is empty, because zoom/pan operations trigger this.
+            }
+          }
+        }}
+        onChartReady={handleChartReady}
+      />
+    );
+  }, [chartOptions, refetching]); // Only re-create when chartOptions or refetching changes
 
   if (loading) {
     return (
@@ -313,10 +573,87 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
             </p>
           </div>
         </div>
-        <Badge variant="outline" className="px-3 py-1">
-          <Activity className="mr-2 h-4 w-4" />
-          Visualización de Dataset
-        </Badge>
+        <div className="flex items-center space-x-2">
+          {/* Brush Enable Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (chartRef.current) {
+                const chartInstance = chartRef.current.getEchartsInstance();
+                // Toggle brush selection mode
+                chartInstance.dispatchAction({
+                  type: 'takeGlobalCursor',
+                  key: 'brush',
+                  brushOption: {
+                    brushType: 'rect',
+                    brushMode: 'single'
+                  }
+                });
+              }
+            }}
+            title="Activar modo selección"
+          >
+            <Brush className="h-4 w-4 mr-2" />
+            Seleccionar
+          </Button>
+
+          {brushInfoRef.current && brushInfoRef.current.count > 0 && (
+            <>
+              <Badge variant="default" className="px-3 py-1 bg-blue-600 text-white">
+                <Brush className="mr-2 h-4 w-4" />
+                Brush Activo ({brushInfoRef.current.count.toLocaleString()} puntos)
+              </Badge>
+              <Button
+                variant={showOnlyBrushed ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  // Update brush info ref before toggling to ensure we have latest data
+                  updateBrushInfoRef();
+                  setShowOnlyBrushed(!showOnlyBrushed);
+                }}
+                title="Mostrar solo puntos seleccionados"
+              >
+                <Filter className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // Set flag and clear from store first
+                  isApplyingBrushProgrammatically.current = true;
+                  const { clearBrushSelection } = useBrushStore.getState();
+                  clearBrushSelection(datasetInfo.id);
+                  brushInfoRef.current = null; // Clear ref immediately
+                  setShowOnlyBrushed(false);
+                  // Force re-render to hide badge by toggling a column
+                  // This is intentional and only happens on clear (user action)
+                  updateBrushInfoRef();
+
+                  // Also clear the brush visually on the chart
+                  if (chartRef.current) {
+                    chartRef.current.getEchartsInstance().dispatchAction({
+                      type: 'brush',
+                      command: 'clear',
+                      areas: []
+                    });
+                  }
+
+                  // Reset flag after a delay
+                  setTimeout(() => {
+                    isApplyingBrushProgrammatically.current = false;
+                  }, 100);
+                }}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+          <Badge variant="outline" className="px-3 py-1">
+            <Activity className="mr-2 h-4 w-4" />
+            Visualización de Dataset
+          </Badge>
+        </div>
       </div>
 
       {/* Controls */}
@@ -405,8 +742,14 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
             </div>
           </div>
           
-          <div className="text-sm text-muted-foreground">
+          <div className="text-sm text-muted-foreground space-y-1">
             <p>Selecciona qué columnas usar para el eje X, eje Y y valores de los puntos. Puedes usar cualquier columna para cualquier eje.</p>
+            { brushInfoRef.current && (
+              <p className="text-blue-600 font-medium flex items-center">
+                <Brush className="mr-1 h-3 w-3" />
+                La selección de brush se comparte entre todas las vistas del mismo dataset con las mismas columnas.
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -426,55 +769,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
             
             return canRenderChart && chartOptions ? (
               <div className="flex-1 w-full p-6" style={{ minHeight: '400px', height: '100%' }}>
-                <ReactECharts
-                  ref={chartRef}
-                  option={chartOptions}
-                  style={{ height: '100%', width: '100%', minHeight: '400px' }}
-                  showLoading={refetching}
-                  loadingOption={{ text: 'Cargando datos...' }}
-                  opts={{ renderer: 'canvas' }}
-                  onEvents={{
-                    'brushSelected': (params: {batch?: {areas?: {coordRange?: number[][]}[], selected?: {dataIndex: number[]}[]}[]}) => {
-                      console.log('Brush selection:', params);
-                      if (params.batch && params.batch.length > 0) {
-                        const batch = params.batch[0];
-                        
-                        // Log coordinate bounds
-                        if (batch.areas) {
-                          batch.areas.forEach((area, index) => {
-                            if (area.coordRange && area.coordRange.length >= 2) {
-                              const xRange = area.coordRange[0]; // [x1, x2] in data coordinates
-                              const yRange = area.coordRange[1]; // [y1, y2] in data coordinates
-                              
-                              const rectangle = {
-                                x1: xRange[0],
-                                x2: xRange[1], 
-                                y1: yRange[0],
-                                y2: yRange[1]
-                              };
-                              
-                              console.log(`Rectangle ${index + 1} vertices (data coordinates):`, rectangle);
-                              console.log(`Query bounds: X between ${rectangle.x1} and ${rectangle.x2}, Y between ${rectangle.y1} and ${rectangle.y2}`);
-                            }
-                          });
-                        }
-                        
-                        // Log selected data points
-                        if (batch.selected && batch.selected.length > 0) {
-                          const selectedData = batch.selected[0].dataIndex;
-                          console.log('Selected data indices:', selectedData);
-                          console.log('Selected points:', selectedData.map((index: number) => ({
-                            index,
-                            x: chartData![index * 3],
-                            y: chartData![index * 3 + 1], 
-                            value: chartData![index * 3 + 2]
-                          })));
-                          console.log(`Total selected points: ${selectedData.length}`);
-                        }
-                      }
-                    }
-                  }}
-                />
+                {MemoizedChart}
               </div>
             ) : (
               <div className="flex-1 bg-gray-50 rounded-lg flex items-center justify-center m-6">

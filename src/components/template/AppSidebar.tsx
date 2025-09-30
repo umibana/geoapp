@@ -1,4 +1,4 @@
-import {  Home, TestTube, TestTube2, TestTubeDiagonal, Wifi, FolderOpen, Zap } from "lucide-react"
+import {  Home, TestTube, TestTube2, TestTubeDiagonal, Wifi, FolderOpen, Zap, Paintbrush } from "lucide-react"
 
 import {
   Sidebar,
@@ -13,10 +13,11 @@ import {
 import React from "react"
 import { Link } from "@tanstack/react-router"
 import { useWindows } from "@/contexts/WindowContext"
-import { 
+import {
   Prueba2D,
   Prueba3D,
-  GrpcDemo
+  GrpcDemo,
+  BrushedDataViewer
 } from "@/components/WindowComponents"
 
 // Navigation items
@@ -40,6 +41,12 @@ const windowItems = [
     icon: Wifi,
     component: <GrpcDemo />,
     size: { width: 800, height: 600 },
+  },
+  {
+    title: "Brushed Data Viewer",
+    icon: Paintbrush,
+    component: <BrushedDataViewer />,
+    size: { width: 700, height: 600 },
   },
   {
     title: "Prueba 2D",
