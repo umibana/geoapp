@@ -175,30 +175,10 @@ Procesa el archivo completo e inserta **dataset en proyecto**.
   Req: `{ "file_id":"string", "name":"string" }`
   Res: `{ "file": File, "success": bool, "error_message":"string" }`
 
-### Schema del archivo
-
-- **GetFileSchema**
-  Req: `{ "file_id":"string" }`
-  Res:
-  ```json
-  {
-    "columns": [
-      { "name":"string", "data_type":"INTEGER|DOUBLE|VARCHAR", "is_nullable": bool }
-    ],
-    "success": bool, "error_message":"string"
-  }
-  ```
-
-- **UpdateFileSchema**
-  Actualiza el schema (renombrar columnas, cambiar tipos)
-  Req: `{ "file_id":"string", "columns":[ColumnSchema] }`
-  Res:
-  ```json
-  {
-    "columns": [ColumnSchema],
-    "success": bool, "error_message":"string"
-  }
-  ```
+- **RenameFileColumn**
+  Renombrar una o más columnas del archivo
+  Req: `{ "file_id":"string", "column_renames": { "old_name":"new_name", "col2":"renamed_col2" } }`
+  Res: `{ "renamed_columns":["new_name","renamed_col2"], "success": bool, "error_message":"string" }`
 
 ### Manipulación de datos del archivo
 
