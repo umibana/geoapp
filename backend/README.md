@@ -1,12 +1,5 @@
 # Geo API 
 
-> **Objetivo:** Alinear entradas/salidas y tipos a alto nivel (sin `.proto`).  
-> **Tipos base:** `string`, `int32`, `int64`, `double`, `bool`, `bytes`, `map`, `repeated`.  
-> **Tiempos:** Unix **ms** (`int64`).  
-> **Convención binaria:** buffers en **row-major** y `Float32` por defecto.
-
----
-
 ## 0) Salud
 
 ### HealthCheck
@@ -26,6 +19,7 @@
 ### Modelos de apoyo
 
 **ColumnStats** (numéricas)
+// Es lo de pandas describe como type
 ```json
 { "count": double, "mean": double, "std": double, "min": double,
   "q25": double, "q50": double, "q75": double, "max": double,
@@ -40,40 +34,24 @@
   "sample_values": ["string"] }
 ```
 
-### AnalyzeCsv
-Analiza primeras filas y detecta columnas.
-**Request**
-```json
-{ "file_path": "string", "file_name": "string" }
-```
-**Response**
-```json
-{
-  "columns": [ColumnInfo],
-  "auto_detected_mapping": { "id":"ID_COLUMN", "x":"X_COL", "y":"Y_COL", "z":"Z_COL" },
-  "success": bool, "error_message": "string",
-  "total_rows": int32, "total_columns": int32,
-  "file_size_mb": double, "encoding": "string",
-  "numeric_columns": ["string"], "categorical_columns": ["string"]
-}
-```
-
 ### SendFile
 Procesa el archivo completo e inserta **dataset en proyecto**.
 
-> **Fuente del archivo**: hoy usamos `file_path` (app local). Más adelante se puede soportar `bytes`.
+> **Fuente del archivo**: Se usa `file_path` (app local). Más adelante se puede soportar `bytes`.
 
 **Enums cortos**
 - `dataset_type`: `"SAMPLE" | "DRILL_HOLE" | "BLOCK"`
 - `column_types` (map): `"CATEGORICAL" | "NUMERIC" | "SKIP"`
 
+**Datos Opcionales**
+-  Se considerara los datos opcionales cuando estos NO sean nulos o arreglos/string vacios. Se manejara la lógica desde el backend con su función respectiva
 **Request**
 ```json
 {
   // Archivo y tipo
-  "file_path": "string",                // ó "file_bytes": "bytes"
+  "file_path": "string",                // o "file_bytes": "bytes"
   "file_name": "string",
-  "file_type": "string",                // "text/csv" | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  "file_type": "string",                // "text/csv" 
   "dataset_type": "SAMPLE|DRILL_HOLE|BLOCK",
   "dataset_name": "string",
 
@@ -90,13 +68,14 @@ Procesa el archivo completo e inserta **dataset en proyecto**.
   "depth_variable": "string",           // opcional (drill)
 
   // Normalización / reemplazos (e.g. "-000000" -> "0", "NULL" -> null)
+  // Es para casos donde vienen incompletos
   "replace_data": [
     { "from": "-000000", "to": "0" },
     { "from": "NULL",     "to": "null" }
   ],
 
   // Extras: DRILL_HOLE
-  "composite_data": true,               // aplicar compositado
+  "composite_data": true,               //
   "composite_distance": 2,              // metros
   "collar": [                           // opcional
     { "id":"string", "x":0.0, "y":0.0, "z":0.0, "depth":120.0 }
@@ -121,83 +100,9 @@ Procesa el archivo completo e inserta **dataset en proyecto**.
 }
 ```
 
-> **Notas**  
-> • `replace_data.to = "null"` implica nulos reales.  
-> • `SKIP` descarta la columna al ingerir.  
-> • Para **DRILL_HOLE**, `collar` y `survey` son opcionales; si no vienen, se infieren del archivo si es posible.  
-> • Para **BLOCK**, confirmar si `block_settings` son **tamaños de voxel** o **paso de grilla** (por ahora “tamaño”).
-
 ---
 
-## 2) Acceso “chunked” a datos cargados
-
-**CsvDataRow**
-```json
-{
-  "x": double, "y": double, "z": double,
-  "id": "string",
-  "metrics": { "key": double }, // numéricas
-  "attrs":   { "key": "string" } // categóricas
-}
-```
-
-### GetLoadedDataChunk
-**Request**
-```json
-{ "offset": int32, "limit": int32 }
-```
-**Response**
-```json
-{
-  "rows": [CsvDataRow],
-  "total_rows": int32,
-  "is_complete": bool,
-  "next_offset": int32,
-  "available_metric_keys": ["string"]
-}
-```
-
----
-
-## 3) Visualización (columnar / Float32Array)
-
-**Bounds**
-```json
-{ "max_value": double, "min_value": double }
-```
-
-### GetColumnarData
-> Extrae 3/4/5 columnas; soporta **shape/color** para categóricas, **function** (ej. IDW) y **bounding_box**.
-
-**Request**
-```json
-{
-  "data_types": ["string"],     // columnas a extraer (orden en buffer)
-  "max_points": int32,          // límite de puntos
-
-  // Visual / semántica
-  "shape": "string",            // e.g. "circle" | "rect" | "triangle" | ...
-  "color": "string",            // nombre de columna categórica para color (o palette id)
-  "function": "string",         // e.g. "IDW" | "NONE" | "log" | ...
-
-  // Recorte 2D opcional
-  "bounding_box": [x1, x2, y1, y2]
-}
-```
-**Response**
-```json
-{
-  "binary_data": "bytes",       // Float32Array crudo (row-major)
-  "data_length": int32,         // elementos del array
-  "total_count": int32,         // puntos totales previos al límite
-  "generated_at": double,       // timestamp
-  "bounds": { "col": { "max_value": double, "min_value": double } }
-}
-```
-
----
-
-## 4) Proyectos (CRUD)
+## 3) Proyectos (CRUD)
 
 **Project**
 ```json
@@ -227,7 +132,7 @@ Procesa el archivo completo e inserta **dataset en proyecto**.
 
 ---
 
-## 5) Archivos y Datasets
+## 4) Archivos y Datasets
 
 **Enums**
 - `DatasetType`: `UNSPECIFIED | SAMPLE | DRILL_HOLE | BLOCK`
@@ -247,6 +152,7 @@ Procesa el archivo completo e inserta **dataset en proyecto**.
 ```
 
 **Dataset**
+- El tipo de dataset tiene id ya que uso UUID, file_id es la metadata del archivo (tabla)
 ```json
 { "id":"string","file_id":"string","total_rows": int32,"current_page": int32,
   "column_mappings":[ColumnMapping],"created_at": int64 }
@@ -261,9 +167,130 @@ Procesa el archivo completo e inserta **dataset en proyecto**.
   Req: `{ "project_id":"string" }`  
   Res: `{ "files":[File] }`
 
-- **DeleteFile**  
-  Req: `{ "file_id":"string" }`  
+- **DeleteFile**
+  Req: `{ "file_id":"string" }`
   Res: `{ "success": bool, "error_message":"string" }`
+
+- **UpdateFile**
+  Req: `{ "file_id":"string", "name":"string" }`
+  Res: `{ "file": File, "success": bool, "error_message":"string" }`
+
+### Schema del archivo
+
+- **GetFileSchema**
+  Req: `{ "file_id":"string" }`
+  Res:
+  ```json
+  {
+    "columns": [
+      { "name":"string", "data_type":"INTEGER|DOUBLE|VARCHAR", "is_nullable": bool }
+    ],
+    "success": bool, "error_message":"string"
+  }
+  ```
+
+- **UpdateFileSchema**
+  Actualiza el schema (renombrar columnas, cambiar tipos)
+  Req: `{ "file_id":"string", "columns":[ColumnSchema] }`
+  Res:
+  ```json
+  {
+    "columns": [ColumnSchema],
+    "success": bool, "error_message":"string"
+  }
+  ```
+
+### Manipulación de datos del archivo
+
+- **SearchFileData**
+  Buscar/filtrar datos en el archivo
+  Req: `{ "file_id":"string", "query":"string", "limit": int32, "offset": int32 }`
+  Res:
+  ```json
+  {
+    "file_id":"string",
+    "total_rows": int32,
+    "current_page": int32,
+    "data": [{ "fields": { "col":"value" } }],
+    "success": bool, "error_message":"string"
+  }
+  ```
+
+- **ReplaceFileData**
+  Reemplazar valores masivamente (e.g., "null" → NaN, 0 → -1)
+  Req:
+  ```json
+  {
+    "file_id":"string",
+    "replacements": [
+      { "from_value":"null", "to_value":"NaN" },
+      { "from_value":"0", "to_value":"-1" }
+    ],
+    "columns": ["string"]  // opcional: columnas específicas
+  }
+  ```
+  Res: `{ "rows_affected": int32, "success": bool, "error_message":"string" }`
+
+- **AddFileColumns**
+  Agregar nuevas columnas al archivo
+  Req:
+  ```json
+  {
+    "file_id":"string",
+    "new_columns": [
+      { "column_name":"new_col_A", "values":["0","2","4"] },
+      { "column_name":"new_col_B", "values":["1","3","5"] }
+    ]
+  }
+  ```
+  Res: `{ "added_columns":["string"], "success": bool, "error_message":"string" }`
+
+- **DuplicateFileColumns**
+  Duplicar columnas existentes
+  Req: `{ "file_id":"string", "column_names":["col1","col2"] }`
+  Res: `{ "duplicated_columns":["col1_copy","col2_copy"], "success": bool, "error_message":"string" }`
+
+- **FilterFileData**
+  Filtrar dataset por condiciones (puede crear archivo nuevo)
+  Req:
+  ```json
+  {
+    "file_id":"string",
+    "column":"col2",
+    "operation":"=|!=|>|<|>=|<=|LIKE",
+    "value":"1",
+    "create_new_file": bool,
+    "new_file_name":"string"  // si create_new_file=true
+  }
+  ```
+  Res: `{ "file_id":"string", "total_rows": int32, "success": bool, "error_message":"string" }`
+
+- **DeleteFilePoints**
+  Eliminar puntos/filas específicas
+  Req: `{ "file_id":"string", "row_indices":[0,5,10] }`
+  Res: `{ "rows_deleted": int32, "rows_remaining": int32, "success": bool, "error_message":"string" }`
+
+- **GetFileStatistics**
+  Obtener estadísticas globales del archivo
+  Req: `{ "file_id":"string", "columns":["string"] }`  // opcional: columnas específicas
+  Res:
+  ```json
+  {
+    "statistics": [
+      {
+        "column_name":"string",
+        "data_type":"string",
+        "count": int32, "null_count": int32, "unique_count": int32,
+        // Para columnas numéricas:
+        "mean": double, "std": double, "min": double,
+        "q25": double, "q50": double, "q75": double, "max": double,
+        // Para columnas categóricas:
+        "top_values":["string"], "top_counts":[int32]
+      }
+    ],
+    "success": bool, "error_message":"string"
+  }
+  ```
 
 ### Análisis y procesamiento ligados a proyecto
 - **AnalyzeCsvForProject**  
@@ -280,21 +307,31 @@ Procesa el archivo completo e inserta **dataset en proyecto**.
   ```
 
 - **ProcessDataset**  
+```json
   Req: `{ "file_id":"string", "column_mappings":[ColumnMapping] }`  
   Res: `{ "dataset": Dataset, "success": bool, "error_message":"string", "processed_rows": int32 }`
 
+```
 ### Datos del dataset
+
 - **GetDatasetData**  
-  Req: `{ "dataset_id":"string", "columns":["string"] }`  
+```json
+  Req: `{ "dataset_id":"string", "columns":["string"] ,
+  "shape": "string",            // e.g. "circle" | "rect" | "triangle" | ...
+  "color": "string",            // nombre de color (o hex)
+  "function": "string",         // e.g. "IDW" | "NONE" | "log", por defecto, none
+  "bounding_box": [x1, x2, y1, y2]  // filtro opcional, si empty o no viene, no se utiliza. Deberia revisar según size array (.length de 4 implica plano  2d, 6 implica 3D)
+  }`  
   Res:
   ```json
   {
-    "binary_data":"bytes",
-    "data_length": int32,
-    "total_count": int32,
+    "binary_data":"bytes", //Devuelve el arreglo como bytes, para simplificar transformaciones en front
+    "total_count": int32, // Cantidad total de putnos
+    "column_count": int32, // cantidad de puntos/datos por columna
+  
     "data_boundaries":[
-      { "column_name":"string","min_value":double,"max_value":double,"valid_count":int32 }
-    ]
+      { "column_name":"string","min_value":double,"max_value":double}
+    ] // Los valores min/max de cada columna
   }
   ```
 
@@ -303,7 +340,7 @@ Procesa el archivo completo e inserta **dataset en proyecto**.
   Res: `{ "datasets":[DatasetInfo] }`  
   **DatasetInfo**
   ```json
-  { "id":"string","file_id":"string","file_name":"string","dataset_type": int32,
+  { "id":"string","file_id":"string","file_name":"string","dataset_type":"string",
     "original_filename":"string","total_rows": int32,"created_at": int64,
     "column_mappings":[ColumnMapping] }
   ```
@@ -311,6 +348,70 @@ Procesa el archivo completo e inserta **dataset en proyecto**.
 - **DeleteDataset**  
   Req: `{ "dataset_id":"string" }`  
   Res: `{ "success": bool, "error_message":"string", "rows_deleted": int32, "delete_time": double }`
+
+---
+
+## 5) Grid/Block Model
+
+### CreateGridFromDimensions
+Crear grid/modelo de bloques desde dimensiones especificadas
+**Request**
+```json
+{
+  "project_id":"string",
+  "base_dataset_id":"string",  // opcional: dataset base para referencia
+  "output_file_name":"string",
+  "dimensions": {
+    "origin": { "x": double, "y": double, "z": double },
+    "blocks": { "x": int32, "y": int32, "z": int32 },       // cantidad de bloques
+    "block_size": { "x": double, "y": double, "z": double }  // tamaño de cada bloque
+  }
+}
+```
+**Response**
+```json
+{
+  "grid_id":"string",         // ID del archivo de grid creado
+  "project_id":"string",
+  "status":"created",
+  "details":"string",
+  "dimensions": {
+    "origin": { "x": double, "y": double, "z": double },
+    "blocks": { "x": int32, "y": int32, "z": int32 },
+    "block_size": { "x": double, "y": double, "z": double }
+  },
+  "total_blocks": int32,
+  "success": bool,
+  "error_message":"string"
+}
+```
+
+### CreateGridFromTemplate
+Crear grid desde archivo template
+**Request**
+```json
+{
+  "project_id":"string",
+  "template_file_content":"bytes",  // Archivo template (CSV/etc)
+  "template_file_name":"string",
+  "output_file_name":"string",
+  "block_size": { "x": double, "y": double, "z": double }  // tamaño de bloques a aplicar
+}
+```
+**Response**
+```json
+{
+  "grid_id":"string",              // ID del archivo de grid creado
+  "project_id":"string",
+  "creation_method":"fromFileTemplate",
+  "template_file_id":"string",     // ID del archivo template guardado
+  "status":"success",
+  "message":"string",
+  "total_blocks": int32,
+  "success": bool,
+  "error_message":"string"
+}
+```
 
 ---
 
@@ -323,12 +424,13 @@ Procesa el archivo completo e inserta **dataset en proyecto**.
 **Request**
 ```json
 {
-  "left_dataset_id":number,
-  "right_dataset_id": "string",
+  "first_dataset_id": "string",
+  "second_dataset_id": "string",
   "mode": "BY_ROWS | BY_COLUMNS",
 
   // Solo si BY_COLUMNS:
-  "exclude_columns": ["string"],     // opcional: columnas del RIGHT a excluir
+  "exclude_columns_first": ["string"],     // opcional: columnas  a excluir de primer dataset
+  "exclude_columns_second": ["string"],     // opcional: columnas  a excluir de segundo dataset
   "output_file": "string"            // opcional: nombre/alias de salida
 }
 ```
@@ -342,7 +444,7 @@ Procesa el archivo completo e inserta **dataset en proyecto**.
 }
 ```
 ---
-> Inserción de columnar
+
 ### Dejar definida, por ahora project_id,column_name, data (array)
 
 ## 7) Ejemplos rápidos
@@ -367,25 +469,50 @@ Procesa el archivo completo e inserta **dataset en proyecto**.
 }
 ```
 
-**Merge por columnas (excluyendo algunas)**
+**Grid desde dimensiones**
 ```json
 {
-  "left_dataset_id":"d_left",
-  "right_dataset_id":"d_right",
-  "mode":"BY_COLUMNS",
-  "exclude_columns":["tmp","debug_flag"],
-  "output_file":"left_plus_right_clean"
+  "project_id":"proj_123",
+  "output_file_name":"grid_modelo_bloques",
+  "dimensions": {
+    "origin": {"x": 1000.0, "y": 2000.0, "z": 0.0},
+    "blocks": {"x": 100, "y": 100, "z": 50},
+    "block_size": {"x": 10.0, "y": 10.0, "z": 5.0}
+  }
 }
 ```
 
-**GetColumnarData con corte & estilo**
+**Reemplazar valores en archivo**
 ```json
 {
-  "data_types":["X","Y","Au_ppm","Litho"],
-  "max_points": 200000,
-  "shape":"circle",
-  "color":"Litho",
-  "function":"IDW",
-  "bounding_box":[300000,305000,6410000,6415000]
+  "file_id":"file_abc",
+  "replacements":[
+    {"from_value":"null","to_value":"NaN"},
+    {"from_value":"-999","to_value":"0"}
+  ],
+  "columns":["Au_ppm","Cu_ppm"]
+}
+```
+
+**Filtrar datos y crear nuevo archivo**
+```json
+{
+  "file_id":"file_abc",
+  "column":"Au_ppm",
+  "operation":">",
+  "value":"0.5",
+  "create_new_file": true,
+  "new_file_name":"high_grade_samples"
+}
+```
+
+**Agregar columnas calculadas**
+```json
+{
+  "file_id":"file_abc",
+  "new_columns":[
+    {"column_name":"Au_grade_category","values":["low","high","low","high"]},
+    {"column_name":"sample_id","values":["S001","S002","S003","S004"]}
+  ]
 }
 ```

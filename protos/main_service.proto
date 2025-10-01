@@ -19,7 +19,6 @@ service GeospatialService {
   rpc GetColumnarData(getColumnarDataRequest) returns (GetColumnarDataResponse);
   
   // Procesamiento de archivos CSV
-  rpc AnalyzeCsv(AnalyzeCsvRequest) returns (AnalyzeCsvResponse);
   rpc SendFile(SendFileRequest) returns (SendFileResponse);
   
   // Gestión de proyectos
