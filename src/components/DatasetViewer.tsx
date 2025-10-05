@@ -515,9 +515,10 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         yAxisIndex: 0,
         seriesIndex: [],               // CRITICAL: Don't connect brush to any series (just capture coordinates)
         throttleType: 'debounce',
-        throttleDelay: 300,
+        throttleDelay: 1000,
         brushMode: 'single',           // Only one brush area at a time
         brushLink: 'none',             // Don't link brush to other components (prevents filtering lag)
+        z:10000,
         inBrush: {                     // Don't change appearance of selected points (performance)
           opacity: 1
         },
