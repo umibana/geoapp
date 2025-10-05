@@ -19,6 +19,12 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import process from 'process';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+// Use @bufbuild/protoc for cross-platform protoc binary (ensures same version everywhere)
+const PROTOC_PATH = path.join(__dirname, '../node_modules/.bin/protoc');
 
 const PROTO_DIR = 'protos';
 const MAIN_PROTO_FILE = 'protos/main_service.proto';
@@ -740,9 +746,9 @@ async function generateOriginalProtos() {
   const protoFiles = fs.readdirSync(PROTO_DIR).filter(f => f.endsWith('.proto'));
   const protoList = protoFiles.map(f => path.join(PROTO_DIR, f)).join(' ');
 
-  // TypeScript via ts-proto
+  // TypeScript via ts-proto (using npm protoc for cross-platform compatibility)
   const frontendCommand =
-    `protoc --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto ` +
+    `${PROTOC_PATH} --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto ` +
     `--ts_proto_out=${FRONTEND_OUT_DIR} ` +
     `--ts_proto_opt=lowerCaseServiceMethods=true,snakeToCamel=false ` +
     `--proto_path=${PROTO_DIR} ${protoList}`;
