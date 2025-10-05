@@ -63,6 +63,8 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
   );
   const [showOnlyBrushed, setShowOnlyBrushed] = useState(false);
   const [, forceUpdate] = useState({}); // Minimal state for forcing UI updates without affecting chart
+  const [isApplyingSelection, setIsApplyingSelection] = useState(false); // Separate state for backend filtering
+  const [isBrushMode, setIsBrushMode] = useState(false); // Track if brush mode is active
   const chartRef = useRef<ReactECharts>(null);
 
   // Flag to prevent infinite loop when applying brush programmatically
@@ -77,13 +79,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
   // Check if we're in large dataset mode
   const isLargeDataset = useMemo(() => {
-    const result = (dataset?.total_count || 0) > LARGE_THRESHOLD;
-    console.log('🔍 isLargeDataset check:', {
-      total_count: dataset?.total_count,
-      threshold: LARGE_THRESHOLD,
-      isLarge: result
-    });
-    return result;
+    return (dataset?.total_count || 0) > LARGE_THRESHOLD;
   }, [dataset?.total_count]);
 
   // Track current brush rectangle for large dataset mode
@@ -277,6 +273,67 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     }
   };
 
+  // Toggle brush drawing mode
+  const toggleBrushMode = () => {
+    if (chartRef.current) {
+      const chartInstance = chartRef.current.getEchartsInstance();
+
+      if (isBrushMode) {
+        // Disable brush mode - return to pointer/pan mode
+        chartInstance.dispatchAction({
+          type: 'takeGlobalCursor',
+          key: 'brush',
+          brushOption: {
+            brushType: false  // Disable brush
+          }
+        });
+        setIsBrushMode(false);
+        console.log('👆 Pointer mode enabled (pan/zoom)');
+      } else {
+        // Enable brush mode
+        chartInstance.dispatchAction({
+          type: 'takeGlobalCursor',
+          key: 'brush',
+          brushOption: {
+            brushType: 'rect',
+            brushMode: 'single'
+          }
+        });
+        setIsBrushMode(true);
+        console.log('🖌️ Brush mode enabled');
+      }
+    }
+  };
+
+  // Clear brush selection
+  const clearBrushSelection = () => {
+    // Set flag and clear from store first
+    isApplyingBrushProgrammatically.current = true;
+    const { clearBrushSelection: clearFromStore } = useBrushStore.getState();
+    clearFromStore(datasetInfo.id);
+    brushInfoRef.current = null;
+    currentBrushRectRef.current = null; // Also clear rectangle
+    setShowOnlyBrushed(false);
+    setIsBrushMode(false);
+    updateBrushInfoRef();
+
+    // Also clear the brush visually on the chart
+    if (chartRef.current) {
+      chartRef.current.getEchartsInstance().dispatchAction({
+        type: 'brush',
+        command: 'clear',
+        areas: []
+      });
+    }
+
+    // Reset flag after a delay
+    setTimeout(() => {
+      isApplyingBrushProgrammatically.current = false;
+    }, 100);
+
+    console.log('🧹 Brush selection cleared');
+  };
+
   // Apply backend brush selection for large datasets
   const applyBackendBrushSelection = async () => {
     if (!currentBrushRectRef.current) {
@@ -285,7 +342,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     }
 
     try {
-      setRefetching(true);
+      setIsApplyingSelection(true); // Use separate state to avoid chart refresh
       const rect = currentBrushRectRef.current;
 
       console.log('📦 Applying backend brush selection with bounding box:', rect);
@@ -340,7 +397,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       console.error('❌ Error applying backend brush selection:', err);
       setError('Error al aplicar la selección');
     } finally {
-      setRefetching(false);
+      setIsApplyingSelection(false);
     }
   };
 
@@ -448,32 +505,29 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           throttle: 30,
         }
       ],
+      // Toolbox disabled - using custom controls instead
       toolbox: {
-        feature: {
-          brush: {
-            type: ['rect', 'clear'],
-            title: {
-              rect: 'Selección rectangular',
-              clear: 'Limpiar selección'
-            }
-          },
-          saveAsImage: {
-            title: 'Guardar como imagen'
-          }
-        },
-        right: 20,
-        top: 20
+        show: false
       },
       brush: {
         toolbox: ['rect', 'clear'],
         xAxisIndex: 0,
         yAxisIndex: 0,
+        seriesIndex: [],               // CRITICAL: Don't connect brush to any series (just capture coordinates)
         throttleType: 'debounce',
         throttleDelay: 300,
+        brushMode: 'single',           // Only one brush area at a time
+        brushLink: 'none',             // Don't link brush to other components (prevents filtering lag)
+        inBrush: {                     // Don't change appearance of selected points (performance)
+          opacity: 1
+        },
+        outOfBrush: {                  // Don't dim unselected points (prevents lag in large mode)
+          opacity: 1
+        },
         brushStyle: {
-          borderWidth: 2,
-          borderColor: 'rgba(59, 130, 246, 0.8)',
-          color: 'rgba(59, 130, 246, 0.2)'
+          borderWidth: 3,              // Thicker border for better visibility
+          borderColor: 'rgba(251, 146, 60, 1)',    // Bright orange border - full opacity
+          color: 'rgba(251, 146, 60, 0.25)'        // Orange fill - slightly more opaque
         },
         transformable: true,
         removeOnClick: false
@@ -483,12 +537,17 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         type: 'scatter',
         data: chartData,
         animation: false,
+        selectedMode: false,      // CRITICAL: Disable selection interaction in large mode
+        select: {                 // Disable visual selection changes
+          disabled: true
+        },
         itemStyle: {
           opacity: 0.8,
           borderWidth: 0,
           animation: false
         },
         emphasis: {
+          disabled: true,         // Disable hover/emphasis in large mode (performance)
           animation: false,
           itemStyle: {
             animation: false,
@@ -569,9 +628,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
                   // Store rectangle for large dataset mode (backend filtering)
                   currentBrushRectRef.current = rectangle;
-                  console.log('📦 Stored rectangle in currentBrushRectRef:', rectangle);
-                  console.log('📦 isLargeDataset:', isLargeDataset);
-                  console.log('📦 currentBrushRectRef.current after assignment:', currentBrushRectRef.current);
+                  console.log('📦 Stored rectangle for large dataset mode:', rectangle, 'isLarge:', isLargeDataset);
 
                   // For small datasets with selected data, store selection immediately
                   if (!isLargeDataset && selectedData.length > 0) {
@@ -682,7 +739,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           </div>
         </div>
         <div className="flex items-center space-x-2">
-          {/* Brush Enable Button */}
           {/* Large Dataset Mode Indicator */}
           {isLargeDataset && (
             <Badge variant="secondary" className="px-3 py-1">
@@ -690,60 +746,12 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
             </Badge>
           )}
 
-          {/* Brush Enable Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              if (chartRef.current) {
-                const chartInstance = chartRef.current.getEchartsInstance();
-                // Toggle brush selection mode
-                chartInstance.dispatchAction({
-                  type: 'takeGlobalCursor',
-                  key: 'brush',
-                  brushOption: {
-                    brushType: 'rect',
-                    brushMode: 'single'
-                  }
-                });
-              }
-            }}
-            title="Activar modo selección"
-          >
-            <Brush className="h-4 w-4 mr-2" />
-            Seleccionar
-          </Button>
-
-          {/* Apply Backend Selection Button (Large Datasets Only) */}
-          {(() => {
-            const shouldShow = isLargeDataset && !!currentBrushRectRef.current;
-            console.log('🔍 Apply Selection Button visibility check:', {
-              isLargeDataset,
-              hasRectangle: !!currentBrushRectRef.current,
-              rectangleValue: currentBrushRectRef.current,
-              shouldShow
-            });
-            if (shouldShow) {
-              return (
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={applyBackendBrushSelection}
-                  disabled={refetching}
-                  title="Aplicar selección con filtrado en backend"
-                >
-                  {refetching ? '⏳' : '📦'} Aplicar Selección
-                </Button>
-              );
-            }
-            return null;
-          })()}
-
+          {/* Brush Active Badge */}
           {brushInfoRef.current && brushInfoRef.current.count > 0 && (
             <>
               <Badge variant="default" className="px-3 py-1 bg-blue-600 text-white">
                 <Brush className="mr-2 h-4 w-4" />
-                Brush Activo ({brushInfoRef.current.count.toLocaleString()} puntos)
+                Selección Activa ({brushInfoRef.current.count.toLocaleString()} puntos)
               </Badge>
               <Button
                 variant={showOnlyBrushed ? "default" : "outline"}
@@ -757,39 +765,9 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
               >
                 <Filter className="h-4 w-4" />
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  // Set flag and clear from store first
-                  isApplyingBrushProgrammatically.current = true;
-                  const { clearBrushSelection } = useBrushStore.getState();
-                  clearBrushSelection(datasetInfo.id);
-                  brushInfoRef.current = null; // Clear ref immediately
-                  setShowOnlyBrushed(false);
-                  // Force re-render to hide badge by toggling a column
-                  // This is intentional and only happens on clear (user action)
-                  updateBrushInfoRef();
-
-                  // Also clear the brush visually on the chart
-                  if (chartRef.current) {
-                    chartRef.current.getEchartsInstance().dispatchAction({
-                      type: 'brush',
-                      command: 'clear',
-                      areas: []
-                    });
-                  }
-
-                  // Reset flag after a delay
-                  setTimeout(() => {
-                    isApplyingBrushProgrammatically.current = false;
-                  }, 100);
-                }}
-              >
-                <X className="h-4 w-4" />
-              </Button>
             </>
           )}
+
           <Badge variant="outline" className="px-3 py-1">
             <Activity className="mr-2 h-4 w-4" />
             Visualización de Dataset
@@ -913,10 +891,62 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         <CardContent className="flex-1 flex flex-col min-h-0 p-0">
           {(() => {
             const canRenderChart = chartData && chartData.length > 0 && selectedXAxis && selectedYAxis && selectedValueColumn;
-            
+
             return canRenderChart && chartOptions ? (
-              <div className="flex-1 w-full p-6" style={{ minHeight: '400px', height: '100%' }}>
+              <div className="flex-1 w-full p-6 relative" style={{ minHeight: '400px', height: '100%' }}>
                 {MemoizedChart}
+
+                {/* Custom Chart Controls - Positioned over chart */}
+                <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
+                  {/* Toggle Brush/Pointer Mode Button */}
+                  <Button
+                    variant={isBrushMode ? "default" : "outline"}
+                    size="sm"
+                    onClick={toggleBrushMode}
+                    title={isBrushMode ? "Cambiar a modo puntero (pan/zoom)" : "Cambiar a modo dibujar rectángulo"}
+                    className="shadow-lg"
+                  >
+                    {isBrushMode ? (
+                      <>
+                        <Brush className="h-4 w-4 mr-2" />
+                        Modo Dibujo
+                      </>
+                    ) : (
+                      <>
+                        <Activity className="h-4 w-4 mr-2" />
+                        Modo Puntero
+                      </>
+                    )}
+                  </Button>
+
+                  {/* Apply Selection Button - Only for large datasets with rectangle */}
+                  {isLargeDataset && currentBrushRectRef.current && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={applyBackendBrushSelection}
+                      disabled={isApplyingSelection}
+                      title="Aplicar selección con filtrado en backend"
+                      className="shadow-lg bg-blue-600 hover:bg-blue-700"
+                    >
+                      {isApplyingSelection ? '⏳ Aplicando...' : '📦 Aplicar Selección'}
+                    </Button>
+                  )}
+
+                  {/* Clear Button - Show if brush active or rectangle drawn */}
+                  {(brushInfoRef.current || currentBrushRectRef.current) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={clearBrushSelection}
+                      title="Limpiar selección"
+                      className="shadow-lg"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Limpiar
+                    </Button>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="flex-1 bg-gray-50 rounded-lg flex items-center justify-center m-6">
