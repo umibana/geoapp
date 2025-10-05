@@ -43,7 +43,6 @@
   "license": "Apache-2.0",
   "devDependencies": {
     "@bufbuild/buf": "^1.55.1",
-    "@bufbuild/protoc": "^28.3.0",
     "@bufbuild/protoc-gen-es": "^2.6.1",
     "@electron-forge/cli": "^7.8.1",
     "@electron-forge/maker-deb": "^7.8.0",
@@ -58,6 +57,7 @@
     "@eslint/compat": "^1.2.9",
     "@eslint/js": "^9.28.0",
     "@playwright/test": "^1.52.0",
+    "@protobuf-ts/protoc": "^2.11.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
