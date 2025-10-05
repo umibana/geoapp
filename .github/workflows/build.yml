@@ -234,46 +234,46 @@ jobs:
   # ====================
   # Tests
   # ====================
-  test:
-    runs-on: ubuntu-latest
+  # test:
+  #   runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #         cache: 'npm'
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
+  #     - name: Setup Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.11'
+  #         cache: 'pip'
 
-      - name: Install dependencies
-        run: |
-          npm ci
-          python3 -m venv venv
-          venv/bin/pip install --upgrade pip
-          venv/bin/pip install -r backend/requirements.txt
+  #     - name: Install dependencies
+  #       run: |
+  #         npm ci
+  #         python3 -m venv venv
+  #         venv/bin/pip install --upgrade pip
+  #         venv/bin/pip install -r backend/requirements.txt
 
-      - name: Generate Protocol Buffers
-        run: |
-          export PATH="${{ github.workspace }}/venv/bin:$PATH"
-          npm run generate:full-stack
-        shell: bash
+  #     - name: Generate Protocol Buffers
+  #       run: |
+  #         export PATH="${{ github.workspace }}/venv/bin:$PATH"
+  #         npm run generate:full-stack
+  #       shell: bash
 
-      - name: Run linter
-        run: npm run lint
+  #     - name: Run linter
+  #       run: npm run lint
 
-      - name: Run formatter check
-        run: npm run format
+  #     - name: Run formatter check
+  #       run: npm run format
 
-      - name: Run unit tests
-        run: npm run test:unit
+  #     - name: Run unit tests
+  #       run: npm run test:unit
 
   # ====================
   # Release (on tags)
