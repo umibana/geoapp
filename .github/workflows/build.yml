@@ -37,19 +37,20 @@ jobs:
       - name: Setup Python environment
         run: |
           python3 -m venv venv
-          source venv/bin/activate
-          cd backend
-          pip install -r requirements.txt
+          venv/bin/pip install --upgrade pip
+          venv/bin/pip install -r backend/requirements.txt
 
       - name: Generate Protocol Buffers
         run: |
-          source venv/bin/activate
+          export PATH="${{ github.workspace }}/venv/bin:$PATH"
           npm run generate:full-stack
+        shell: bash
 
       - name: Build Python backend (macOS)
         run: |
-          source venv/bin/activate
+          export PATH="${{ github.workspace }}/venv/bin:$PATH"
           npm run build:backend
+        shell: bash
 
       - name: Build Electron app (macOS x64)
         run: npm run make:mac:x64
@@ -89,19 +90,20 @@ jobs:
       - name: Setup Python environment
         run: |
           python3 -m venv venv
-          source venv/bin/activate
-          cd backend
-          pip install -r requirements.txt
+          venv/bin/pip install --upgrade pip
+          venv/bin/pip install -r backend/requirements.txt
 
       - name: Generate Protocol Buffers
         run: |
-          source venv/bin/activate
+          export PATH="${{ github.workspace }}/venv/bin:$PATH"
           npm run generate:full-stack
+        shell: bash
 
       - name: Build Python backend (macOS)
         run: |
-          source venv/bin/activate
+          export PATH="${{ github.workspace }}/venv/bin:$PATH"
           npm run build:backend
+        shell: bash
 
       - name: Build Electron app (macOS arm64)
         run: npm run make:mac:arm64
@@ -141,20 +143,19 @@ jobs:
       - name: Setup Python environment
         run: |
           python -m venv venv
-          .\venv\Scripts\Activate.ps1
-          cd backend
-          pip install -r requirements.txt
+          venv\Scripts\pip install --upgrade pip
+          venv\Scripts\pip install -r backend\requirements.txt
         shell: powershell
 
       - name: Generate Protocol Buffers
         run: |
-          .\venv\Scripts\Activate.ps1
+          $env:PATH = "${{ github.workspace }}\venv\Scripts;$env:PATH"
           npm run generate:full-stack
         shell: powershell
 
       - name: Build Python backend (Windows)
         run: |
-          .\venv\Scripts\Activate.ps1
+          $env:PATH = "${{ github.workspace }}\venv\Scripts;$env:PATH"
           npm run build:backend
         shell: powershell
 
@@ -203,19 +204,20 @@ jobs:
       - name: Setup Python environment
         run: |
           python3 -m venv venv
-          source venv/bin/activate
-          cd backend
-          pip install -r requirements.txt
+          venv/bin/pip install --upgrade pip
+          venv/bin/pip install -r backend/requirements.txt
 
       - name: Generate Protocol Buffers
         run: |
-          source venv/bin/activate
+          export PATH="${{ github.workspace }}/venv/bin:$PATH"
           npm run generate:full-stack
+        shell: bash
 
       - name: Build Python backend (Linux)
         run: |
-          source venv/bin/activate
+          export PATH="${{ github.workspace }}/venv/bin:$PATH"
           npm run build:backend
+        shell: bash
 
       - name: Build Electron app (Linux)
         run: npm run make:linux
@@ -255,13 +257,14 @@ jobs:
         run: |
           npm ci
           python3 -m venv venv
-          source venv/bin/activate
-          cd backend && pip install -r requirements.txt
+          venv/bin/pip install --upgrade pip
+          venv/bin/pip install -r backend/requirements.txt
 
       - name: Generate Protocol Buffers
         run: |
-          source venv/bin/activate
+          export PATH="${{ github.workspace }}/venv/bin:$PATH"
           npm run generate:full-stack
+        shell: bash
 
       - name: Run linter
         run: npm run lint
