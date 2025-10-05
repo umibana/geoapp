@@ -194,6 +194,12 @@ message DataBoundaries {
 message GetDatasetDataRequest {
   string dataset_id = 1;
   repeated string columns = 2;
+
+  // Optional filtering and visualization parameters
+  optional string shape = 3;           // e.g. "circle" | "rect" | "triangle" | ...
+  optional string color = 4;           // color name or hex
+  optional string function = 5;        // e.g. "IDW" | "NONE" | "log" (default: "NONE")
+  repeated double bounding_box = 6;    // [x1, x2, y1, y2] for 2D or [x1, x2, y1, y2, z1, z2] for 3D
 }
 
 message GetDatasetDataResponse {

@@ -6,7 +6,7 @@ import "./localization/i18n";
 import { updateAppLanguage } from "./helpers/language_helpers";
 import { router } from "./routes/router";
 import { RouterProvider } from "@tanstack/react-router";
-// import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from 'sonner';
 
 export default function App() {
@@ -25,7 +25,7 @@ export default function App() {
   );
 }
 
-// const queryClient = new QueryClient();
+const queryClient = new QueryClient();
 
 const root = createRoot(document.getElementById("app")!);
 root.render(
@@ -33,8 +33,8 @@ root.render(
    <React.StrictMode>
   {/* // Tanstack query venía con el template, */}
   {/* // Se deja en caso que se necesite, aunque todas las requests deberian ser por IPC y no por renderer */}
-    {/* // <QueryClientProvider client={queryClient}> */}
+    <QueryClientProvider client={queryClient}>
       <App />
-    {/* // </QueryClientProvider> */}
+    </QueryClientProvider>
   </React.StrictMode>,
 );

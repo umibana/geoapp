@@ -393,15 +393,25 @@ class DatabaseManager:
             return dataset
 
 
-    def get_dataset_data_and_stats_combined(self, dataset_id: str, columns: List[str]) -> Tuple[np.ndarray, Dict[str, Dict[str, float]]]:
+    def get_dataset_data_and_stats_combined(self, dataset_id: str, columns: List[str], bounding_box: List[float] = None) -> Tuple[np.ndarray, Dict[str, Dict[str, float]]]:
+        """
+        Get dataset data with optional bounding box filtering
 
+        Args:
+            dataset_id: The dataset ID
+            columns: List of column names [x_col, y_col, value_col]
+            bounding_box: Optional bounding box [x1, x2, y1, y2] for 2D or [x1, x2, y1, y2, z1, z2] for 3D
+
+        Returns:
+            Tuple of (flat_numpy_array, boundaries_dict)
+        """
         try:
             dataset = self.get_dataset_by_id(dataset_id)
             if not dataset:
                 return np.array([], dtype=np.float32), {}
 
             table_name = dataset.duckdb_table_name
-            
+
             # consigo las columnas que necesito
             data_query = f"SELECT {columns[0]}, {columns[1]}, {columns[2]} FROM {table_name}"
 
@@ -418,36 +428,87 @@ class DatabaseManager:
             x_data = rows_data[columns[0]]
             y_data = rows_data[columns[1]]
             z_data = rows_data[columns[2]]
-            
+
+            # Apply bounding box filter if provided
+            if bounding_box and len(bounding_box) in [4, 6]:
+                x1, x2, y1, y2 = bounding_box[0], bounding_box[1], bounding_box[2], bounding_box[3]
+                is_3d = len(bounding_box) == 6
+                z1, z2 = (bounding_box[4], bounding_box[5]) if is_3d else (None, None)
+
+                print(f"🔍 Filtering dataset {dataset_id} with bounding box: x[{x1}, {x2}], y[{y1}, {y2}]" +
+                      (f", z[{z1}, {z2}]" if is_3d else ""))
+
+                # Apply bounding box filter using numpy boolean masking
+                mask = (x_data >= x1) & (x_data <= x2) & (y_data >= y1) & (y_data <= y2)
+
+                # Apply 3D filter if applicable
+                if is_3d and z1 is not None and z2 is not None:
+                    mask = mask & (z_data >= z1) & (z_data <= z2)
+
+                # Filter data
+                x_data = x_data[mask]
+                y_data = y_data[mask]
+                z_data = z_data[mask]
+
+                print(f"✅ Filtered to {len(x_data)} points from bounding box")
+
             # pre-alloco un array para optimizar el rendimiento
             num_points = len(x_data)
+
+            if num_points == 0:
+                return np.array([], dtype=np.float32), {}
+
             flat_numpy = np.empty(num_points * 3, dtype=np.float32)
-            
+
             # Direct strided assignment for optimal cache performance
             flat_numpy[0::3] = x_data.astype(np.float32, copy=False)
             flat_numpy[1::3] = y_data.astype(np.float32, copy=False)
             flat_numpy[2::3] = z_data.astype(np.float32, copy=False)
 
-            # obtengo las estadisticas desde la base de datos (pandas)
-            boundaries = {}
-            with Session(self.engine) as session:
-                stats = session.exec(
-                    select(DatasetColumnStats)
-                    .where(DatasetColumnStats.dataset_id == dataset_id)
-                    .where(DatasetColumnStats.column_type == "numeric")
-                ).all()
-                
-                for stat in stats:
-                    if stat.column_name in columns and stat.min_value is not None and stat.max_value is not None:
-                        boundaries[stat.column_name] = {
-                            'min_value': float(stat.min_value),
-                            'max_value': float(stat.max_value),
-                            'valid_count': int(stat.count) if stat.count else num_points
-                        }
+            # obtengo las estadisticas - si hay filtro, calculo desde los datos filtrados
+            if bounding_box and len(bounding_box) in [4, 6]:
+                # Calculate boundaries from filtered data
+                boundaries = {
+                    columns[0]: {
+                        'min_value': float(np.min(x_data)),
+                        'max_value': float(np.max(x_data)),
+                        'valid_count': num_points
+                    },
+                    columns[1]: {
+                        'min_value': float(np.min(y_data)),
+                        'max_value': float(np.max(y_data)),
+                        'valid_count': num_points
+                    },
+                    columns[2]: {
+                        'min_value': float(np.min(z_data)),
+                        'max_value': float(np.max(z_data)),
+                        'valid_count': num_points
+                    }
+                }
+            else:
+                # Get boundaries from database (existing behavior)
+                boundaries = {}
+                with Session(self.engine) as session:
+                    stats = session.exec(
+                        select(DatasetColumnStats)
+                        .where(DatasetColumnStats.dataset_id == dataset_id)
+                        .where(DatasetColumnStats.column_type == "numeric")
+                    ).all()
+
+                    for stat in stats:
+                        if stat.column_name in columns and stat.min_value is not None and stat.max_value is not None:
+                            boundaries[stat.column_name] = {
+                                'min_value': float(stat.min_value),
+                                'max_value': float(stat.max_value),
+                                'valid_count': int(stat.count) if stat.count else num_points
+                            }
 
             return flat_numpy, boundaries
 
         except Exception as e:
+            print(f"❌ Error in get_dataset_data_and_stats_combined: {e}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
             return np.array([], dtype=np.float32), {}
 
     

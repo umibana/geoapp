@@ -492,27 +492,45 @@ class ProjectManager:
         try:
             # Use default columns if not specified
             columns = list(request.columns) if request.columns else ["x", "y", "z"]
-            
+
             # Obtener información del dataset primero
             dataset = self.db.get_dataset_by_id(request.dataset_id)
             if not dataset:
                 response = projects_pb2.GetDatasetDataResponse()
                 return response
-            
+
+            # Extract optional filtering parameters
+            bounding_box = list(request.bounding_box) if request.bounding_box else None
+            shape = request.shape if request.HasField('shape') else None
+            color = request.color if request.HasField('color') else None
+            function = request.function if request.HasField('function') else None
+
+            # Log optional parameters if provided
+            if bounding_box:
+                print(f"📦 GetDatasetData with bounding_box: {bounding_box}")
+            if shape:
+                print(f"🔷 Shape: {shape}")
+            if color:
+                print(f"🎨 Color: {color}")
+            if function:
+                print(f"🔧 Function: {function}")
+
+            # Get data with optional bounding box filter
             data, boundaries = self.db.get_dataset_data_and_stats_combined(
-                request.dataset_id, 
-                columns
+                request.dataset_id,
+                columns,
+                bounding_box=bounding_box
             )
-            
+
             # Direct binary conversion without unnecessary copying
             binary_data = data.tobytes()
-            
+
             # Configurar campos de respuesta
             response = projects_pb2.GetDatasetDataResponse()
             response.binary_data = binary_data
             response.data_length = len(data)
             response.total_count = len(data) // 3  # Each point has 3 values (x,y,z)
-   
+
             # Use boundaries from combined query (already available)
             for col_name, stats in boundaries.items():
                 boundary = response.data_boundaries.add()
@@ -520,9 +538,9 @@ class ProjectManager:
                 boundary.min_value = float(stats['min_value'])
                 boundary.max_value = float(stats['max_value'])
                 boundary.valid_count = int(stats['valid_count'])
-            
+
             return response
-            
+
         except Exception as e:
             import traceback
             print(f"❌ Error in ultra-optimized dataset retrieval: {e}")
