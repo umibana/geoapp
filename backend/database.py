@@ -300,6 +300,92 @@ class DatabaseManager:
             ).all()
             return list(files)
 
+    def update_file(self, file_id: str, name: str) -> Optional[File]:
+        """Update file metadata (name only)"""
+        with Session(self.engine) as session:
+            file = session.get(File, file_id)
+            if not file:
+                return None
+            file.name = name
+            session.add(file)
+            session.commit()
+            session.refresh(file)
+            return file
+
+    def rename_file_columns(self, file_id: str, column_renames: Dict[str, str]) -> Tuple[bool, List[str], str]:
+        """
+        Rename columns in the DuckDB table associated with a file
+        Also updates column_mappings in all datasets associated with this file
+
+        Args:
+            file_id: The file ID
+            column_renames: Dict mapping old_name -> new_name
+
+        Returns:
+            Tuple of (success, renamed_columns, error_message)
+        """
+        try:
+            table_name = f"data_{file_id.replace('-', '_')}"
+
+            # Check if table exists
+            if not self.check_duckdb_table_exists(table_name):
+                return False, [], f"Table {table_name} does not exist"
+
+            renamed_columns = []
+
+            # 1. Rename columns in DuckDB table
+            with self.engine.connect() as conn:
+                with conn.begin():
+                    # Get existing columns first
+                    result = conn.execute(text(f"DESCRIBE {table_name}"))
+                    existing_columns = {row[0] for row in result}
+
+                    # Rename each column
+                    for old_name, new_name in column_renames.items():
+                        if old_name not in existing_columns:
+                            continue  # Skip if column doesn't exist
+
+                        # DuckDB syntax for renaming columns
+                        conn.execute(text(f"ALTER TABLE {table_name} RENAME COLUMN \"{old_name}\" TO \"{new_name}\""))
+                        renamed_columns.append(new_name)
+
+            # 2. Update column_mappings in all datasets for this file
+            with Session(self.engine) as session:
+                # Get all datasets for this file
+                datasets = session.exec(select(Dataset).where(Dataset.file_id == file_id)).all()
+
+                for dataset in datasets:
+                    if dataset.column_mappings:
+                        # Parse JSON column mappings
+                        import json
+                        mappings = json.loads(dataset.column_mappings)
+
+                        # Update column names in mappings
+                        updated = False
+                        for mapping in mappings:
+                            if mapping['column_name'] in column_renames:
+                                old_col_name = mapping['column_name']
+                                new_col_name = column_renames[old_col_name]
+                                mapping['column_name'] = new_col_name
+                                updated = True
+                                print(f"✅ Updated dataset {dataset.id} column mapping: {old_col_name} -> {new_col_name}")
+
+                        if updated:
+                            # Save updated mappings back to database
+                            dataset.column_mappings = json.dumps(mappings)
+                            session.add(dataset)
+
+                # Commit all dataset updates
+                session.commit()
+
+            return True, renamed_columns, ""
+
+        except Exception as e:
+            import traceback
+            print(f"❌ Error in rename_file_columns: {e}")
+            print(traceback.format_exc())
+            return False, [], str(e)
+
     def check_duckdb_table_exists(self, table_name: str) -> bool:
         """Check if a DuckDB table exists"""
         try:
@@ -406,23 +492,32 @@ class DatabaseManager:
             Tuple of (flat_numpy_array, boundaries_dict)
         """
         try:
+            print(f"🔍 get_dataset_data_and_stats_combined called - dataset_id={dataset_id}, columns={columns}")
+
             dataset = self.get_dataset_by_id(dataset_id)
             if not dataset:
+                print(f"❌ Dataset not found: {dataset_id}")
                 return np.array([], dtype=np.float32), {}
 
             table_name = dataset.duckdb_table_name
+            print(f"📊 Using DuckDB table: {table_name}")
 
             # consigo las columnas que necesito
             data_query = f"SELECT {columns[0]}, {columns[1]}, {columns[2]} FROM {table_name}"
+            print(f"🔍 Executing query: {data_query}")
 
             # obtengo los datos usando DuckDB's fetchnumpy para optimizar el rendimiento
             with self.engine.connect() as conn:
                 duckdb_conn = conn.connection.connection
                 rows_data = duckdb_conn.execute(data_query).fetchnumpy()
+                print(f"✅ Query executed, checking results...")
 
             # si no hay datos, devuelvo un array vacío
             if not rows_data or len(rows_data[columns[0]]) == 0:
+                print(f"⚠️ No data found - rows_data={rows_data}, column_keys={list(rows_data.keys()) if rows_data else 'None'}")
                 return np.array([], dtype=np.float32), {}
+
+            print(f"✅ Data found: {len(rows_data[columns[0]])} rows")
 
             # obtengo las columnas que necesito
             x_data = rows_data[columns[0]]
@@ -505,6 +600,12 @@ class DatabaseManager:
 
             return flat_numpy, boundaries
 
+        except KeyError as e:
+            print(f"❌ Column not found in query results: {e}")
+            print(f"❌ Available columns: {list(rows_data.keys()) if 'rows_data' in locals() else 'Query failed'}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
+            return np.array([], dtype=np.float32), {}
         except Exception as e:
             print(f"❌ Error in get_dataset_data_and_stats_combined: {e}")
             import traceback
@@ -570,19 +671,19 @@ class DatabaseManager:
 
         Args:
             dataset_id: The dataset ID to get boundaries for
-            
+
         Returns:
             Dict with structure: {
                 "column_name": {
                     "min_value": float,
-                    "max_value": float, 
+                    "max_value": float,
                     "valid_count": int
                 }
             }
         """
         try:
             boundaries = {}
-            
+
             with Session(self.engine) as session:
                 # Get stored statistics for numeric columns
                 stats = session.exec(
@@ -592,16 +693,651 @@ class DatabaseManager:
                     .where(DatasetColumnStats.min_value.is_not(None))
                     .where(DatasetColumnStats.max_value.is_not(None))
                 ).all()
-                
+
                 for stat in stats:
                     boundaries[stat.column_name] = {
                         'min_value': float(stat.min_value),
                         'max_value': float(stat.max_value),
                         'valid_count': int(stat.count) if stat.count else 0
                     }
-                
+
                 return boundaries
-                
+
         except Exception as e:
             return {}
-    
+
+    def get_file_statistics(self, file_id: str, column_names: List[str] = None) -> Dict[str, Dict[str, Any]]:
+        """
+        Get file statistics from associated datasets
+
+        Args:
+            file_id: The file ID
+            column_names: Optional list of specific columns to get stats for
+
+        Returns:
+            Dict with structure: {column_name: {stat_name: value}}
+        """
+        try:
+            # Get the dataset associated with this file
+            with Session(self.engine) as session:
+                dataset = session.exec(
+                    select(Dataset).where(Dataset.file_id == file_id)
+                ).first()
+
+                if not dataset:
+                    # If no dataset, generate statistics directly from DuckDB
+                    table_name = f"data_{file_id.replace('-', '_')}"
+                    if not self.check_duckdb_table_exists(table_name):
+                        return {}
+
+                    # Use pandas describe on the DuckDB table
+                    import pandas as pd
+                    import io
+
+                    with self.engine.connect() as conn:
+                        duckdb_conn = conn.connection.connection
+                        result = duckdb_conn.execute(f"SELECT * FROM {table_name}")
+                        df = result.df()
+
+                    if df.empty:
+                        return {}
+
+                    # Filter to specific columns if requested
+                    if column_names:
+                        df = df[[col for col in column_names if col in df.columns]]
+
+                    # Get statistics using pandas describe
+                    numeric_describe = df.select_dtypes(include=[np.number]).describe()
+                    numeric_columns = list(numeric_describe.columns)
+                    categorical_columns = [col for col in df.columns if col not in numeric_columns]
+
+                    statistics = {}
+
+                    # Numeric column statistics
+                    for col in numeric_columns:
+                        col_stats = numeric_describe[col]
+                        statistics[col] = {
+                            'column_type': 'numeric',
+                            'count': int(col_stats.get('count', 0)),
+                            'mean': float(col_stats.get('mean', 0)) if not pd.isna(col_stats.get('mean')) else None,
+                            'std': float(col_stats.get('std', 0)) if not pd.isna(col_stats.get('std')) else None,
+                            'min': float(col_stats.get('min', 0)) if not pd.isna(col_stats.get('min')) else None,
+                            'q25': float(col_stats.get('25%', 0)) if not pd.isna(col_stats.get('25%')) else None,
+                            'q50': float(col_stats.get('50%', 0)) if not pd.isna(col_stats.get('50%')) else None,
+                            'q75': float(col_stats.get('75%', 0)) if not pd.isna(col_stats.get('75%')) else None,
+                            'max': float(col_stats.get('max', 0)) if not pd.isna(col_stats.get('max')) else None,
+                            'null_count': int(df[col].isnull().sum()),
+                            'unique_count': int(df[col].nunique()),
+                        }
+
+                    # Categorical column statistics
+                    for col in categorical_columns:
+                        value_counts = df[col].value_counts()
+                        statistics[col] = {
+                            'column_type': 'categorical',
+                            'count': int(df[col].count()),
+                            'null_count': int(df[col].isnull().sum()),
+                            'unique_count': int(df[col].nunique()),
+                            'top_values': value_counts.index.tolist()[:10],  # Top 10
+                            'top_counts': value_counts.values.tolist()[:10]
+                        }
+
+                    return statistics
+
+                # Get statistics from stored dataset stats
+                stats_query = select(DatasetColumnStats).where(DatasetColumnStats.dataset_id == dataset.id)
+
+                # Filter by column names if specified
+                if column_names:
+                    stats_query = stats_query.where(DatasetColumnStats.column_name.in_(column_names))
+
+                stats = session.exec(stats_query).all()
+
+                statistics = {}
+                for stat in stats:
+                    stat_dict = {
+                        'column_type': stat.column_type,
+                        'count': int(stat.count) if stat.count else 0,
+                        'null_count': int(stat.null_count) if stat.null_count else 0,
+                        'unique_count': int(stat.unique_count) if stat.unique_count else 0,
+                    }
+
+                    if stat.column_type == 'numeric':
+                        stat_dict.update({
+                            'mean': float(stat.mean) if stat.mean else None,
+                            'std': float(stat.std) if stat.std else None,
+                            'min': float(stat.min_value) if stat.min_value is not None else None,
+                            'q25': float(stat.q25) if stat.q25 else None,
+                            'q50': float(stat.q50) if stat.q50 else None,
+                            'q75': float(stat.q75) if stat.q75 else None,
+                            'max': float(stat.max_value) if stat.max_value is not None else None,
+                        })
+
+                    statistics[stat.column_name] = stat_dict
+
+                return statistics
+
+        except Exception as e:
+            print(f"❌ Error getting file statistics: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}
+
+    # ========== Data Manipulation Methods ==========
+
+    def replace_file_data(self, file_id: str, replacements: List[Tuple[str, str]], columns: List[str] = None) -> Tuple[bool, int, str]:
+        """
+        Replace values in DuckDB table
+
+        Args:
+            file_id: The file ID
+            replacements: List of (from_value, to_value) tuples
+            columns: Optional list of specific columns to apply replacements to
+
+        Returns:
+            Tuple of (success, rows_affected, error_message)
+        """
+        try:
+            table_name = f"data_{file_id.replace('-', '_')}"
+
+            if not self.check_duckdb_table_exists(table_name):
+                return False, 0, f"Table {table_name} does not exist"
+
+            total_cells_affected = 0
+
+            with self.engine.connect() as conn:
+                with conn.begin():
+                    # Get all columns if none specified
+                    if not columns:
+                        result = conn.execute(text(f"DESCRIBE {table_name}"))
+                        columns = [row[0] for row in result]
+
+                    # Apply replacements to each column
+                    for col in columns:
+                        for from_val, to_val in replacements:
+                            # Count matching rows before update
+                            count_query = f"""
+                                SELECT COUNT(*) FROM {table_name}
+                                WHERE "{col}" = '{from_val}'
+                            """
+                            count_result = conn.execute(text(count_query)).fetchone()
+                            matching_count = int(count_result[0]) if count_result else 0
+
+                            if matching_count > 0:
+                                # Handle NULL replacements
+                                if to_val.upper() == "NULL" or to_val == "":
+                                    update_query = f"""
+                                        UPDATE {table_name}
+                                        SET "{col}" = NULL
+                                        WHERE "{col}" = '{from_val}'
+                                    """
+                                else:
+                                    update_query = f"""
+                                        UPDATE {table_name}
+                                        SET "{col}" = '{to_val}'
+                                        WHERE "{col}" = '{from_val}'
+                                    """
+
+                                conn.execute(text(update_query))
+                                total_cells_affected += matching_count
+
+            return True, total_cells_affected, ""
+
+        except Exception as e:
+            return False, 0, str(e)
+
+    def search_file_data(self, file_id: str, query: str, limit: int = 100, offset: int = 0) -> Tuple[bool, List[Dict[str, Any]], int, str]:
+        """
+        Search/filter file data with pagination
+
+        Args:
+            file_id: The file ID
+            query: SQL WHERE clause (without WHERE keyword)
+            limit: Max results
+            offset: Pagination offset
+
+        Returns:
+            Tuple of (success, data_rows, total_rows, error_message)
+        """
+        try:
+            table_name = f"data_{file_id.replace('-', '_')}"
+
+            if not self.check_duckdb_table_exists(table_name):
+                return False, [], 0, f"Table {table_name} does not exist"
+
+            with self.engine.connect() as conn:
+                # Get total count
+                if query and query.strip():
+                    count_query = f"SELECT COUNT(*) FROM {table_name} WHERE {query}"
+                else:
+                    count_query = f"SELECT COUNT(*) FROM {table_name}"
+
+                count_result = conn.execute(text(count_query)).fetchone()
+                total_rows = int(count_result[0])
+
+                # Get data with pagination
+                if query and query.strip():
+                    data_query = f"SELECT * FROM {table_name} WHERE {query} LIMIT {limit} OFFSET {offset}"
+                else:
+                    data_query = f"SELECT * FROM {table_name} LIMIT {limit} OFFSET {offset}"
+
+                result = conn.execute(text(data_query))
+                columns = result.keys()
+
+                data_rows = []
+                for row in result:
+                    row_dict = {col: str(val) if val is not None else "" for col, val in zip(columns, row)}
+                    data_rows.append(row_dict)
+
+            return True, data_rows, total_rows, ""
+
+        except Exception as e:
+            return False, [], 0, str(e)
+
+    def filter_file_data(self, file_id: str, column: str, operation: str, value: str,
+                        create_new_file: bool = False, new_file_name: str = None, project_id: str = None) -> Tuple[bool, str, int, str]:
+        """
+        Filter file data with optional new file creation
+
+        Args:
+            file_id: The file ID
+            column: Column name to filter
+            operation: Comparison operation (=, !=, >, <, >=, <=, LIKE)
+            value: Value to compare against
+            create_new_file: Whether to create a new file
+            new_file_name: Name for new file (required if create_new_file=True)
+            project_id: Project ID (required if create_new_file=True)
+
+        Returns:
+            Tuple of (success, result_file_id, total_rows, error_message)
+        """
+        try:
+            table_name = f"data_{file_id.replace('-', '_')}"
+
+            if not self.check_duckdb_table_exists(table_name):
+                return False, "", 0, f"Table {table_name} does not exist"
+
+            # Build WHERE clause
+            if operation.upper() == "LIKE":
+                where_clause = f'"{column}" LIKE \'%{value}%\''
+            else:
+                where_clause = f'"{column}" {operation} \'{value}\''
+
+            if create_new_file:
+                if not new_file_name or not project_id:
+                    return False, "", 0, "new_file_name and project_id required when create_new_file=True"
+
+                # Create new file and table
+                new_file_id = self.generate_id()
+                new_table_name = f"data_{new_file_id.replace('-', '_')}"
+
+                with self.engine.connect() as conn:
+                    with conn.begin():
+                        # Create filtered table
+                        create_query = f"""
+                            CREATE TABLE {new_table_name} AS
+                            SELECT * FROM {table_name}
+                            WHERE {where_clause}
+                        """
+                        conn.execute(text(create_query))
+
+                        # Get row count
+                        count_result = conn.execute(text(f"SELECT COUNT(*) FROM {new_table_name}")).fetchone()
+                        total_rows = int(count_result[0])
+
+                # Create File metadata record
+                file = File(
+                    id=new_file_id,
+                    project_id=project_id,
+                    name=new_file_name,
+                    dataset_type=0,  # UNSPECIFIED
+                    original_filename=f"{new_file_name}_filtered.csv",
+                    file_size=0,
+                    created_at=self.get_timestamp(),
+                )
+
+                with Session(self.engine) as session:
+                    session.add(file)
+                    session.commit()
+
+                return True, new_file_id, total_rows, ""
+
+            else:
+                # Filter in place (delete non-matching rows)
+                with self.engine.connect() as conn:
+                    with conn.begin():
+                        delete_query = f"DELETE FROM {table_name} WHERE NOT ({where_clause})"
+                        conn.execute(text(delete_query))
+
+                        # Get remaining row count
+                        count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
+                        total_rows = int(count_result[0])
+
+                return True, file_id, total_rows, ""
+
+        except Exception as e:
+            return False, "", 0, str(e)
+
+    def delete_file_points(self, file_id: str, row_indices: List[int]) -> Tuple[bool, int, int, str]:
+        """
+        Delete specific rows from file by index
+
+        Args:
+            file_id: The file ID
+            row_indices: List of row indices to delete (0-based)
+
+        Returns:
+            Tuple of (success, rows_deleted, rows_remaining, error_message)
+        """
+        try:
+            table_name = f"data_{file_id.replace('-', '_')}"
+
+            if not self.check_duckdb_table_exists(table_name):
+                return False, 0, 0, f"Table {table_name} does not exist"
+
+            with self.engine.connect() as conn:
+                with conn.begin():
+                    # DuckDB doesn't have built-in row numbers, so we need to add a temporary rowid
+                    # Create a CTE with row numbers and delete matching indices
+                    if row_indices:
+                        # Convert to 1-based for SQL
+                        indices_str = ",".join(str(i + 1) for i in row_indices)
+
+                        delete_query = f"""
+                            DELETE FROM {table_name}
+                            WHERE rowid IN (
+                                SELECT rowid FROM {table_name} LIMIT {max(row_indices) + 1}
+                            )
+                            AND rowid IN ({indices_str})
+                        """
+                        result = conn.execute(text(delete_query))
+                        rows_deleted = result.rowcount
+
+                        # Get remaining count
+                        count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
+                        rows_remaining = int(count_result[0])
+
+                        return True, rows_deleted, rows_remaining, ""
+                    else:
+                        # No rows to delete
+                        count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
+                        rows_remaining = int(count_result[0])
+                        return True, 0, rows_remaining, ""
+
+        except Exception as e:
+            return False, 0, 0, str(e)
+
+    # ========== Advanced Column Operations ==========
+
+    def add_file_columns(self, file_id: str, new_columns: List[Tuple[str, List[str]]]) -> Tuple[bool, List[str], str]:
+        """
+        Add new columns to file
+
+        Args:
+            file_id: The file ID
+            new_columns: List of (column_name, values) tuples
+
+        Returns:
+            Tuple of (success, added_columns, error_message)
+        """
+        try:
+            table_name = f"data_{file_id.replace('-', '_')}"
+
+            if not self.check_duckdb_table_exists(table_name):
+                return False, [], f"Table {table_name} does not exist"
+
+            added_columns = []
+
+            with self.engine.connect() as conn:
+                with conn.begin():
+                    # Get current row count
+                    count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
+                    row_count = int(count_result[0])
+
+                    for col_name, values in new_columns:
+                        # Validate value count matches row count
+                        if len(values) != row_count:
+                            return False, [], f"Column '{col_name}' has {len(values)} values but table has {row_count} rows"
+
+                        # Add column with default NULL
+                        conn.execute(text(f'ALTER TABLE {table_name} ADD COLUMN "{col_name}" VARCHAR'))
+
+                        # Update values using row_number
+                        # Create a temporary table with values and use UPDATE FROM
+                        temp_values = ",".join([f"({i+1}, '{val}')" for i, val in enumerate(values)])
+
+                        # DuckDB approach: use UPDATE with row_number
+                        update_query = f"""
+                            UPDATE {table_name}
+                            SET "{col_name}" = temp.value
+                            FROM (
+                                SELECT row_number() OVER () as rn, * FROM (
+                                    VALUES {temp_values}
+                                ) AS t(rn_val, value)
+                            ) AS temp
+                            WHERE {table_name}.rowid = temp.rn_val
+                        """
+                        conn.execute(text(update_query))
+
+                        added_columns.append(col_name)
+
+            return True, added_columns, ""
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return False, [], str(e)
+
+    def duplicate_file_columns(self, file_id: str, column_names: List[str]) -> Tuple[bool, List[str], str]:
+        """
+        Duplicate existing columns
+
+        Args:
+            file_id: The file ID
+            column_names: List of column names to duplicate
+
+        Returns:
+            Tuple of (success, duplicated_columns, error_message)
+        """
+        try:
+            table_name = f"data_{file_id.replace('-', '_')}"
+
+            if not self.check_duckdb_table_exists(table_name):
+                return False, [], f"Table {table_name} does not exist"
+
+            duplicated_columns = []
+
+            with self.engine.connect() as conn:
+                with conn.begin():
+                    # Get existing columns
+                    result = conn.execute(text(f"DESCRIBE {table_name}"))
+                    existing_columns = {row[0] for row in result}
+
+                    for col_name in column_names:
+                        if col_name not in existing_columns:
+                            continue  # Skip if column doesn't exist
+
+                        # Generate new column name
+                        new_col_name = f"{col_name}_copy"
+                        counter = 1
+                        while new_col_name in existing_columns:
+                            new_col_name = f"{col_name}_copy{counter}"
+                            counter += 1
+
+                        # Add new column and copy values
+                        conn.execute(text(f'ALTER TABLE {table_name} ADD COLUMN "{new_col_name}" VARCHAR'))
+                        conn.execute(text(f'UPDATE {table_name} SET "{new_col_name}" = "{col_name}"'))
+
+                        duplicated_columns.append(new_col_name)
+                        existing_columns.add(new_col_name)
+
+            return True, duplicated_columns, ""
+
+        except Exception as e:
+            return False, [], str(e)
+
+    # ========== Dataset Merging ==========
+
+    def merge_datasets(self, first_dataset_id: str, second_dataset_id: str, mode: str,
+                      exclude_columns_first: List[str] = None, exclude_columns_second: List[str] = None,
+                      output_file: str = None) -> Tuple[bool, str, int, int, List[str], str]:
+        """
+        Merge two datasets by rows or columns
+
+        Args:
+            first_dataset_id: First dataset ID
+            second_dataset_id: Second dataset ID
+            mode: "BY_ROWS" or "BY_COLUMNS"
+            exclude_columns_first: Columns to exclude from first dataset (BY_COLUMNS only)
+            exclude_columns_second: Columns to exclude from second dataset (BY_COLUMNS only)
+            output_file: Optional output file name
+
+        Returns:
+            Tuple of (success, result_dataset_id, rows_merged, columns_merged, warnings, error_message)
+        """
+        try:
+            # Get datasets
+            dataset1 = self.get_dataset_by_id(first_dataset_id)
+            dataset2 = self.get_dataset_by_id(second_dataset_id)
+
+            if not dataset1 or not dataset2:
+                return False, "", 0, 0, [], "One or both datasets not found"
+
+            table1 = dataset1.duckdb_table_name
+            table2 = dataset2.duckdb_table_name
+
+            warnings = []
+
+            # Create new table for merged data
+            merged_dataset_id = self.generate_id()
+            merged_table_name = f"data_{merged_dataset_id.replace('-', '_')}"
+
+            with self.engine.connect() as conn:
+                with conn.begin():
+                    if mode == "BY_ROWS":
+                        # UNION ALL - append rows
+                        # Get columns from both tables
+                        cols1 = set(row[0] for row in conn.execute(text(f"DESCRIBE {table1}")))
+                        cols2 = set(row[0] for row in conn.execute(text(f"DESCRIBE {table2}")))
+
+                        # Check if column sets match
+                        if cols1 != cols2:
+                            warnings.append("Column sets don't match exactly. Using intersection.")
+                            common_cols = cols1.intersection(cols2)
+                            col_list = ",".join([f'"{col}"' for col in common_cols])
+                        else:
+                            col_list = "*"
+
+                        # Create merged table
+                        create_query = f"""
+                            CREATE TABLE {merged_table_name} AS
+                            SELECT {col_list} FROM {table1}
+                            UNION ALL
+                            SELECT {col_list} FROM {table2}
+                        """
+                        conn.execute(text(create_query))
+
+                        # Get counts
+                        count_result = conn.execute(text(f"SELECT COUNT(*) FROM {merged_table_name}")).fetchone()
+                        rows_merged = int(count_result[0])
+
+                        col_result = conn.execute(text(f"DESCRIBE {merged_table_name}"))
+                        columns_merged = len(list(col_result))
+
+                    elif mode == "BY_COLUMNS":
+                        # JOIN - add columns from second dataset
+                        exclude_first = set(exclude_columns_first or [])
+                        exclude_second = set(exclude_columns_second or [])
+
+                        # Get columns
+                        cols1_all = [row[0] for row in conn.execute(text(f"DESCRIBE {table1}"))]
+                        cols2_all = [row[0] for row in conn.execute(text(f"DESCRIBE {table2}"))]
+
+                        # Filter columns
+                        cols1 = [c for c in cols1_all if c not in exclude_first]
+                        cols2 = [c for c in cols2_all if c not in exclude_second]
+
+                        # Build SELECT list
+                        select_parts = []
+                        select_parts.extend([f't1."{col}"' for col in cols1])
+
+                        # Avoid duplicate column names
+                        for col in cols2:
+                            if col in cols1:
+                                warnings.append(f"Column '{col}' exists in both datasets. Renaming second to '{col}_2'")
+                                select_parts.append(f't2."{col}" AS "{col}_2"')
+                            else:
+                                select_parts.append(f't2."{col}"')
+
+                        select_clause = ", ".join(select_parts)
+
+                        # Create merged table with cross join (cartesian product)
+                        # For proper join, we'd need a common key - using row_number for alignment
+                        create_query = f"""
+                            CREATE TABLE {merged_table_name} AS
+                            SELECT {select_clause}
+                            FROM (
+                                SELECT *, row_number() OVER () as rn FROM {table1}
+                            ) t1
+                            JOIN (
+                                SELECT *, row_number() OVER () as rn FROM {table2}
+                            ) t2 ON t1.rn = t2.rn
+                        """
+                        conn.execute(text(create_query))
+
+                        # Get counts
+                        count_result = conn.execute(text(f"SELECT COUNT(*) FROM {merged_table_name}")).fetchone()
+                        rows_merged = int(count_result[0])
+
+                        col_result = conn.execute(text(f"DESCRIBE {merged_table_name}"))
+                        columns_merged = len(list(col_result)) - 2  # Subtract the two 'rn' columns
+
+                        # Remove the rn columns
+                        conn.execute(text(f'ALTER TABLE {merged_table_name} DROP COLUMN rn'))
+
+                    else:
+                        return False, "", 0, 0, [], f"Invalid merge mode: {mode}"
+
+            # Get file info for creating metadata
+            file1 = None
+            file2 = None
+            with Session(self.engine) as session:
+                file1 = session.get(File, dataset1.file_id)
+                file2 = session.get(File, dataset2.file_id)
+
+            # Create new File record
+            if file1 and file2:
+                merged_file_id = self.generate_id()
+                merged_file_name = output_file or f"merged_{mode.lower()}"
+
+                merged_file = File(
+                    id=merged_file_id,
+                    project_id=file1.project_id,  # Use first file's project
+                    name=merged_file_name,
+                    dataset_type=file1.dataset_type,
+                    original_filename=f"{merged_file_name}.csv",
+                    file_size=0,
+                    created_at=self.get_timestamp(),
+                )
+
+                with Session(self.engine) as session:
+                    session.add(merged_file)
+                    session.commit()
+
+                # Create Dataset record
+                merged_dataset = self.create_dataset(
+                    merged_file_id,
+                    merged_table_name,
+                    rows_merged,
+                    []  # No column mappings for merged data
+                )
+
+                return True, merged_dataset.id, rows_merged, columns_merged, warnings, ""
+            else:
+                return False, "", 0, 0, warnings, "Failed to get file metadata"
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return False, "", 0, 0, [], str(e)
+

@@ -21,6 +21,10 @@ This is a **desktop geospatial application** built with Electron that combines a
 - **Testing**: Vitest (unit), Playwright (e2e), React Testing Library
 - **Build**: Vite 6, Electron Forge, PyInstaller
 
+Always use context7 when I need code generation, setup or configuration steps, or
+library/API documentation. This means you should automatically use the Context7 MCP
+tools to resolve library id and get library docs without me having to explicitly ask.
+
 ### Key Architecture Patterns
 
 1. **✅ Auto-Generated gRPC API**: Complete type safety with auto-generated clients, handlers, and contexts

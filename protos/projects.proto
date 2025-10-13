@@ -154,6 +154,190 @@ message DeleteFileResponse {
   string error_message = 2;
 }
 
+// Update file metadata
+message UpdateFileRequest {
+  string file_id = 1;
+  string name = 2;
+}
+
+message UpdateFileResponse {
+  File file = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+// Rename file columns in DuckDB
+message RenameFileColumnRequest {
+  string file_id = 1;
+  map<string, string> column_renames = 2;  // old_name -> new_name
+}
+
+message RenameFileColumnResponse {
+  repeated string renamed_columns = 1;  // List of new column names
+  bool success = 2;
+  string error_message = 3;
+}
+
+// Get file statistics
+message GetFileStatisticsRequest {
+  string file_id = 1;
+  repeated string columns = 2;  // Optional: specific columns to get stats for
+}
+
+message ColumnStatistics {
+  string column_name = 1;
+  string data_type = 2;  // "numeric" or "categorical"
+  int32 count = 3;
+  int32 null_count = 4;
+  int32 unique_count = 5;
+
+  // For numeric columns
+  optional double mean = 6;
+  optional double std = 7;
+  optional double min = 8;
+  optional double q25 = 9;
+  optional double q50 = 10;  // median
+  optional double q75 = 11;
+  optional double max = 12;
+
+  // For categorical columns
+  repeated string top_values = 13;
+  repeated int32 top_counts = 14;
+}
+
+message GetFileStatisticsResponse {
+  repeated ColumnStatistics statistics = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+// ========== Data Manipulation Operations ==========
+
+// Replace file data (data cleaning)
+message DataReplacement {
+  string from_value = 1;
+  string to_value = 2;
+}
+
+message ReplaceFileDataRequest {
+  string file_id = 1;
+  repeated DataReplacement replacements = 2;
+  repeated string columns = 3;  // Optional: specific columns to apply replacements
+}
+
+message ReplaceFileDataResponse {
+  int32 rows_affected = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+// Search/filter file data with pagination
+message SearchFileDataRequest {
+  string file_id = 1;
+  string query = 2;  // Search query/filter condition
+  int32 limit = 3;   // Max results to return
+  int32 offset = 4;  // Pagination offset
+}
+
+message SearchFileDataResponse {
+  string file_id = 1;
+  int32 total_rows = 2;
+  int32 current_page = 3;
+  repeated DataRow data = 4;
+  bool success = 5;
+  string error_message = 6;
+}
+
+// Filter file data with optional new file creation
+message FilterFileDataRequest {
+  string file_id = 1;
+  string column = 2;
+  string operation = 3;  // "=", "!=", ">", "<", ">=", "<=", "LIKE"
+  string value = 4;
+  bool create_new_file = 5;
+  string new_file_name = 6;  // Required if create_new_file=true
+}
+
+message FilterFileDataResponse {
+  string file_id = 1;  // Original or new file_id
+  int32 total_rows = 2;
+  bool success = 3;
+  string error_message = 4;
+}
+
+// Delete specific points/rows from file
+message DeleteFilePointsRequest {
+  string file_id = 1;
+  repeated int32 row_indices = 2;  // Row indices to delete
+}
+
+message DeleteFilePointsResponse {
+  int32 rows_deleted = 1;
+  int32 rows_remaining = 2;
+  bool success = 3;
+  string error_message = 4;
+}
+
+// ========== Advanced Column Operations ==========
+
+// Add new columns to file
+message NewColumn {
+  string column_name = 1;
+  repeated string values = 2;  // Must match row count
+}
+
+message AddFileColumnsRequest {
+  string file_id = 1;
+  repeated NewColumn new_columns = 2;
+}
+
+message AddFileColumnsResponse {
+  repeated string added_columns = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+// Duplicate existing columns
+message DuplicateFileColumnsRequest {
+  string file_id = 1;
+  repeated string column_names = 2;  // Columns to duplicate
+}
+
+message DuplicateFileColumnsResponse {
+  repeated string duplicated_columns = 1;  // New column names (original_name_copy)
+  bool success = 2;
+  string error_message = 3;
+}
+
+// ========== Dataset Merging ==========
+
+enum MergeMode {
+  MERGE_MODE_UNSPECIFIED = 0;
+  MERGE_MODE_BY_ROWS = 1;      // UNION ALL - append rows
+  MERGE_MODE_BY_COLUMNS = 2;   // JOIN - add columns
+}
+
+message MergeDatasetsRequest {
+  string first_dataset_id = 1;
+  string second_dataset_id = 2;
+  MergeMode mode = 3;
+
+  // Only for BY_COLUMNS mode
+  repeated string exclude_columns_first = 4;   // Columns to exclude from first dataset
+  repeated string exclude_columns_second = 5;  // Columns to exclude from second dataset
+
+  string output_file = 6;  // Optional: name for merged file
+}
+
+message MergeDatasetsResponse {
+  string dataset_id = 1;         // ID of resulting dataset
+  int32 rows_merged = 2;
+  int32 columns_merged = 3;
+  repeated string warnings = 4;
+  bool success = 5;
+  string error_message = 6;
+}
+
 // Enhanced CSV analysis with column type detection
 message AnalyzeCsvForProjectRequest {
   string file_id = 1;

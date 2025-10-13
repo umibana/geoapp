@@ -243,22 +243,362 @@ class ProjectManager:
     def delete_file(self, request: projects_pb2.DeleteFileRequest) -> projects_pb2.DeleteFileResponse:
         """Eliminar un archivo"""
         try:
-            
+
             success = self.db.delete_file(request.file_id)
-            
+
             response = projects_pb2.DeleteFileResponse()
             response.success = success
             if not success:
                 response.error_message = "Archivo no encontrado"
-            
+
             return response
-            
+
         except Exception as e:
             response = projects_pb2.DeleteFileResponse()
             response.success = False
             response.error_message = str(e)
             return response
-    
+
+    def update_file(self, request: projects_pb2.UpdateFileRequest) -> projects_pb2.UpdateFileResponse:
+        """Actualizar metadata de archivo (nombre)"""
+        try:
+
+            file_data = self.db.update_file(request.file_id, request.name)
+
+            response = projects_pb2.UpdateFileResponse()
+            if file_data:
+                response.success = True
+                response.file.id = file_data.id
+                response.file.project_id = file_data.project_id
+                response.file.name = file_data.name
+                response.file.dataset_type = file_data.dataset_type
+                response.file.original_filename = file_data.original_filename
+                response.file.file_size = file_data.file_size
+                response.file.created_at = file_data.created_at
+            else:
+                response.success = False
+                response.error_message = "Archivo no encontrado"
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.UpdateFileResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def rename_file_column(self, request: projects_pb2.RenameFileColumnRequest) -> projects_pb2.RenameFileColumnResponse:
+        """Renombrar columnas en tabla DuckDB de un archivo"""
+        try:
+
+            # Convert protobuf map to Python dict
+            column_renames = dict(request.column_renames)
+
+            success, renamed_columns, error_msg = self.db.rename_file_columns(
+                request.file_id,
+                column_renames
+            )
+
+            response = projects_pb2.RenameFileColumnResponse()
+            response.success = success
+            response.renamed_columns.extend(renamed_columns)
+
+            if not success:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.RenameFileColumnResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def get_file_statistics(self, request: projects_pb2.GetFileStatisticsRequest) -> projects_pb2.GetFileStatisticsResponse:
+        """Obtener estadísticas de archivo"""
+        try:
+
+            # Get column names filter if provided
+            column_names = list(request.columns) if request.columns else None
+
+            statistics = self.db.get_file_statistics(request.file_id, column_names)
+
+            response = projects_pb2.GetFileStatisticsResponse()
+            response.success = True
+
+            # Build response with statistics
+            for col_name, stats in statistics.items():
+                col_stat = response.statistics.add()
+                col_stat.column_name = col_name
+                col_stat.data_type = stats.get('column_type', 'numeric')
+                col_stat.count = stats.get('count', 0)
+                col_stat.null_count = stats.get('null_count', 0)
+                col_stat.unique_count = stats.get('unique_count', 0)
+
+                # Add numeric statistics if available
+                if stats.get('column_type') == 'numeric':
+                    if stats.get('mean') is not None:
+                        col_stat.mean = stats['mean']
+                    if stats.get('std') is not None:
+                        col_stat.std = stats['std']
+                    if stats.get('min') is not None:
+                        col_stat.min = stats['min']
+                    if stats.get('q25') is not None:
+                        col_stat.q25 = stats['q25']
+                    if stats.get('q50') is not None:
+                        col_stat.q50 = stats['q50']
+                    if stats.get('q75') is not None:
+                        col_stat.q75 = stats['q75']
+                    if stats.get('max') is not None:
+                        col_stat.max = stats['max']
+
+                # Add categorical statistics if available
+                if stats.get('column_type') == 'categorical':
+                    if stats.get('top_values'):
+                        col_stat.top_values.extend(stats['top_values'])
+                    if stats.get('top_counts'):
+                        col_stat.top_counts.extend(stats['top_counts'])
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.GetFileStatisticsResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    # ========== Métodos de manipulación de datos ==========
+
+    def replace_file_data(self, request: projects_pb2.ReplaceFileDataRequest) -> projects_pb2.ReplaceFileDataResponse:
+        """Reemplazar valores en archivo"""
+        try:
+
+            # Convert protobuf replacements to list of tuples
+            replacements = [(r.from_value, r.to_value) for r in request.replacements]
+            # Convert columns - if empty array, treat as None (all columns)
+            columns = list(request.columns) if request.columns and len(request.columns) > 0 else None
+
+            success, rows_affected, error_msg = self.db.replace_file_data(
+                request.file_id,
+                replacements,
+                columns
+            )
+
+            response = projects_pb2.ReplaceFileDataResponse()
+            response.success = success
+            response.rows_affected = rows_affected
+
+            if not success:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.ReplaceFileDataResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def search_file_data(self, request: projects_pb2.SearchFileDataRequest) -> projects_pb2.SearchFileDataResponse:
+        """Buscar/filtrar datos en archivo con paginación"""
+        try:
+
+            success, data_rows, total_rows, error_msg = self.db.search_file_data(
+                request.file_id,
+                request.query,
+                request.limit or 100,
+                request.offset or 0
+            )
+
+            response = projects_pb2.SearchFileDataResponse()
+            response.success = success
+            response.file_id = request.file_id
+            response.total_rows = total_rows
+            response.current_page = (request.offset // request.limit) + 1 if request.limit else 1
+
+            if success:
+                for row_dict in data_rows:
+                    data_row = response.data.add()
+                    data_row.fields.update(row_dict)
+            else:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.SearchFileDataResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def filter_file_data(self, request: projects_pb2.FilterFileDataRequest) -> projects_pb2.FilterFileDataResponse:
+        """Filtrar datos de archivo con opción de crear nuevo archivo"""
+        try:
+
+            # Get project_id if creating new file
+            project_id = None
+            if request.create_new_file:
+                # Get project_id from the original file
+                file_data = self.db.get_project_files("")  # We need a helper method
+                # For now, let's extract it from database
+                with self.db.engine.connect() as conn:
+                    from sqlalchemy import text
+                    result = conn.execute(text(f"SELECT project_id FROM file WHERE id = '{request.file_id}'")).fetchone()
+                    if result:
+                        project_id = result[0]
+
+            success, result_file_id, total_rows, error_msg = self.db.filter_file_data(
+                request.file_id,
+                request.column,
+                request.operation,
+                request.value,
+                request.create_new_file,
+                request.new_file_name if request.create_new_file else None,
+                project_id
+            )
+
+            response = projects_pb2.FilterFileDataResponse()
+            response.success = success
+            response.file_id = result_file_id
+            response.total_rows = total_rows
+
+            if not success:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.FilterFileDataResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def delete_file_points(self, request: projects_pb2.DeleteFilePointsRequest) -> projects_pb2.DeleteFilePointsResponse:
+        """Eliminar puntos/filas específicas de archivo"""
+        try:
+
+            row_indices = list(request.row_indices)
+
+            success, rows_deleted, rows_remaining, error_msg = self.db.delete_file_points(
+                request.file_id,
+                row_indices
+            )
+
+            response = projects_pb2.DeleteFilePointsResponse()
+            response.success = success
+            response.rows_deleted = rows_deleted
+            response.rows_remaining = rows_remaining
+
+            if not success:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.DeleteFilePointsResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    # ========== Operaciones avanzadas de columnas ==========
+
+    def add_file_columns(self, request: projects_pb2.AddFileColumnsRequest) -> projects_pb2.AddFileColumnsResponse:
+        """Agregar nuevas columnas a archivo"""
+        try:
+
+            # Convert protobuf columns to list of tuples
+            new_columns = [(col.column_name, list(col.values)) for col in request.new_columns]
+
+            success, added_columns, error_msg = self.db.add_file_columns(
+                request.file_id,
+                new_columns
+            )
+
+            response = projects_pb2.AddFileColumnsResponse()
+            response.success = success
+            response.added_columns.extend(added_columns)
+
+            if not success:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.AddFileColumnsResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def duplicate_file_columns(self, request: projects_pb2.DuplicateFileColumnsRequest) -> projects_pb2.DuplicateFileColumnsResponse:
+        """Duplicar columnas existentes"""
+        try:
+
+            column_names = list(request.column_names)
+
+            success, duplicated_columns, error_msg = self.db.duplicate_file_columns(
+                request.file_id,
+                column_names
+            )
+
+            response = projects_pb2.DuplicateFileColumnsResponse()
+            response.success = success
+            response.duplicated_columns.extend(duplicated_columns)
+
+            if not success:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.DuplicateFileColumnsResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    # ========== Fusión de datasets ==========
+
+    def merge_datasets(self, request: projects_pb2.MergeDatasetsRequest) -> projects_pb2.MergeDatasetsResponse:
+        """Fusionar dos datasets por filas o columnas"""
+        try:
+
+            # Convert merge mode enum to string
+            mode_map = {
+                projects_pb2.MERGE_MODE_BY_ROWS: "BY_ROWS",
+                projects_pb2.MERGE_MODE_BY_COLUMNS: "BY_COLUMNS"
+            }
+            mode = mode_map.get(request.mode, "BY_ROWS")
+
+            exclude_first = list(request.exclude_columns_first) if request.exclude_columns_first else None
+            exclude_second = list(request.exclude_columns_second) if request.exclude_columns_second else None
+            output_file = request.output_file if request.output_file else None
+
+            success, dataset_id, rows_merged, columns_merged, warnings, error_msg = self.db.merge_datasets(
+                request.first_dataset_id,
+                request.second_dataset_id,
+                mode,
+                exclude_first,
+                exclude_second,
+                output_file
+            )
+
+            response = projects_pb2.MergeDatasetsResponse()
+            response.success = success
+            response.dataset_id = dataset_id
+            response.rows_merged = rows_merged
+            response.columns_merged = columns_merged
+            response.warnings.extend(warnings)
+
+            if not success:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.MergeDatasetsResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
     # ========== Métodos de procesamiento CSV mejorado ==========
     
     def analyze_csv_for_project(self, request: projects_pb2.AnalyzeCsvForProjectRequest) -> projects_pb2.AnalyzeCsvForProjectResponse:

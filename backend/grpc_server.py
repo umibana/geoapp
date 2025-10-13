@@ -182,9 +182,40 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
     
     def DeleteFile(self, request, context):
         return self.project_manager.delete_file(request)
-    
+
+    def UpdateFile(self, request, context):
+        return self.project_manager.update_file(request)
+
+    def RenameFileColumn(self, request, context):
+        return self.project_manager.rename_file_column(request)
+
+    def GetFileStatistics(self, request, context):
+        return self.project_manager.get_file_statistics(request)
+
+    # ---------- Manipulación de datos de archivos ----------
+
+    def ReplaceFileData(self, request, context):
+        return self.project_manager.replace_file_data(request)
+
+    def SearchFileData(self, request, context):
+        return self.project_manager.search_file_data(request)
+
+    def FilterFileData(self, request, context):
+        return self.project_manager.filter_file_data(request)
+
+    def DeleteFilePoints(self, request, context):
+        return self.project_manager.delete_file_points(request)
+
+    # ---------- Operaciones avanzadas de columnas ----------
+
+    def AddFileColumns(self, request, context):
+        return self.project_manager.add_file_columns(request)
+
+    def DuplicateFileColumns(self, request, context):
+        return self.project_manager.duplicate_file_columns(request)
+
     # ---------- Manejo de datasets ----------
-    
+
     def AnalyzeCsvForProject(self, request, context):
         return self.project_manager.analyze_csv_for_project(request)
     
@@ -196,6 +227,9 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
     
     def DeleteDataset(self, request, context):
         return self.project_manager.delete_dataset(request)
+
+    def MergeDatasets(self, request, context):
+        return self.project_manager.merge_datasets(request)
 
 
 # Servidor gRPC

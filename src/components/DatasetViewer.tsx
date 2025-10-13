@@ -243,6 +243,13 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
   const loadDataset = async () => {
     try {
+      console.log('🔄 loadDataset called with:', {
+        dataset_id: datasetInfo.id,
+        file_id: datasetInfo.file_id,
+        file_name: datasetInfo.file_name,
+        columns: [selectedXAxis, selectedYAxis, selectedValueColumn]
+      });
+
       // Use different loading state for refetches vs initial load
       if (dataset) {
         setRefetching(true);
@@ -258,14 +265,25 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         dataset_id: datasetInfo.id,
         columns: [selectedXAxis, selectedYAxis, selectedValueColumn]
       }) as GetDatasetDataResponse;
-      console.log('response', response);
+      console.log('📦 getDatasetData response:', {
+        total_count: response.total_count,
+        data_length: response.data_length,
+        has_binary_data: !!response.binary_data,
+        boundaries_count: response.data_boundaries?.length || 0
+      });
       setTimetook((performance.now() - timetook));
 
       if (response.binary_data && response.data_length > 0) {
         setDataset(response);
+        console.log('✅ Dataset loaded successfully');
+      } else {
+        console.warn('⚠️ No data returned from backend:', {
+          has_binary_data: !!response.binary_data,
+          data_length: response.data_length
+        });
       }
     } catch (err) {
-      console.error('Error loading dataset:', err);
+      console.error('❌ Error loading dataset:', err);
       setError('Error al cargar el dataset');
     } finally {
       setLoading(false);
@@ -334,18 +352,19 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     console.log('🧹 Brush selection cleared');
   };
 
-  // Apply backend brush selection for large datasets
-  const applyBackendBrushSelection = async () => {
+  // Apply brush selection (works for both small and large datasets)
+  const applyBrushSelection = async () => {
     if (!currentBrushRectRef.current) {
       console.warn('⚠️ No brush rectangle to apply');
       return;
     }
 
     try {
-      setIsApplyingSelection(true); // Use separate state to avoid chart refresh
+      setIsApplyingSelection(true);
       const rect = currentBrushRectRef.current;
 
-      console.log('📦 Applying backend brush selection with bounding box:', rect);
+      console.log('📦 Applying brush selection with bounding box:', rect);
+      console.log(`📊 Dataset size: ${dataset?.total_count} points, isLarge: ${isLargeDataset}`);
 
       const timetook = performance.now();
       const response = await window.autoGrpc.getDatasetData({
@@ -390,11 +409,11 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           selection: brushSelection
         };
 
-        console.log('✅ Backend brush selection saved to store');
+        console.log('✅ Brush selection saved to store');
         forceUpdate({}); // Update UI to show badge
       }
     } catch (err) {
-      console.error('❌ Error applying backend brush selection:', err);
+      console.error('❌ Error applying brush selection:', err);
       setError('Error al aplicar la selección');
     } finally {
       setIsApplyingSelection(false);
@@ -513,7 +532,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         toolbox: ['rect', 'clear'],
         xAxisIndex: 0,
         yAxisIndex: 0,
-        seriesIndex: [],               // CRITICAL: Don't connect brush to any series (just capture coordinates)
+        seriesIndex: [],  // Don't connect brush to any series - always use manual "Apply Selection" button
         throttleType: 'debounce',
         throttleDelay: 1000,
         brushMode: 'single',           // Only one brush area at a time
@@ -559,8 +578,8 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         },
         large: true,
         largeThreshold: 20000,
-        progressive: 30000,
-        progressiveThreshold: 20000,
+        progressive: 0,
+        // progressiveThreshold: 20000,
         symbolSize: 4,
         dimensions: [selectedXAxis, selectedYAxis, selectedValueColumn],
       }]
@@ -577,7 +596,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         style={{ height: '100%', width: '100%', minHeight: '400px' }}
         showLoading={refetching}
         loadingOption={{ text: 'Cargando datos...' }}
-        opts={{ renderer: 'canvas' }}
+        opts={{ renderer: 'canvas'}}
         onEvents={{
           'brushSelected': (params: {batch?: {areas?: {coordRange?: number[][]}[], selected?: {dataIndex: number[]}[]}[]}) => {
             // Ignore brush events triggered by programmatic actions
@@ -609,7 +628,9 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
                   hasSelected: !!batch.selected,
                   selectedLength: batch.selected?.length,
                   selectedDataLength: selectedData.length,
-                  isLargeDataset
+                  isLargeDataset,
+                  totalPoints: dataset?.total_count,
+                  threshold: LARGE_THRESHOLD
                 });
 
                 // Extract rectangle coordinates (available even in large mode)
@@ -625,64 +646,14 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
                   };
 
                   console.log(`📐 Brush rectangle:`, rectangle);
-                  console.log(`📊 Total selected points: ${selectedData.length}`);
+                  console.log(`📊 Dataset has ${dataset?.total_count} points (threshold: ${LARGE_THRESHOLD})`);
 
-                  // Store rectangle for large dataset mode (backend filtering)
+                  // Store rectangle - user will click "Apply Selection" button
                   currentBrushRectRef.current = rectangle;
-                  console.log('📦 Stored rectangle for large dataset mode:', rectangle, 'isLarge:', isLargeDataset);
+                  console.log('✅ Rectangle stored, waiting for user to click "Aplicar Selección"');
 
-                  // For small datasets with selected data, store selection immediately
-                  if (!isLargeDataset && selectedData.length > 0) {
-                    // Extract the actual point data from chartData Float32Array
-                    const selectedPointsData = new Float32Array(selectedData.length * 3);
-                    selectedData.forEach((idx: number, i: number) => {
-                      selectedPointsData[i * 3] = chartData![idx * 3];         // x
-                      selectedPointsData[i * 3 + 1] = chartData![idx * 3 + 1]; // y
-                      selectedPointsData[i * 3 + 2] = chartData![idx * 3 + 2]; // z/value
-                    });
-
-                    // Update timestamp and save to brush store
-                    lastBrushUpdateTime.current = now;
-                    console.log('💾 Creating brush selection object...');
-
-                    const brushSelection = {
-                      datasetId: datasetInfo.id,
-                      coordRange: rectangle,
-                      selectedIndices: selectedData,
-                      selectedPoints: selectedPointsData,
-                      columns: {
-                        xAxis: selectedXAxis,
-                        yAxis: selectedYAxis,
-                        value: selectedValueColumn
-                      },
-                      timestamp: now
-                    };
-
-                    console.log('🗄️ Saving to Zustand store...');
-                    // Use getState() to avoid subscribing to the store
-                    const { setBrushSelection } = useBrushStore.getState();
-                    setBrushSelection(datasetInfo.id, brushSelection);
-                    console.log('✅ Saved to Zustand store');
-
-                    console.log('📝 Updating brushInfoRef...');
-                    // Update ref immediately without triggering re-render
-                    brushInfoRef.current = {
-                      count: selectedData.length,
-                      selection: brushSelection
-                    };
-                    console.log('✅ brushInfoRef updated');
-
-                    // Force minimal re-render to show badge (doesn't change chartData/chartOptions)
-                    console.log('🔄 Forcing minimal re-render to update badge UI...');
-                    forceUpdate({});
-
-                    console.log('🏁 Brush selection saved and UI updated');
-                  } else {
-                    // Large dataset mode: just store rectangle, user will click "Apply Selection"
-                    console.log('📦 Large dataset mode: Rectangle stored, waiting for user to apply selection');
-                    console.log('📦 Forcing re-render to show Apply Selection button...');
-                    forceUpdate({}); // Trigger re-render to show "Apply Selection" button
-                  }
+                  // Force re-render to show "Apply Selection" button
+                  forceUpdate({});
                 }
               }
               // Note: We intentionally don't clear the brush from the store when
@@ -864,16 +835,13 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           
           <div className="text-sm text-muted-foreground space-y-1">
             <p>Selecciona qué columnas usar para el eje X, eje Y y valores de los puntos. Puedes usar cualquier columna para cualquier eje.</p>
-            {isLargeDataset && (
-              <p className="text-amber-600 font-medium flex items-center">
-                📦 Dataset grande detectado (&gt;{LARGE_THRESHOLD.toLocaleString()} puntos).
-                Dibuja un rectángulo y haz clic en "Aplicar Selección" para filtrar en el backend.
-              </p>
-            )}
+            <p className="text-blue-600 font-medium flex items-center">
+              <Brush className="mr-1 h-3 w-3" />
+              Activa el modo dibujo, dibuja un rectángulo y haz clic en &ldquo;Aplicar Selección&rdquo; para filtrar los puntos.
+            </p>
             { brushInfoRef.current && (
-              <p className="text-blue-600 font-medium flex items-center">
-                <Brush className="mr-1 h-3 w-3" />
-                La selección de brush se comparte entre todas las vistas del mismo dataset con las mismas columnas.
+              <p className="text-green-600 font-medium flex items-center">
+                ✓ La selección se comparte entre todas las vistas del mismo dataset con las mismas columnas.
               </p>
             )}
           </div>
@@ -920,17 +888,17 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
                     )}
                   </Button>
 
-                  {/* Apply Selection Button - Only for large datasets with rectangle */}
-                  {isLargeDataset && currentBrushRectRef.current && (
+                  {/* Apply Selection Button - Shows when rectangle is drawn (all dataset sizes) */}
+                  {currentBrushRectRef.current && (
                     <Button
                       variant="default"
                       size="sm"
-                      onClick={applyBackendBrushSelection}
+                      onClick={applyBrushSelection}
                       disabled={isApplyingSelection}
                       title="Aplicar selección con filtrado en backend"
                       className="shadow-lg bg-blue-600 hover:bg-blue-700"
                     >
-                      {isApplyingSelection ? '⏳ Aplicando...' : '📦 Aplicar Selección'}
+                      {isApplyingSelection ? '⏳ Aplicando...' : '✓ Aplicar Selección'}
                     </Button>
                   )}
 

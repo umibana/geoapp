@@ -32,11 +32,25 @@ service GeospatialService {
   rpc CreateFile(CreateFileRequest) returns (CreateFileResponse);
   rpc GetProjectFiles(GetProjectFilesRequest) returns (GetProjectFilesResponse);
   rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
-  
+  rpc UpdateFile(UpdateFileRequest) returns (UpdateFileResponse);
+  rpc RenameFileColumn(RenameFileColumnRequest) returns (RenameFileColumnResponse);
+  rpc GetFileStatistics(GetFileStatisticsRequest) returns (GetFileStatisticsResponse);
+
+  // Manipulación de datos de archivos
+  rpc ReplaceFileData(ReplaceFileDataRequest) returns (ReplaceFileDataResponse);
+  rpc SearchFileData(SearchFileDataRequest) returns (SearchFileDataResponse);
+  rpc FilterFileData(FilterFileDataRequest) returns (FilterFileDataResponse);
+  rpc DeleteFilePoints(DeleteFilePointsRequest) returns (DeleteFilePointsResponse);
+
+  // Operaciones avanzadas de columnas
+  rpc AddFileColumns(AddFileColumnsRequest) returns (AddFileColumnsResponse);
+  rpc DuplicateFileColumns(DuplicateFileColumnsRequest) returns (DuplicateFileColumnsResponse);
+
   // Gestión de datasets
   rpc GetProjectDatasets(GetProjectDatasetsRequest) returns (GetProjectDatasetsResponse);
   rpc DeleteDataset(DeleteDatasetRequest) returns (DeleteDatasetResponse);
-  
+  rpc MergeDatasets(MergeDatasetsRequest) returns (MergeDatasetsResponse);
+
   // Procesamiento de archivos CSV para proyectos
   rpc AnalyzeCsvForProject(AnalyzeCsvForProjectRequest) returns (AnalyzeCsvForProjectResponse);
   rpc ProcessDataset(ProcessDatasetRequest) returns (ProcessDatasetResponse);

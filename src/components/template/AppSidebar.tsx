@@ -1,4 +1,4 @@
-import {  Home, TestTube, TestTube2, TestTubeDiagonal, Wifi, FolderOpen, Zap, Paintbrush } from "lucide-react"
+import {  Home, TestTube, TestTube2, TestTubeDiagonal, Wifi, FolderOpen, Zap, Paintbrush, Database } from "lucide-react"
 
 import {
   Sidebar,
@@ -19,6 +19,7 @@ import {
   GrpcDemo,
   BrushedDataViewer
 } from "@/components/WindowComponents"
+import DataManipulationTester from "@/components/DataManipulationTester"
 
 // Navigation items
 const navigationItems = [
@@ -36,6 +37,12 @@ const navigationItems = [
 
 // Window items that can be opened
 const windowItems = [
+  {
+    title: "Data Manipulation Tester",
+    icon: Database,
+    component: <DataManipulationTester />,
+    size: { width: 1000, height: 700 },
+  },
   {
     title: "gRPC Demo",
     icon: Wifi,
