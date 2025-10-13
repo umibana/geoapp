@@ -327,8 +327,13 @@ class DatabaseManager:
         try:
             table_name = f"data_{file_id.replace('-', '_')}"
 
+            print(f"🔄 [BACKEND/Database] rename_file_columns called for file_id: {file_id}")
+            print(f"🔄 [BACKEND/Database] Table name: {table_name}")
+            print(f"🔄 [BACKEND/Database] Column renames: {column_renames}")
+
             # Check if table exists
             if not self.check_duckdb_table_exists(table_name):
+                print(f"❌ [BACKEND/Database] Table {table_name} does not exist")
                 return False, [], f"Table {table_name} does not exist"
 
             renamed_columns = []
@@ -339,26 +344,34 @@ class DatabaseManager:
                     # Get existing columns first
                     result = conn.execute(text(f"DESCRIBE {table_name}"))
                     existing_columns = {row[0] for row in result}
+                    print(f"🔍 [BACKEND/Database] Existing columns in DuckDB table: {existing_columns}")
 
                     # Rename each column
                     for old_name, new_name in column_renames.items():
                         if old_name not in existing_columns:
+                            print(f"⚠️ [BACKEND/Database] Column '{old_name}' not found in table, skipping")
                             continue  # Skip if column doesn't exist
 
                         # DuckDB syntax for renaming columns
+                        print(f"🔄 [BACKEND/Database] Executing: ALTER TABLE {table_name} RENAME COLUMN \"{old_name}\" TO \"{new_name}\"")
                         conn.execute(text(f"ALTER TABLE {table_name} RENAME COLUMN \"{old_name}\" TO \"{new_name}\""))
                         renamed_columns.append(new_name)
+                        print(f"✅ [BACKEND/Database] Successfully renamed column: {old_name} -> {new_name}")
+
+            print(f"✅ [BACKEND/Database] DuckDB columns renamed: {renamed_columns}")
 
             # 2. Update column_mappings in all datasets for this file
             with Session(self.engine) as session:
                 # Get all datasets for this file
                 datasets = session.exec(select(Dataset).where(Dataset.file_id == file_id)).all()
+                print(f"🔍 [BACKEND/Database] Found {len(datasets)} datasets for file_id: {file_id}")
 
                 for dataset in datasets:
                     if dataset.column_mappings:
                         # Parse JSON column mappings
                         import json
                         mappings = json.loads(dataset.column_mappings)
+                        print(f"🔍 [BACKEND/Database] Dataset {dataset.id} current mappings: {mappings}")
 
                         # Update column names in mappings
                         updated = False
@@ -368,19 +381,26 @@ class DatabaseManager:
                                 new_col_name = column_renames[old_col_name]
                                 mapping['column_name'] = new_col_name
                                 updated = True
-                                print(f"✅ Updated dataset {dataset.id} column mapping: {old_col_name} -> {new_col_name}")
+                                print(f"✅ [BACKEND/Database] Updated dataset {dataset.id} column mapping: {old_col_name} -> {new_col_name}")
 
                         if updated:
                             # Save updated mappings back to database
                             dataset.column_mappings = json.dumps(mappings)
                             session.add(dataset)
+                            print(f"💾 [BACKEND/Database] Saved updated mappings for dataset {dataset.id}")
 
                 # Commit all dataset updates
                 session.commit()
+                print(f"✅ [BACKEND/Database] Committed all dataset updates")
+
+            # 3. Recalculate statistics to reflect renamed columns
+            print(f"🔄 [BACKEND/Database] Recalculating statistics for file_id: {file_id}")
+            self.recalculate_file_statistics(file_id)
 
             return True, renamed_columns, ""
 
         except Exception as e:
+            print(f"❌ [BACKEND/Database] Exception in rename_file_columns: {str(e)}")
             import traceback
             print(f"❌ Error in rename_file_columns: {e}")
             print(traceback.format_exc())
@@ -664,7 +684,104 @@ class DatabaseManager:
                 
         except Exception as e:
             raise e
-    
+
+    def recalculate_file_statistics(self, file_id: str, sample_size: int = 10000) -> bool:
+        """
+        Recalculate statistics for a file from its DuckDB table after data manipulation
+
+        Args:
+            file_id: The file ID
+            sample_size: Sample size for large datasets (default 10K rows)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            table_name = f"data_{file_id.replace('-', '_')}"
+
+            if not self.check_duckdb_table_exists(table_name):
+                print(f"⚠️ Table {table_name} does not exist, skipping statistics recalculation")
+                return False
+
+            # Get data from DuckDB into pandas
+            import pandas as pd
+
+            with self.engine.connect() as conn:
+                duckdb_conn = conn.connection.connection
+
+                # Get total row count first
+                count_result = duckdb_conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+                total_rows = int(count_result[0])
+
+                # Sample if needed
+                if sample_size < total_rows and sample_size > 0:
+                    # Use DuckDB's SAMPLE for efficient sampling
+                    query = f"SELECT * FROM {table_name} USING SAMPLE {sample_size}"
+                else:
+                    query = f"SELECT * FROM {table_name}"
+
+                result = duckdb_conn.execute(query)
+                df = result.df()
+
+            if df.empty:
+                print(f"⚠️ No data in table {table_name}, skipping statistics recalculation")
+                return False
+
+            # Generate statistics using pandas describe()
+            numeric_describe = df.select_dtypes(include=[np.number]).describe()
+            numeric_columns = list(numeric_describe.columns)
+            categorical_columns = [col for col in df.columns if col not in numeric_columns]
+
+            column_statistics = {}
+
+            # Statistics for numeric columns
+            for col in numeric_columns:
+                if col in numeric_describe.columns:
+                    col_stats = numeric_describe[col]
+                    count = col_stats.get('count', 0)
+
+                    if count > 0:
+                        column_statistics[col] = {
+                            'column_type': 'numeric',
+                            'count': float(count),
+                            'mean': float(col_stats.get('mean', 0)) if not pd.isna(col_stats.get('mean')) else None,
+                            'std': float(col_stats.get('std', 0)) if not pd.isna(col_stats.get('std')) else None,
+                            'min': float(col_stats.get('min', 0)) if not pd.isna(col_stats.get('min')) else None,
+                            '25%': float(col_stats.get('25%', 0)) if not pd.isna(col_stats.get('25%')) else None,
+                            '50%': float(col_stats.get('50%', 0)) if not pd.isna(col_stats.get('50%')) else None,
+                            '75%': float(col_stats.get('75%', 0)) if not pd.isna(col_stats.get('75%')) else None,
+                            'max': float(col_stats.get('max', 0)) if not pd.isna(col_stats.get('max')) else None,
+                            'null_count': int(df[col].isnull().sum()),
+                            'unique_count': int(df[col].nunique()),
+                            'total_rows': total_rows
+                        }
+
+            # Statistics for categorical columns
+            for col in categorical_columns:
+                column_statistics[col] = {
+                    'column_type': 'categorical',
+                    'count': float(df[col].count()),
+                    'null_count': int(df[col].isnull().sum()),
+                    'unique_count': int(df[col].nunique()),
+                    'total_rows': total_rows
+                }
+
+            # Find all datasets associated with this file and update their statistics
+            with Session(self.engine) as session:
+                datasets = session.exec(select(Dataset).where(Dataset.file_id == file_id)).all()
+
+                for dataset in datasets:
+                    self.store_column_statistics(dataset.id, column_statistics)
+                    print(f"✅ Recalculated statistics for dataset {dataset.id}")
+
+            return True
+
+        except Exception as e:
+            import traceback
+            print(f"❌ Error recalculating file statistics: {e}")
+            print(traceback.format_exc())
+            return False
+
     def get_dataset_boundaries(self, dataset_id: str) -> Dict[str, Dict[str, float]]:
         """
         Get dataset boundaries from stored pandas describe() statistics.
@@ -881,6 +998,11 @@ class DatabaseManager:
                                 conn.execute(text(update_query))
                                 total_cells_affected += matching_count
 
+            # Recalculate statistics after data modification
+            if total_cells_affected > 0:
+                print(f"🔄 Recalculating statistics after replacing {total_cells_affected} cells")
+                self.recalculate_file_statistics(file_id)
+
             return True, total_cells_affected, ""
 
         except Exception as e:
@@ -1007,11 +1129,17 @@ class DatabaseManager:
                 with self.engine.connect() as conn:
                     with conn.begin():
                         delete_query = f"DELETE FROM {table_name} WHERE NOT ({where_clause})"
-                        conn.execute(text(delete_query))
+                        result = conn.execute(text(delete_query))
+                        rows_deleted = result.rowcount
 
                         # Get remaining row count
                         count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
                         total_rows = int(count_result[0])
+
+                # Recalculate statistics after in-place filtering
+                if rows_deleted > 0:
+                    print(f"🔄 Recalculating statistics after filtering (deleted {rows_deleted} rows)")
+                    self.recalculate_file_statistics(file_id)
 
                 return True, file_id, total_rows, ""
 
@@ -1020,11 +1148,11 @@ class DatabaseManager:
 
     def delete_file_points(self, file_id: str, row_indices: List[int]) -> Tuple[bool, int, int, str]:
         """
-        Delete specific rows from file by index
+        Delete specific rows from file by index using ROW_NUMBER
 
         Args:
             file_id: The file ID
-            row_indices: List of row indices to delete (0-based)
+            row_indices: List of row indices to delete (0-based, user-facing)
 
         Returns:
             Tuple of (success, rows_deleted, rows_remaining, error_message)
@@ -1037,18 +1165,22 @@ class DatabaseManager:
 
             with self.engine.connect() as conn:
                 with conn.begin():
-                    # DuckDB doesn't have built-in row numbers, so we need to add a temporary rowid
-                    # Create a CTE with row numbers and delete matching indices
                     if row_indices:
-                        # Convert to 1-based for SQL
-                        indices_str = ",".join(str(i + 1) for i in row_indices)
+                        # Convert 0-based user indices to 1-based SQL row numbers
+                        row_numbers = [str(i + 1) for i in sorted(row_indices)]
+                        row_numbers_str = ",".join(row_numbers)
 
+                        # Use CTE with ROW_NUMBER to reliably identify and delete rows
+                        # This approach is database-agnostic and doesn't depend on rowid behavior
                         delete_query = f"""
                             DELETE FROM {table_name}
                             WHERE rowid IN (
-                                SELECT rowid FROM {table_name} LIMIT {max(row_indices) + 1}
+                                SELECT rowid FROM (
+                                    SELECT rowid, ROW_NUMBER() OVER () as rn
+                                    FROM {table_name}
+                                ) numbered_rows
+                                WHERE rn IN ({row_numbers_str})
                             )
-                            AND rowid IN ({indices_str})
                         """
                         result = conn.execute(text(delete_query))
                         rows_deleted = result.rowcount
@@ -1056,6 +1188,11 @@ class DatabaseManager:
                         # Get remaining count
                         count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
                         rows_remaining = int(count_result[0])
+
+                        # Recalculate statistics after row deletion
+                        if rows_deleted > 0:
+                            print(f"🔄 Recalculating statistics after deleting {rows_deleted} rows")
+                            self.recalculate_file_statistics(file_id)
 
                         return True, rows_deleted, rows_remaining, ""
                     else:
@@ -1066,6 +1203,103 @@ class DatabaseManager:
 
         except Exception as e:
             return False, 0, 0, str(e)
+
+    def add_filtered_column(self, file_id: str, new_column_name: str, source_column: str,
+                           operation: str, value: str) -> Tuple[bool, str, int, str]:
+        """
+        Add a new column with filtered values (matching values shown, non-matching as NULL)
+
+        Args:
+            file_id: The file ID
+            new_column_name: Name for the new filtered column
+            source_column: Column to filter on
+            operation: Comparison operation (=, !=, >, <, >=, <=, LIKE)
+            value: Value to compare against
+
+        Returns:
+            Tuple of (success, new_column_name, rows_with_values, error_message)
+        """
+        try:
+            table_name = f"data_{file_id.replace('-', '_')}"
+
+            print(f"🔍 [BACKEND/Database] Adding filtered column '{new_column_name}' based on {source_column} {operation} {value}")
+
+            if not self.check_duckdb_table_exists(table_name):
+                return False, "", 0, f"Table {table_name} does not exist"
+
+            with self.engine.connect() as conn:
+                with conn.begin():
+                    # Build WHERE clause
+                    if operation.upper() == "LIKE":
+                        where_clause = f'"{source_column}" LIKE \'%{value}%\''
+                    else:
+                        where_clause = f'"{source_column}" {operation} \'{value}\''
+
+                    # Add new column with CASE statement
+                    # If row matches filter, copy the source column value, otherwise NULL
+                    alter_query = f"""
+                        ALTER TABLE {table_name}
+                        ADD COLUMN "{new_column_name}" VARCHAR
+                    """
+                    conn.execute(text(alter_query))
+                    print(f"✅ [BACKEND/Database] Added column '{new_column_name}'")
+
+                    # Update with filtered values using CASE
+                    update_query = f"""
+                        UPDATE {table_name}
+                        SET "{new_column_name}" = CASE
+                            WHEN {where_clause} THEN "{source_column}"
+                            ELSE NULL
+                        END
+                    """
+                    conn.execute(text(update_query))
+                    print(f"✅ [BACKEND/Database] Updated column with filtered values")
+
+                    # Count how many rows have non-NULL values
+                    count_query = f"""
+                        SELECT COUNT(*) FROM {table_name}
+                        WHERE "{new_column_name}" IS NOT NULL
+                    """
+                    count_result = conn.execute(text(count_query)).fetchone()
+                    rows_with_values = int(count_result[0])
+
+                    print(f"✅ [BACKEND/Database] {rows_with_values} rows match the filter")
+
+            # Recalculate statistics to include the new column
+            print(f"🔄 [BACKEND/Database] Recalculating statistics")
+            self.recalculate_file_statistics(file_id)
+
+            # Update column_mappings for all datasets associated with this file
+            print(f"🔄 [BACKEND/Database] Updating column_mappings for datasets")
+            with Session(self.engine) as session:
+                datasets = session.exec(select(Dataset).where(Dataset.file_id == file_id)).all()
+
+                for dataset in datasets:
+                    if dataset.column_mappings:
+                        import json
+                        mappings = json.loads(dataset.column_mappings)
+
+                        # Add the new column to mappings as a regular (non-coordinate) column
+                        mappings.append({
+                            'column_name': new_column_name,
+                            'column_type': 1,  # NUMERIC (assuming filtered columns are numeric)
+                            'mapped_field': new_column_name,  # Use column name as mapped field
+                            'is_coordinate': False
+                        })
+
+                        dataset.column_mappings = json.dumps(mappings)
+                        session.add(dataset)
+                        print(f"✅ [BACKEND/Database] Updated column_mappings for dataset {dataset.id}")
+
+                session.commit()
+
+            return True, new_column_name, rows_with_values, ""
+
+        except Exception as e:
+            print(f"❌ [BACKEND/Database] Error adding filtered column: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False, "", 0, str(e)
 
     # ========== Advanced Column Operations ==========
 
@@ -1120,6 +1354,11 @@ class DatabaseManager:
                         conn.execute(text(update_query))
 
                         added_columns.append(col_name)
+
+            # Recalculate statistics after adding columns
+            if len(added_columns) > 0:
+                print(f"🔄 Recalculating statistics after adding {len(added_columns)} columns")
+                self.recalculate_file_statistics(file_id)
 
             return True, added_columns, ""
 
@@ -1271,8 +1510,8 @@ class DatabaseManager:
 
                         select_clause = ", ".join(select_parts)
 
-                        # Create merged table with cross join (cartesian product)
-                        # For proper join, we'd need a common key - using row_number for alignment
+                        # Create merged table with row-by-row alignment
+                        # Using row_number() to align rows from both tables
                         create_query = f"""
                             CREATE TABLE {merged_table_name} AS
                             SELECT {select_clause}
@@ -1285,15 +1524,12 @@ class DatabaseManager:
                         """
                         conn.execute(text(create_query))
 
-                        # Get counts
+                        # Get counts (rn columns are NOT included in SELECT clause, so they're not in final table)
                         count_result = conn.execute(text(f"SELECT COUNT(*) FROM {merged_table_name}")).fetchone()
                         rows_merged = int(count_result[0])
 
                         col_result = conn.execute(text(f"DESCRIBE {merged_table_name}"))
-                        columns_merged = len(list(col_result)) - 2  # Subtract the two 'rn' columns
-
-                        # Remove the rn columns
-                        conn.execute(text(f'ALTER TABLE {merged_table_name} DROP COLUMN rn'))
+                        columns_merged = len(list(col_result))  # Actual column count (no rn columns to subtract)
 
                     else:
                         return False, "", 0, 0, [], f"Invalid merge mode: {mode}"

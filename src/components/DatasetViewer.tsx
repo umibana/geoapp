@@ -578,7 +578,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         },
         large: true,
         largeThreshold: 20000,
-        progressive: 0,
+        progressive: 20000,
         // progressiveThreshold: 20000,
         symbolSize: 4,
         dimensions: [selectedXAxis, selectedYAxis, selectedValueColumn],

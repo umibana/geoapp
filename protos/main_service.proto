@@ -40,6 +40,7 @@ service GeospatialService {
   rpc ReplaceFileData(ReplaceFileDataRequest) returns (ReplaceFileDataResponse);
   rpc SearchFileData(SearchFileDataRequest) returns (SearchFileDataResponse);
   rpc FilterFileData(FilterFileDataRequest) returns (FilterFileDataResponse);
+  rpc AddFilteredColumn(AddFilteredColumnRequest) returns (AddFilteredColumnResponse);
   rpc DeleteFilePoints(DeleteFilePointsRequest) returns (DeleteFilePointsResponse);
 
   // Operaciones avanzadas de columnas

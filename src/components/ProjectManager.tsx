@@ -7,7 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, Edit, Plus, FolderOpen, Upload, BarChart3, Database, Eye } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Trash2, Edit, Plus, FolderOpen, Upload, BarChart3, Database, Eye, MoreVertical, RefreshCw } from 'lucide-react';
 import DatasetViewer from './DatasetViewer';
 
 // Importar tipos generados
@@ -251,6 +252,64 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
     }
   };
 
+  const handleUpdateDatasetStats = async (fileId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent dataset click
+
+    try {
+      setLoading(true);
+      console.log('🔄 Updating statistics for file:', fileId);
+
+      // Call the backend to recalculate statistics
+      const response = await window.autoGrpc.getFileStatistics({
+        file_id: fileId,
+        columns: []
+      });
+
+      if (response.success) {
+        // Reload datasets to show updated stats
+        if (selectedProject) {
+          await loadProjectDatasets(selectedProject.id);
+        }
+        console.log('✅ Statistics updated successfully');
+      } else {
+        setError('Failed to update statistics');
+      }
+    } catch (err) {
+      console.error('Error updating statistics:', err);
+      setError('Failed to update statistics');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteDataset = async (datasetId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent dataset click
+
+    if (!confirm('Are you sure you want to delete this dataset? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await window.autoGrpc.deleteDataset({ dataset_id: datasetId });
+
+      if (response.success) {
+        // Reload datasets after deletion
+        if (selectedProject) {
+          await loadProjectDatasets(selectedProject.id);
+        }
+        console.log('✅ Dataset deleted successfully');
+      } else {
+        setError(response.error_message || 'Failed to delete dataset');
+      }
+    } catch (err) {
+      console.error('Error deleting dataset:', err);
+      setError('Failed to delete dataset');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleUploadFile = async () => {
     if (!selectedProject || !uploadFile || !uploadName.trim()) return;
 
@@ -436,6 +495,31 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
                           <Eye className="h-4 w-4 mr-2" />
                           Ver
                         </Button>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="sm">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuLabel>Opciones del Dataset</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={(e) => handleUpdateDatasetStats(dataset.file_id, e as any)}>
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Actualizar Estadísticas
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={(e) => handleDeleteDataset(dataset.id, e as any)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Eliminar Dataset
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+
                         <BarChart3 className="h-5 w-5 text-muted-foreground" />
                       </div>
                     </div>

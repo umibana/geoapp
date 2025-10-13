@@ -55,6 +55,8 @@ const DataManipulationTester: React.FC = () => {
   const [filterColumn, setFilterColumn] = useState('');
   const [filterOperation, setFilterOperation] = useState('=');
   const [filterValue, setFilterValue] = useState('');
+  const [filterMode, setFilterMode] = useState<'add_column' | 'delete_rows' | 'new_file'>('add_column');
+  const [newFilterColumnName, setNewFilterColumnName] = useState('');
   const [createNewFile, setCreateNewFile] = useState(false);
   const [newFilterFileName, setNewFilterFileName] = useState('');
   const [rowIndicesToDelete, setRowIndicesToDelete] = useState('');
@@ -133,13 +135,27 @@ const DataManipulationTester: React.FC = () => {
   const loadFileStatistics = async () => {
     try {
       setLoading(true);
+      console.log('📊 [FRONTEND] Loading file statistics for file_id:', selectedFileId);
+
       const response = await window.autoGrpc.getFileStatistics({
         file_id: selectedFileId,
         columns: [] // Get all columns
       });
-      setFileStats(response);
-      setResult({ type: 'statistics', data: response });
+
+      console.log('📊 [FRONTEND] Received statistics response:', response);
+
+      // Extract column names from statistics for use in column selection UI
+      const columns = response.statistics?.map((stat: any) => stat.column_name) || [];
+      console.log('📊 [FRONTEND] Extracted column names:', columns);
+
+      const enhancedStats = { ...response, columns };
+
+      setFileStats(enhancedStats);
+      setResult({ type: 'statistics', data: enhancedStats });
+
+      console.log('📊 [FRONTEND] Updated fileStats state with columns:', columns);
     } catch (err: any) {
+      console.error('❌ [FRONTEND] Error loading file statistics:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -190,12 +206,28 @@ const DataManipulationTester: React.FC = () => {
       const renameMap: Record<string, string> = {};
       renames.forEach(r => renameMap[r.old] = r.new);
 
+      console.log('🔄 [FRONTEND] Renaming columns:', renameMap, 'for file_id:', selectedFileId);
+
       const response = await window.autoGrpc.renameFileColumn({
         file_id: selectedFileId,
         column_renames: renameMap
       });
+
+      console.log('🔄 [FRONTEND] Rename response:', response);
       setResult({ type: 'rename', data: response });
+
+      // Refresh file statistics to show updated column names
+      if (response.success) {
+        console.log('✅ [FRONTEND] Rename successful, refreshing file statistics...');
+        await loadFileStatistics();
+        console.log('✅ [FRONTEND] File statistics refreshed');
+        // Clear the rename inputs after successful rename
+        setColumnRenames([{old: '', new: ''}]);
+      } else {
+        console.error('❌ [FRONTEND] Rename failed:', response.error_message);
+      }
     } catch (err: any) {
+      console.error('❌ [FRONTEND] Error renaming columns:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -263,21 +295,74 @@ const DataManipulationTester: React.FC = () => {
       return;
     }
 
+    if (filterMode === 'add_column' && !newFilterColumnName) {
+      setError('Please enter a name for the new filtered column');
+      return;
+    }
+
+    if (filterMode === 'new_file' && !newFilterFileName) {
+      setError('Please enter a name for the new file');
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
-      const response = await window.autoGrpc.filterFileData({
-        file_id: selectedFileId,
-        column: filterColumn,
-        operation: filterOperation,
-        value: filterValue,
-        create_new_file: createNewFile,
-        new_file_name: createNewFile ? newFilterFileName : ''
-      });
-      setResult({ type: 'filter', data: response });
-      if (response.success && createNewFile) {
-        loadProjectFiles();
+
+      if (filterMode === 'add_column') {
+        // Add a new column with filtered values (NULL for non-matching rows)
+        console.log('🔍 [FRONTEND] Creating filtered column:', newFilterColumnName);
+
+        const response = await window.autoGrpc.addFilteredColumn({
+          file_id: selectedFileId,
+          new_column_name: newFilterColumnName,
+          source_column: filterColumn,
+          operation: filterOperation,
+          value: filterValue
+        });
+
+        console.log('🔍 [FRONTEND] Add filtered column response:', response);
+        setResult({ type: 'filter', data: response });
+
+        if (response.success) {
+          await loadFileStatistics();
+          console.log(`✅ [FRONTEND] Filtered column added: ${response.rows_with_values} matches, ${response.rows_with_null} NULL`);
+        }
+
+      } else if (filterMode === 'delete_rows') {
+        // Delete rows that don't match (destructive)
+        const response = await window.autoGrpc.filterFileData({
+          file_id: selectedFileId,
+          column: filterColumn,
+          operation: filterOperation,
+          value: filterValue,
+          create_new_file: false,
+          new_file_name: ''
+        });
+        setResult({ type: 'filter', data: response });
+
+        // Refresh file statistics after deletion
+        if (response.success) {
+          await loadFileStatistics();
+        }
+
+      } else if (filterMode === 'new_file') {
+        // Create new file with filtered data
+        const response = await window.autoGrpc.filterFileData({
+          file_id: selectedFileId,
+          column: filterColumn,
+          operation: filterOperation,
+          value: filterValue,
+          create_new_file: true,
+          new_file_name: newFilterFileName
+        });
+        setResult({ type: 'filter', data: response });
+
+        if (response.success) {
+          loadProjectFiles();
+        }
       }
+
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -391,8 +476,20 @@ const DataManipulationTester: React.FC = () => {
   };
 
   const getAvailableColumns = () => {
-    if (!selectedDataset?.column_mappings) return [];
-    return selectedDataset.column_mappings.map((m: any) => m.column_name);
+    // Get columns from file statistics if available (works for file operations)
+    if (fileStats && (fileStats as any).columns) {
+      const columns = (fileStats as any).columns;
+      console.log('🔍 [FRONTEND] getAvailableColumns() returning from fileStats:', columns);
+      return columns;
+    }
+    // Fallback to dataset column mappings (for dataset-specific operations)
+    if (selectedDataset?.column_mappings) {
+      const columns = selectedDataset.column_mappings.map((m: any) => m.column_name);
+      console.log('🔍 [FRONTEND] getAvailableColumns() returning from dataset:', columns);
+      return columns;
+    }
+    console.log('🔍 [FRONTEND] getAvailableColumns() returning empty array');
+    return [];
   };
 
   return (
@@ -523,24 +620,44 @@ const DataManipulationTester: React.FC = () => {
             <CardContent className="space-y-4">
               {columnRenames.map((rename, idx) => (
                 <div key={idx} className="grid grid-cols-2 gap-4">
-                  <Input
-                    placeholder="Old column name"
-                    value={rename.old}
-                    onChange={(e) => {
-                      const updated = [...columnRenames];
-                      updated[idx].old = e.target.value;
-                      setColumnRenames(updated);
-                    }}
-                  />
-                  <Input
-                    placeholder="New column name"
-                    value={rename.new}
-                    onChange={(e) => {
-                      const updated = [...columnRenames];
-                      updated[idx].new = e.target.value;
-                      setColumnRenames(updated);
-                    }}
-                  />
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Select column to rename</Label>
+                    <Select
+                      value={rename.old}
+                      onValueChange={(value) => {
+                        const updated = [...columnRenames];
+                        updated[idx].old = value;
+                        setColumnRenames(updated);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select column" />
+                      </SelectTrigger>
+                      <SelectContent className="z-[99999]">
+                        {getAvailableColumns().length === 0 ? (
+                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                            Select a file first
+                          </div>
+                        ) : (
+                          getAvailableColumns().map((col: string) => (
+                            <SelectItem key={col} value={col}>{col}</SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">New column name</Label>
+                    <Input
+                      placeholder="New column name"
+                      value={rename.new}
+                      onChange={(e) => {
+                        const updated = [...columnRenames];
+                        updated[idx].new = e.target.value;
+                        setColumnRenames(updated);
+                      }}
+                    />
+                  </div>
                 </div>
               ))}
               <div className="flex gap-2">
@@ -682,16 +799,30 @@ const DataManipulationTester: React.FC = () => {
                 <Filter className="mr-2 h-5 w-5" />
                 Filter File Data
               </CardTitle>
+              <p className="text-sm text-muted-foreground mt-2">
+                Filter rows based on a condition. Choose how to handle the results:
+              </p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <Label>Column</Label>
-                  <Input
-                    value={filterColumn}
-                    onChange={(e) => setFilterColumn(e.target.value)}
-                    placeholder="Column name"
-                  />
+                  <Select value={filterColumn} onValueChange={setFilterColumn}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select column" />
+                    </SelectTrigger>
+                    <SelectContent className="z-[99999]">
+                      {getAvailableColumns().length === 0 ? (
+                        <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                          Select a file first
+                        </div>
+                      ) : (
+                        getAvailableColumns().map((col: string) => (
+                          <SelectItem key={col} value={col}>{col}</SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label>Operation</Label>
@@ -699,14 +830,14 @@ const DataManipulationTester: React.FC = () => {
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[99999]">
                       <SelectItem value="=">=</SelectItem>
                       <SelectItem value="!=">!=</SelectItem>
                       <SelectItem value=">">&gt;</SelectItem>
                       <SelectItem value="<">&lt;</SelectItem>
                       <SelectItem value=">=">&gt;=</SelectItem>
                       <SelectItem value="<=">&lt;=</SelectItem>
-                      <SelectItem value="LIKE">LIKE</SelectItem>
+                      <SelectItem value="LIKE">LIKE (text contains)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -719,23 +850,80 @@ const DataManipulationTester: React.FC = () => {
                   />
                 </div>
               </div>
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2">
+
+              <div className="space-y-3 border-t pt-4">
+                <Label className="text-base">Filter Mode:</Label>
+
+                <label className="flex items-start gap-3 p-3 border rounded-lg hover:bg-accent cursor-pointer">
                   <input
-                    type="checkbox"
-                    checked={createNewFile}
-                    onChange={(e) => setCreateNewFile(e.target.checked)}
+                    type="radio"
+                    name="filterMode"
+                    value="add_column"
+                    checked={filterMode === 'add_column'}
+                    onChange={(e) => setFilterMode(e.target.value as any)}
+                    className="mt-1"
                   />
-                  Create new file
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">✅ Add filtered column (Safe - Recommended)</div>
+                    <div className="text-xs text-muted-foreground">
+                      Creates a new column with matching values, NULL for non-matching rows. Original data preserved.
+                    </div>
+                    {filterMode === 'add_column' && (
+                      <Input
+                        value={newFilterColumnName}
+                        onChange={(e) => setNewFilterColumnName(e.target.value)}
+                        placeholder="New column name (e.g., 'Year_2023')"
+                        className="mt-2"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    )}
+                  </div>
                 </label>
-                {createNewFile && (
-                  <Input
-                    value={newFilterFileName}
-                    onChange={(e) => setNewFilterFileName(e.target.value)}
-                    placeholder="New file name"
+
+                <label className="flex items-start gap-3 p-3 border rounded-lg hover:bg-accent cursor-pointer">
+                  <input
+                    type="radio"
+                    name="filterMode"
+                    value="new_file"
+                    checked={filterMode === 'new_file'}
+                    onChange={(e) => setFilterMode(e.target.value as any)}
+                    className="mt-1"
                   />
-                )}
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">📄 Create new file (Safe)</div>
+                    <div className="text-xs text-muted-foreground">
+                      Creates a new file with only matching rows. Original file unchanged.
+                    </div>
+                    {filterMode === 'new_file' && (
+                      <Input
+                        value={newFilterFileName}
+                        onChange={(e) => setNewFilterFileName(e.target.value)}
+                        placeholder="New file name"
+                        className="mt-2"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    )}
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3 p-3 border border-destructive/50 rounded-lg hover:bg-destructive/5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="filterMode"
+                    value="delete_rows"
+                    checked={filterMode === 'delete_rows'}
+                    onChange={(e) => setFilterMode(e.target.value as any)}
+                    className="mt-1"
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium text-sm text-destructive">⚠️ Delete non-matching rows (Destructive)</div>
+                    <div className="text-xs text-muted-foreground">
+                      Permanently deletes all rows that don't match. Cannot be undone!
+                    </div>
+                  </div>
+                </label>
               </div>
+
               <Button onClick={handleFilterData} disabled={loading}>
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Filter className="mr-2 h-4 w-4" />}
                 Filter Data

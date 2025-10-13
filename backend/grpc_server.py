@@ -206,6 +206,9 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
     def DeleteFilePoints(self, request, context):
         return self.project_manager.delete_file_points(request)
 
+    def AddFilteredColumn(self, request, context):
+        return self.project_manager.add_filtered_column(request)
+
     # ---------- Operaciones avanzadas de columnas ----------
 
     def AddFileColumns(self, request, context):

@@ -294,10 +294,15 @@ class ProjectManager:
             # Convert protobuf map to Python dict
             column_renames = dict(request.column_renames)
 
+            print(f"🔄 [BACKEND/ProjectManager] Renaming columns for file_id: {request.file_id}")
+            print(f"🔄 [BACKEND/ProjectManager] Column renames: {column_renames}")
+
             success, renamed_columns, error_msg = self.db.rename_file_columns(
                 request.file_id,
                 column_renames
             )
+
+            print(f"🔄 [BACKEND/ProjectManager] Rename result - success: {success}, renamed_columns: {renamed_columns}")
 
             response = projects_pb2.RenameFileColumnResponse()
             response.success = success
@@ -305,10 +310,14 @@ class ProjectManager:
 
             if not success:
                 response.error_message = error_msg
+                print(f"❌ [BACKEND/ProjectManager] Rename failed: {error_msg}")
 
             return response
 
         except Exception as e:
+            print(f"❌ [BACKEND/ProjectManager] Exception during rename: {str(e)}")
+            import traceback
+            traceback.print_exc()
             response = projects_pb2.RenameFileColumnResponse()
             response.success = False
             response.error_message = str(e)
@@ -318,10 +327,15 @@ class ProjectManager:
         """Obtener estadísticas de archivo"""
         try:
 
+            print(f"📊 [BACKEND/ProjectManager] Getting file statistics for file_id: {request.file_id}")
+
             # Get column names filter if provided
             column_names = list(request.columns) if request.columns else None
+            print(f"📊 [BACKEND/ProjectManager] Column filter: {column_names}")
 
             statistics = self.db.get_file_statistics(request.file_id, column_names)
+            print(f"📊 [BACKEND/ProjectManager] Retrieved statistics for {len(statistics)} columns")
+            print(f"📊 [BACKEND/ProjectManager] Column names: {list(statistics.keys())}")
 
             response = projects_pb2.GetFileStatisticsResponse()
             response.success = True
@@ -359,9 +373,14 @@ class ProjectManager:
                     if stats.get('top_counts'):
                         col_stat.top_counts.extend(stats['top_counts'])
 
+            print(f"✅ [BACKEND/ProjectManager] Returning statistics response with {len(response.statistics)} columns")
+
             return response
 
         except Exception as e:
+            print(f"❌ [BACKEND/ProjectManager] Error getting file statistics: {str(e)}")
+            import traceback
+            traceback.print_exc()
             response = projects_pb2.GetFileStatisticsResponse()
             response.success = False
             response.error_message = str(e)
@@ -438,14 +457,19 @@ class ProjectManager:
             # Get project_id if creating new file
             project_id = None
             if request.create_new_file:
-                # Get project_id from the original file
-                file_data = self.db.get_project_files("")  # We need a helper method
-                # For now, let's extract it from database
-                with self.db.engine.connect() as conn:
-                    from sqlalchemy import text
-                    result = conn.execute(text(f"SELECT project_id FROM file WHERE id = '{request.file_id}'")).fetchone()
-                    if result:
-                        project_id = result[0]
+                # Get project_id from the original file using SQLModel session
+                from sqlmodel import Session, select
+                from database import File
+
+                with Session(self.db.engine) as session:
+                    file_record = session.get(File, request.file_id)
+                    if file_record:
+                        project_id = file_record.project_id
+                    else:
+                        # Fallback: query directly if get() fails
+                        file_record = session.exec(select(File).where(File.id == request.file_id)).first()
+                        if file_record:
+                            project_id = file_record.project_id
 
             success, result_file_id, total_rows, error_msg = self.db.filter_file_data(
                 request.file_id,
@@ -469,6 +493,58 @@ class ProjectManager:
 
         except Exception as e:
             response = projects_pb2.FilterFileDataResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def add_filtered_column(self, request: projects_pb2.AddFilteredColumnRequest) -> projects_pb2.AddFilteredColumnResponse:
+        """Agregar columna filtrada (no destructivo)"""
+        try:
+            print(f"🔍 [BACKEND/ProjectManager] Adding filtered column for file_id: {request.file_id}")
+            print(f"🔍 [BACKEND/ProjectManager] New column: {request.new_column_name}")
+            print(f"🔍 [BACKEND/ProjectManager] Filter: {request.source_column} {request.operation} {request.value}")
+
+            success, new_column_name, rows_with_values, error_msg = self.db.add_filtered_column(
+                request.file_id,
+                request.new_column_name,
+                request.source_column,
+                request.operation,
+                request.value
+            )
+
+            # Get total rows to calculate null rows
+            from sqlmodel import Session, select
+            from database import Dataset
+            total_rows = 0
+
+            if success:
+                # Get row count from DuckDB
+                table_name = f"data_{request.file_id.replace('-', '_')}"
+                with self.db.engine.connect() as conn:
+                    from sqlalchemy import text
+                    count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
+                    total_rows = int(count_result[0])
+
+            rows_with_null = total_rows - rows_with_values if success else 0
+
+            response = projects_pb2.AddFilteredColumnResponse()
+            response.success = success
+            response.new_column_name = new_column_name
+            response.rows_with_values = rows_with_values
+            response.rows_with_null = rows_with_null
+
+            if not success:
+                response.error_message = error_msg
+            else:
+                print(f"✅ [BACKEND/ProjectManager] Filtered column added: {rows_with_values} matches, {rows_with_null} NULL")
+
+            return response
+
+        except Exception as e:
+            print(f"❌ [BACKEND/ProjectManager] Exception during add_filtered_column: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            response = projects_pb2.AddFilteredColumnResponse()
             response.success = False
             response.error_message = str(e)
             return response
