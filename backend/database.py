@@ -522,8 +522,8 @@ class DatabaseManager:
             table_name = dataset.duckdb_table_name
             print(f"📊 Using DuckDB table: {table_name}")
 
-            # consigo las columnas que necesito
-            data_query = f"SELECT {columns[0]}, {columns[1]}, {columns[2]} FROM {table_name}"
+            # consigo las columnas que necesito - quote column names to handle special characters
+            data_query = f'SELECT "{columns[0]}", "{columns[1]}", "{columns[2]}" FROM {table_name}'
             print(f"🔍 Executing query: {data_query}")
 
             # obtengo los datos usando DuckDB's fetchnumpy para optimizar el rendimiento
@@ -1083,7 +1083,12 @@ class DatabaseManager:
             if operation.upper() == "LIKE":
                 where_clause = f'"{column}" LIKE \'%{value}%\''
             else:
-                where_clause = f'"{column}" {operation} \'{value}\''
+                # Try to parse as number for numeric comparison, otherwise use string
+                try:
+                    float(value)  # Test if numeric
+                    where_clause = f'"{column}" {operation} {value}'  # No quotes for numeric
+                except (ValueError, TypeError):
+                    where_clause = f'"{column}" {operation} \'{value}\''  # Quotes for string
 
             if create_new_file:
                 if not new_file_name or not project_id:
@@ -1233,7 +1238,12 @@ class DatabaseManager:
                     if operation.upper() == "LIKE":
                         where_clause = f'"{source_column}" LIKE \'%{value}%\''
                     else:
-                        where_clause = f'"{source_column}" {operation} \'{value}\''
+                        # Try to parse as number for numeric comparison, otherwise use string
+                        try:
+                            float(value)  # Test if numeric
+                            where_clause = f'"{source_column}" {operation} {value}'  # No quotes for numeric
+                        except (ValueError, TypeError):
+                            where_clause = f'"{source_column}" {operation} \'{value}\''  # Quotes for string
 
                     # Add new column with CASE statement
                     # If row matches filter, copy the source column value, otherwise NULL

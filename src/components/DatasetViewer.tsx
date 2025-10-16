@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, BarChart3, Activity, Brush, X, Filter } from 'lucide-react';
+import { ArrowLeft, BarChart3, Activity, Brush, X, Filter, RefreshCw } from 'lucide-react';
 import { GetDatasetDataResponse, DatasetInfo } from '@/generated/projects';
 import { useBrushStore } from '@/stores/brushStore';
 
@@ -30,12 +30,21 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
   // CRITICAL: Don't use any Zustand hooks - access store imperatively to prevent re-renders
   // We use useBrushStore.getState() directly instead to avoid subscribing to store updates
 
-  // Memoize column calculations
+  // State for live column list (loaded from file statistics)
+  const [liveColumns, setLiveColumns] = useState<string[]>([]);
+  const [loadingColumns, setLoadingColumns] = useState(false);
+
+  // Memoize column calculations - use live columns if available, fallback to column_mappings
   const availableColumns = useMemo(() => {
+    // Prefer live columns from file statistics (includes dynamically added columns)
+    if (liveColumns.length > 0) {
+      return liveColumns;
+    }
+    // Fallback to static column_mappings from dataset metadata
     return datasetInfo.column_mappings
       ?.filter(mapping => mapping.column_type !== 3) // Not UNUSED
       ?.map(mapping => mapping.column_name) || [];
-  }, [datasetInfo.column_mappings]);
+  }, [liveColumns, datasetInfo.column_mappings]);
 
   // Find coordinate columns from mappings
   const coordinateColumns = useMemo(() => {
@@ -145,6 +154,11 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     return fullData;
   }, [fullData, showOnlyBrushed]); // No dependency on brush timestamp to prevent re-render
 
+  // Load live column list from file statistics on mount
+  useEffect(() => {
+    loadLiveColumns();
+  }, [datasetInfo.file_id]);
+
   useEffect(() => {
     loadDataset();
   }, [datasetInfo.id, selectedXAxis, selectedYAxis, selectedValueColumn]);
@@ -240,6 +254,29 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       setTimeout(() => chartInstance.resize(), 100);
     }
   }, [chartData]);
+
+  const loadLiveColumns = async () => {
+    try {
+      setLoadingColumns(true);
+      console.log('📊 Loading live columns for file_id:', datasetInfo.file_id);
+
+      const response = await window.autoGrpc.getFileStatistics({
+        file_id: datasetInfo.file_id,
+        columns: [] // Get all columns
+      });
+
+      // Extract column names from statistics
+      const columns = response.statistics?.map((stat: {column_name: string}) => stat.column_name) || [];
+      console.log('✅ Live columns loaded:', columns);
+
+      setLiveColumns(columns);
+    } catch (err) {
+      console.error('❌ Error loading live columns:', err);
+      // On error, fall back to static column_mappings (no state update needed)
+    } finally {
+      setLoadingColumns(false);
+    }
+  };
 
   const loadDataset = async () => {
     try {
@@ -579,7 +616,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         large: true,
         largeThreshold: 20000,
         progressive: 20000,
-        // progressiveThreshold: 20000,
+        progressiveThreshold: 20000,
         symbolSize: 4,
         dimensions: [selectedXAxis, selectedYAxis, selectedValueColumn],
       }]
@@ -833,17 +870,28 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
             </div>
           </div>
           
-          <div className="text-sm text-muted-foreground space-y-1">
-            <p>Selecciona qué columnas usar para el eje X, eje Y y valores de los puntos. Puedes usar cualquier columna para cualquier eje.</p>
-            <p className="text-blue-600 font-medium flex items-center">
-              <Brush className="mr-1 h-3 w-3" />
-              Activa el modo dibujo, dibuja un rectángulo y haz clic en &ldquo;Aplicar Selección&rdquo; para filtrar los puntos.
-            </p>
-            { brushInfoRef.current && (
-              <p className="text-green-600 font-medium flex items-center">
-                ✓ La selección se comparte entre todas las vistas del mismo dataset con las mismas columnas.
+          <div className="flex items-start justify-between gap-4">
+            <div className="text-sm text-muted-foreground space-y-1 flex-1">
+              <p>Selecciona qué columnas usar para el eje X, eje Y y valores de los puntos. Puedes usar cualquier columna para cualquier eje.</p>
+              <p className="text-blue-600 font-medium flex items-center">
+                <Brush className="mr-1 h-3 w-3" />
+                Activa el modo dibujo, dibuja un rectángulo y haz clic en &ldquo;Aplicar Selección&rdquo; para filtrar los puntos.
               </p>
-            )}
+              { brushInfoRef.current && (
+                <p className="text-green-600 font-medium flex items-center">
+                  ✓ La selección se comparte entre todas las vistas del mismo dataset con las mismas columnas.
+                </p>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadLiveColumns}
+              disabled={loadingColumns}
+              title="Refrescar lista de columnas"
+            >
+              <RefreshCw className={`h-4 w-4 ${loadingColumns ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
         </CardContent>
       </Card>
