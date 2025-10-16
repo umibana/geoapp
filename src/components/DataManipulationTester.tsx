@@ -63,7 +63,7 @@ const DataManipulationTester: React.FC = () => {
 
   // Phase 3: Advanced Column Operations
   const [newColumns, setNewColumns] = useState<{name: string, values: string}[]>([{name: '', values: ''}]);
-  const [columnsToDuplicate, setColumnsToDuplicate] = useState<string[]>([]);
+  const [columnsToDuplicate, setColumnsToDuplicate] = useState<{sourceColumn: string, newName: string}[]>([]);
 
   // Phase 5: Dataset Merging
   const [secondDatasetId, setSecondDatasetId] = useState('');
@@ -434,12 +434,28 @@ const DataManipulationTester: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
+      
+      console.log('🔄 [FRONTEND] Duplicating columns:', columnsToDuplicate);
+      
       const response = await window.autoGrpc.duplicateFileColumns({
         file_id: selectedFileId,
-        column_names: columnsToDuplicate
+        columns: columnsToDuplicate.map(col => ({
+          source_column: col.sourceColumn,
+          new_column_name: col.newName
+        }))
       });
+      
+      console.log('✅ [FRONTEND] Duplicate response:', response);
       setResult({ type: 'duplicate', data: response });
+      
+      if (response.success) {
+        // Refresh file statistics to show new columns
+        await loadFileStatistics();
+        // Clear the duplicate inputs
+        setColumnsToDuplicate([]);
+      }
     } catch (err: any) {
+      console.error('❌ [FRONTEND] Error duplicating columns:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -1010,33 +1026,80 @@ const DataManipulationTester: React.FC = () => {
                 <Copy className="mr-2 h-5 w-5" />
                 Duplicate Columns
               </CardTitle>
+              <CardDescription>
+                Select columns to duplicate and optionally provide custom names
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div>
-                <Label>Select Columns to Duplicate</Label>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {getAvailableColumns().map((col: string) => (
-                    <Badge
-                      key={col}
-                      variant={columnsToDuplicate.includes(col) ? "default" : "outline"}
-                      className="cursor-pointer"
-                      onClick={() => {
-                        if (columnsToDuplicate.includes(col)) {
-                          setColumnsToDuplicate(columnsToDuplicate.filter(c => c !== col));
-                        } else {
-                          setColumnsToDuplicate([...columnsToDuplicate, col]);
-                        }
+              {columnsToDuplicate.map((colDup, idx) => (
+                <div key={idx} className="grid grid-cols-2 gap-4 items-end">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Source column</Label>
+                    <Select
+                      value={colDup.sourceColumn}
+                      onValueChange={(value) => {
+                        const updated = [...columnsToDuplicate];
+                        updated[idx].sourceColumn = value;
+                        setColumnsToDuplicate(updated);
                       }}
                     >
-                      {col}
-                    </Badge>
-                  ))}
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select column" />
+                      </SelectTrigger>
+                      <SelectContent className="z-[99999]">
+                        {getAvailableColumns().length === 0 ? (
+                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                            Select a file first
+                          </div>
+                        ) : (
+                          getAvailableColumns().map((col: string) => (
+                            <SelectItem key={col} value={col}>{col}</SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <Label className="text-xs text-muted-foreground">New column name (optional)</Label>
+                      <Input
+                        placeholder={`${colDup.sourceColumn || 'column'}_copy`}
+                        value={colDup.newName}
+                        onChange={(e) => {
+                          const updated = [...columnsToDuplicate];
+                          updated[idx].newName = e.target.value;
+                          setColumnsToDuplicate(updated);
+                        }}
+                      />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="mt-auto"
+                      onClick={() => {
+                        setColumnsToDuplicate(columnsToDuplicate.filter((_, i) => i !== idx));
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
+              ))}
+              
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setColumnsToDuplicate([...columnsToDuplicate, {sourceColumn: '', newName: ''}])}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Column to Duplicate
+                </Button>
+                <Button onClick={handleDuplicateColumns} disabled={loading || columnsToDuplicate.length === 0}>
+                  {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
+                  Duplicate Columns
+                </Button>
               </div>
-              <Button onClick={handleDuplicateColumns} disabled={loading}>
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
-                Duplicate Selected
-              </Button>
             </CardContent>
           </Card>
         </TabsContent>

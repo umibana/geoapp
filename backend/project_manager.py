@@ -606,14 +606,20 @@ class ProjectManager:
             return response
 
     def duplicate_file_columns(self, request: projects_pb2.DuplicateFileColumnsRequest) -> projects_pb2.DuplicateFileColumnsResponse:
-        """Duplicar columnas existentes"""
+        """Duplicar columnas existentes con nombres personalizados opcionales"""
         try:
 
-            column_names = list(request.column_names)
+            print(f"🔄 [BACKEND/ProjectManager] Duplicating columns for file_id: {request.file_id}")
+            print(f"🔄 [BACKEND/ProjectManager] Number of columns to duplicate: {len(request.columns)}")
+
+            # Convert protobuf columns to list of tuples (source_column, new_column_name)
+            columns_to_duplicate = [(col.source_column, col.new_column_name) for col in request.columns]
+            
+            print(f"🔄 [BACKEND/ProjectManager] Columns to duplicate: {columns_to_duplicate}")
 
             success, duplicated_columns, error_msg = self.db.duplicate_file_columns(
                 request.file_id,
-                column_names
+                columns_to_duplicate
             )
 
             response = projects_pb2.DuplicateFileColumnsResponse()
@@ -622,10 +628,16 @@ class ProjectManager:
 
             if not success:
                 response.error_message = error_msg
+                print(f"❌ [BACKEND/ProjectManager] Duplication failed: {error_msg}")
+            else:
+                print(f"✅ [BACKEND/ProjectManager] Successfully duplicated {len(duplicated_columns)} columns")
 
             return response
 
         except Exception as e:
+            print(f"❌ [BACKEND/ProjectManager] Exception during duplication: {str(e)}")
+            import traceback
+            traceback.print_exc()
             response = projects_pb2.DuplicateFileColumnsResponse()
             response.success = False
             response.error_message = str(e)

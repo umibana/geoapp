@@ -315,13 +315,18 @@ message AddFileColumnsResponse {
 }
 
 // Duplicate existing columns
+message ColumnDuplicate {
+  string source_column = 1;
+  string new_column_name = 2;  // Optional - if empty, auto-generate as source_column_copy
+}
+
 message DuplicateFileColumnsRequest {
   string file_id = 1;
-  repeated string column_names = 2;  // Columns to duplicate
+  repeated ColumnDuplicate columns = 2;
 }
 
 message DuplicateFileColumnsResponse {
-  repeated string duplicated_columns = 1;  // New column names (original_name_copy)
+  repeated string duplicated_columns = 1;  // New column names created
   bool success = 2;
   string error_message = 3;
 }

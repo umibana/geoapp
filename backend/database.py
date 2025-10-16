@@ -1377,19 +1377,23 @@ class DatabaseManager:
             traceback.print_exc()
             return False, [], str(e)
 
-    def duplicate_file_columns(self, file_id: str, column_names: List[str]) -> Tuple[bool, List[str], str]:
+    def duplicate_file_columns(self, file_id: str, columns_to_duplicate: List[Tuple[str, str]]) -> Tuple[bool, List[str], str]:
         """
-        Duplicate existing columns
+        Duplicate existing columns with optional custom naming
 
         Args:
             file_id: The file ID
-            column_names: List of column names to duplicate
+            columns_to_duplicate: List of (source_column, new_column_name) tuples
+                                 If new_column_name is empty, auto-generate as source_column_copy
 
         Returns:
             Tuple of (success, duplicated_columns, error_message)
         """
         try:
             table_name = f"data_{file_id.replace('-', '_')}"
+            
+            print(f"🔄 [BACKEND/Database] Duplicating columns for file_id: {file_id}")
+            print(f"🔄 [BACKEND/Database] Columns to duplicate: {columns_to_duplicate}")
 
             if not self.check_duckdb_table_exists(table_name):
                 return False, [], f"Table {table_name} does not exist"
@@ -1401,28 +1405,47 @@ class DatabaseManager:
                     # Get existing columns
                     result = conn.execute(text(f"DESCRIBE {table_name}"))
                     existing_columns = {row[0] for row in result}
+                    print(f"🔍 [BACKEND/Database] Existing columns: {existing_columns}")
 
-                    for col_name in column_names:
-                        if col_name not in existing_columns:
+                    for source_col, new_col_name in columns_to_duplicate:
+                        if source_col not in existing_columns:
+                            print(f"⚠️ [BACKEND/Database] Source column '{source_col}' not found, skipping")
                             continue  # Skip if column doesn't exist
 
-                        # Generate new column name
-                        new_col_name = f"{col_name}_copy"
-                        counter = 1
-                        while new_col_name in existing_columns:
-                            new_col_name = f"{col_name}_copy{counter}"
-                            counter += 1
+                        # If no custom name provided, auto-generate
+                        if not new_col_name or new_col_name.strip() == "":
+                            new_col_name = f"{source_col}_copy"
+                            counter = 1
+                            while new_col_name in existing_columns:
+                                new_col_name = f"{source_col}_copy{counter}"
+                                counter += 1
+                        
+                        # Check if new name already exists
+                        if new_col_name in existing_columns:
+                            print(f"❌ [BACKEND/Database] Column '{new_col_name}' already exists, skipping")
+                            continue
+
+                        print(f"🔄 [BACKEND/Database] Duplicating: {source_col} -> {new_col_name}")
 
                         # Add new column and copy values
                         conn.execute(text(f'ALTER TABLE {table_name} ADD COLUMN "{new_col_name}" VARCHAR'))
-                        conn.execute(text(f'UPDATE {table_name} SET "{new_col_name}" = "{col_name}"'))
+                        conn.execute(text(f'UPDATE {table_name} SET "{new_col_name}" = "{source_col}"'))
 
                         duplicated_columns.append(new_col_name)
                         existing_columns.add(new_col_name)
+                        print(f"✅ [BACKEND/Database] Successfully duplicated: {source_col} -> {new_col_name}")
+
+            # Recalculate statistics after adding columns
+            if len(duplicated_columns) > 0:
+                print(f"🔄 [BACKEND/Database] Recalculating statistics after duplicating {len(duplicated_columns)} columns")
+                self.recalculate_file_statistics(file_id)
 
             return True, duplicated_columns, ""
 
         except Exception as e:
+            print(f"❌ [BACKEND/Database] Error duplicating columns: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False, [], str(e)
 
     # ========== Dataset Merging ==========
