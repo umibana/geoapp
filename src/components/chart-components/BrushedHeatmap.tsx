@@ -3,133 +3,165 @@ import ReactECharts from 'echarts-for-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Brush, AlertCircle } from 'lucide-react';
-import { useBrushStore } from '@/stores/brushStore';
+import { useBrushSelection } from '@/hooks/useBrushSelection';
 
 /**
- * BrushedDataViewer Component
- * Displays the currently selected brush data from Zustand store
- * Updates automatically when brush selection changes
+ * BrushedHeatmap Component
+ * Displays the currently selected brush data as a 2D heatmap
+ * Uses binning/aggregation to create a grid visualization
  */
-const BrushedDataViewer: React.FC = () => {
-  // Get all brush selections from store
-  const allSelections = useBrushStore((state) => state.selections);
-  const activeDatasetId = useBrushStore((state) => state.activeDatasetId);
+const BrushedHeatmap: React.FC = () => {
+  const activeBrushSelection = useBrushSelection();
 
-  // Get the active brush selection
-  const activeBrushSelection = useMemo(() => {
-    if (!activeDatasetId) return null;
-    return allSelections.get(activeDatasetId) || null;
-  }, [allSelections, activeDatasetId]);
-
-  // Generate chart options from brush data
-  // Check echarts documentation for more options or different charts
+  // Generate heatmap chart options from brush data
   const chartOptions = useMemo(() => {
     if (!activeBrushSelection || !activeBrushSelection.selectedPoints) return null;
 
     const data = activeBrushSelection.selectedPoints;
     const { xAxis, yAxis, value } = activeBrushSelection.columns;
 
+    // Calculate bounds
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    let minValue = Infinity, maxValue = -Infinity;
+
+    for (let i = 0; i < data.length; i += 3) {
+      const x = data[i];
+      const y = data[i + 1];
+      const v = data[i + 2];
+
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+      minValue = Math.min(minValue, v);
+      maxValue = Math.max(maxValue, v);
+    }
+
+    // Create grid bins (e.g., 50x50 grid)
+    const gridSize = 50;
+    const xBinSize = (maxX - minX) / gridSize;
+    const yBinSize = (maxY - minY) / gridSize;
+
+    // Initialize grid with sum and count for averaging
+    const grid: { sum: number; count: number }[][] = Array.from({ length: gridSize }, () =>
+      Array.from({ length: gridSize }, () => ({ sum: 0, count: 0 }))
+    );
+
+    // Bin the data
+    for (let i = 0; i < data.length; i += 3) {
+      const x = data[i];
+      const y = data[i + 1];
+      const v = data[i + 2];
+
+      const xBin = Math.min(Math.floor((x - minX) / xBinSize), gridSize - 1);
+      const yBin = Math.min(Math.floor((y - minY) / yBinSize), gridSize - 1);
+
+      grid[yBin][xBin].sum += v;
+      grid[yBin][xBin].count += 1;
+    }
+
+    // Convert grid to heatmap data format: [x, y, value]
+    const heatmapData: [number, number, number][] = [];
+    for (let yi = 0; yi < gridSize; yi++) {
+      for (let xi = 0; xi < gridSize; xi++) {
+        if (grid[yi][xi].count > 0) {
+          const avgValue = grid[yi][xi].sum / grid[yi][xi].count;
+          heatmapData.push([xi, yi, avgValue]);
+        }
+      }
+    }
 
     return {
       animation: false,
       title: {
-        text: 'Datos Seleccionados con Brush',
+        text: 'Heatmap - Datos Seleccionados',
         left: 'center',
         textStyle: {
           fontSize: 14,
           fontWeight: 'bold'
         }
       },
+      tooltip: {
+        position: 'top',
+        formatter: function(params: { data: [number, number, number] }) {
+          const [xBin, yBin, val] = params.data;
+          const xCenter = minX + (xBin + 0.5) * xBinSize;
+          const yCenter = minY + (yBin + 0.5) * yBinSize;
+          return `
+            <strong>Celda [${xBin}, ${yBin}]</strong><br/>
+            ${xAxis}: ${xCenter.toFixed(4)}<br/>
+            ${yAxis}: ${yCenter.toFixed(4)}<br/>
+            ${value} (avg): ${val.toFixed(4)}
+          `;
+        }
+      },
+      grid: {
+        left: '10%',
+        right: '15%',
+        top: '15%',
+        bottom: '15%'
+      },
+      xAxis: {
+        name: xAxis,
+        type: 'category',
+        data: Array.from({ length: gridSize }, (_, i) => i),
+        nameLocation: 'middle',
+        nameGap: 25,
+        splitArea: {
+          show: true
+        }
+      },
+      yAxis: {
+        name: yAxis,
+        type: 'category',
+        data: Array.from({ length: gridSize }, (_, i) => i),
+        nameLocation: 'middle',
+        nameGap: 40,
+        splitArea: {
+          show: true
+        }
+      },
       visualMap: {
-        dimension: 2,
+        min: minValue,
+        max: maxValue,
+        calculable: true,
         orient: 'vertical',
         right: 10,
         top: 'center',
-        text: ['ALTO', 'BAJO'],
-        calculable: true,
         inRange: {
-          color: ['#1e40af', '#3b82f6', '#60a5fa', '#93c5fd', '#dbeafe', '#fef3c7', '#fcd34d', '#f59e0b', '#d97706', '#b45309']
+          color: ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#ffffbf', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026']
         },
         textStyle: {
           color: '#374151',
           fontSize: 10
         }
       },
-      tooltip: {
-        trigger: 'item',
-        formatter: function(params: {data: number[], dataIndex: number}) {
-          const pointData = params.data;
-          return `
-            <strong>Punto ${params.dataIndex + 1}</strong><br/>
-            ${xAxis}: ${pointData[0].toFixed(4)}<br/>
-            ${yAxis}: ${pointData[1].toFixed(4)}<br/>
-            ${value}: ${pointData[2].toFixed(4)}
-          `;
-        }
-      },
-      xAxis: {
-        name: xAxis,
-        type: 'value',
-        nameLocation: 'middle',
-        nameGap: 25,
-        scale: true,
-
-      },
-      yAxis: {
-        name: yAxis,
-        type: 'value',
-        nameLocation: 'middle',
-        nameGap: 40,
-        scale: true,
- 
-      },
-      dataZoom: [
-        {
-          type: 'inside',
-          xAxisIndex: 0,
-          filterMode: 'filter'
-        },
-        {
-          type: 'inside',
-          yAxisIndex: 0,
-          filterMode: 'filter'
-        }
-      ],
       series: [{
-        name: `${value} values`,
-        type: 'scatter',
-        data: data,
-        animation: false,
-        itemStyle: {
-          opacity: 0.8,
-          borderWidth: 0
-        },
+        name: value,
+        type: 'heatmap',
+        data: heatmapData,
         emphasis: {
           itemStyle: {
-            borderColor: '#000',
-            borderWidth: 1,
-            opacity: 1.0
+            shadowBlur: 10,
+            shadowColor: 'rgba(0, 0, 0, 0.5)'
           }
-        },
-        large: data.length > 2000,
-        largeThreshold: 2000,
-        symbolSize: 5,
-        dimensions: [xAxis, yAxis, value]
+        }
       }]
     };
   }, [activeBrushSelection]);
 
-  // If no brush selection, show a message
+  // No brush selection
   if (!activeBrushSelection) {
     return (
       <Card className="w-full h-full flex flex-col">
         <CardHeader>
           <CardTitle className="flex items-center">
             <Brush className="mr-2 h-5 w-5" />
-            Visualizador de Datos Seleccionados
+            Heatmap de Datos Seleccionados
           </CardTitle>
           <CardDescription>
-            Muestra los puntos seleccionados con la herramienta brush
+            Muestra un mapa de calor de los puntos seleccionados
           </CardDescription>
         </CardHeader>
         <CardContent className="flex-1 flex items-center justify-center">
@@ -152,7 +184,7 @@ const BrushedDataViewer: React.FC = () => {
         <div>
           <h2 className="text-xl font-bold tracking-tight flex items-center">
             <Brush className="mr-2 h-5 w-5" />
-            Datos Seleccionados
+            Heatmap
           </h2>
           <p className="text-sm text-muted-foreground">
             Dataset: {activeBrushSelection.datasetId}
@@ -163,7 +195,7 @@ const BrushedDataViewer: React.FC = () => {
         </Badge>
       </div>
 
-      {/* Info Card  -- Could be removed later, used for debugging*/}
+      {/* Info Card */}
       <Card className="flex-shrink-0">
         <CardContent className="pt-4">
           <div className="grid grid-cols-3 gap-4 text-sm">
@@ -186,7 +218,7 @@ const BrushedDataViewer: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Chart - Uses echarts-for-react for simplicity */}
+      {/* Chart */}
       <Card className="flex-1 flex flex-col min-h-0">
         <CardContent className="flex-1 p-4">
           {chartOptions && (
@@ -202,4 +234,4 @@ const BrushedDataViewer: React.FC = () => {
   );
 };
 
-export default BrushedDataViewer;
+export default BrushedHeatmap;

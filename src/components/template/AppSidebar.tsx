@@ -13,8 +13,12 @@ import {
 import React from "react"
 import { Link } from "@tanstack/react-router"
 import { useWindows } from "@/contexts/WindowContext"
-import BrushedDataViewer from "@/components/BrushedDataViewer"
+import BrushedDataViewer from "@/components/chart-components/BrushedDataViewer"
 import DataManipulationTester from "@/components/DataManipulationTester"
+import BrushedBarChart from "../chart-components/BrushedBarChart"
+import BrushedBoxPlot from "../chart-components/BrushedBoxPlot"
+import BrushedHeatmap from "../chart-components/BrushedHeatmap"
+import BrushedLineChart from "../chart-components/BrushedLineChart"
 
 // Navigation items
 const navigationItems = [
@@ -42,6 +46,31 @@ const windowItems = [
     title: "Brushed Data Viewer",
     icon: Paintbrush,
     component: <BrushedDataViewer />,
+    size: { width: 700, height: 600 },
+  },
+
+  {
+    title: "Brushed Bar Viewer",
+    icon: Paintbrush,
+    component: <BrushedBarChart />,
+    size: { width: 700, height: 600 },
+  },
+  {
+    title: "Brushed Boxplot",
+    icon: Paintbrush,
+    component: <BrushedBoxPlot />,
+    size: { width: 700, height: 600 },
+  },
+  {
+    title: "Brushed Heatmap",
+    icon: Paintbrush,
+    component: <BrushedHeatmap />,
+    size: { width: 700, height: 600 },
+  },
+  {
+    title: "Brushed Line (TODO)",
+    icon: Paintbrush,
+    component: <BrushedLineChart />,
     size: { width: 700, height: 600 },
   },
 
