@@ -22,29 +22,13 @@ const BrushedDataViewer: React.FC = () => {
   }, [allSelections, activeDatasetId]);
 
   // Generate chart options from brush data
+  // Check echarts documentation for more options or different charts
   const chartOptions = useMemo(() => {
     if (!activeBrushSelection || !activeBrushSelection.selectedPoints) return null;
 
     const data = activeBrushSelection.selectedPoints;
     const { xAxis, yAxis, value } = activeBrushSelection.columns;
 
-    // Calculate bounds for visualization
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    let minValue = Infinity, maxValue = -Infinity;
-
-    for (let i = 0; i < data.length; i += 3) {
-      const x = data[i];
-      const y = data[i + 1];
-      const v = data[i + 2];
-
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-      minValue = Math.min(minValue, v);
-      maxValue = Math.max(maxValue, v);
-    }
 
     return {
       animation: false,
@@ -57,8 +41,6 @@ const BrushedDataViewer: React.FC = () => {
         }
       },
       visualMap: {
-        min: minValue,
-        max: maxValue,
         dimension: 2,
         orient: 'vertical',
         right: 10,
@@ -91,8 +73,7 @@ const BrushedDataViewer: React.FC = () => {
         nameLocation: 'middle',
         nameGap: 25,
         scale: true,
-        min: minX,
-        max: maxX
+
       },
       yAxis: {
         name: yAxis,
@@ -100,8 +81,7 @@ const BrushedDataViewer: React.FC = () => {
         nameLocation: 'middle',
         nameGap: 40,
         scale: true,
-        min: minY,
-        max: maxY
+ 
       },
       dataZoom: [
         {
@@ -139,7 +119,7 @@ const BrushedDataViewer: React.FC = () => {
     };
   }, [activeBrushSelection]);
 
-  // No brush selection
+  // If no brush selection, show a message
   if (!activeBrushSelection) {
     return (
       <Card className="w-full h-full flex flex-col">
@@ -183,7 +163,7 @@ const BrushedDataViewer: React.FC = () => {
         </Badge>
       </div>
 
-      {/* Info Card */}
+      {/* Info Card  -- Could be removed later, used for debugging*/}
       <Card className="flex-shrink-0">
         <CardContent className="pt-4">
           <div className="grid grid-cols-3 gap-4 text-sm">
@@ -206,7 +186,7 @@ const BrushedDataViewer: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Chart */}
+      {/* Chart - Uses echarts-for-react for simplicity */}
       <Card className="flex-1 flex flex-col min-h-0">
         <CardContent className="flex-1 p-4">
           {chartOptions && (

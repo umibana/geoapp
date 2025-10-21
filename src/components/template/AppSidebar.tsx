@@ -13,12 +13,7 @@ import {
 import React from "react"
 import { Link } from "@tanstack/react-router"
 import { useWindows } from "@/contexts/WindowContext"
-import {
-  Prueba2D,
-  Prueba3D,
-  GrpcDemo,
-  BrushedDataViewer
-} from "@/components/WindowComponents"
+import BrushedDataViewer from "@/components/BrushedDataViewer"
 import DataManipulationTester from "@/components/DataManipulationTester"
 
 // Navigation items
@@ -44,29 +39,12 @@ const windowItems = [
     size: { width: 1000, height: 700 },
   },
   {
-    title: "gRPC Demo",
-    icon: Wifi,
-    component: <GrpcDemo />,
-    size: { width: 800, height: 600 },
-  },
-  {
     title: "Brushed Data Viewer",
     icon: Paintbrush,
     component: <BrushedDataViewer />,
     size: { width: 700, height: 600 },
   },
-  {
-    title: "Prueba 2D",
-    icon: TestTube2,
-    component: <Prueba2D />,
-    size: { width: 500, height: 400 },
-  },
-  {
-    title: "Prueba 3D",
-    icon: TestTubeDiagonal,
-    component: <Prueba3D />,
-    size: { width: 400, height: 500 },
-  },
+
 ]
 
 export function AppSidebar() {

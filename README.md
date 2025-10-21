@@ -137,3 +137,6 @@ geoapp/
     │
     └── utils/                         # Utility for shadcn (Auto-generated -- should be moved to helpers)
         └── tailwind.ts
+
+
+## Quick start
