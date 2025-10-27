@@ -3,6 +3,7 @@ import { RootRoute } from "./__root";
 import HomePage from "../pages/HomePage";
 import SecondPage from "@/pages/SecondPage";
 import ProjectWorkflow from "@/components/ProjectWorkflow";
+import { ChartMosaicExample } from "@/components/mosaic";
 
 // TODO: Steps to add a new route:
 // 1. Create a new page component in the '../pages/' directory (e.g., NewPage.tsx)
@@ -41,4 +42,10 @@ export const ProjectsRoute = createRoute({
   component: ProjectWorkflow,
 });
 
-export const rootTree = RootRoute.addChildren([HomeRoute, SecondPageRoute, ProjectsRoute]);
+export const ChartMosaicExampleRoute = createRoute({
+  getParentRoute: () => RootRoute,
+  path: "/chart-mosaic-example",
+  component: ChartMosaicExample,
+});
+
+export const rootTree = RootRoute.addChildren([HomeRoute, SecondPageRoute, ProjectsRoute, ChartMosaicExampleRoute]);

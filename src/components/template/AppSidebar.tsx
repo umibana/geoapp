@@ -1,4 +1,4 @@
-import {  Home, TestTube, TestTube2, TestTubeDiagonal, Wifi, FolderOpen, Zap, Paintbrush, Database } from "lucide-react"
+import {  Home, TestTube, TestTube2, TestTubeDiagonal, Wifi, FolderOpen, Zap, Paintbrush, Database, LayoutGrid } from "lucide-react"
 
 import {
   Sidebar,
@@ -32,6 +32,11 @@ const navigationItems = [
     url: "/projects",
     icon: FolderOpen,
   },
+  {
+    title: "Chart Mosaic Example",
+    url: "/chart-mosaic-example",
+    icon: LayoutGrid,
+  }
 ]
 
 // Window items that can be opened
@@ -73,6 +78,7 @@ const windowItems = [
     component: <BrushedLineChart />,
     size: { width: 700, height: 600 },
   },
+
 
 ]
 
