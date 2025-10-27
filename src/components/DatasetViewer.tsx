@@ -413,6 +413,17 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       const elapsed = performance.now() - timetook;
       console.log(`✅ Backend filtering completed in ${elapsed.toFixed(2)}ms`);
       console.log(`📊 Filtered to ${response.total_count} points`);
+      console.log(`📊 Response statistics:`, {
+        hasHistograms: !!response.histograms,
+        histogramKeys: response.histograms ? Object.keys(response.histograms) : [],
+        hasBoxPlots: !!response.box_plots,
+        boxPlotsCount: response.box_plots?.length || 0,
+        hasHeatmap: !!response.heatmap
+      });
+      console.log('📊 Full response object:', response);
+      console.log('📊 histograms object:', response.histograms);
+      console.log('📊 box_plots array:', response.box_plots);
+      console.log('📊 heatmap object:', response.heatmap);
 
       if (response.binary_data && response.data_length > 0) {
         // Convert binary data to Float32Array
@@ -422,7 +433,15 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           response.data_length
         );
 
-        // Create brush selection for Zustand store
+        // Convert data_boundaries array to Record<string, DataBoundaries>
+        const boundariesMap: Record<string, any> = {};
+        if (response.data_boundaries) {
+          response.data_boundaries.forEach(boundary => {
+            boundariesMap[boundary.column_name] = boundary;
+          });
+        }
+
+        // Create brush selection for Zustand store with backend statistics
         const brushSelection = {
           datasetId: datasetInfo.id,
           coordRange: rect,
@@ -433,7 +452,24 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
             yAxis: selectedYAxis,
             value: selectedValueColumn
           },
-          timestamp: Date.now()
+          timestamp: Date.now(),
+
+          // Add statistics from backend response
+          statistics: {
+            histograms: response.histograms || {},
+            boxPlots: response.box_plots || [],
+            heatmap: response.heatmap,
+            totalCount: response.total_count,
+            boundaries: boundariesMap
+          },
+
+          // Add dataset metadata
+          datasetInfo: {
+            id: datasetInfo.id,
+            name: datasetInfo.file_name,
+            totalRows: datasetInfo.total_rows,
+            fileId: datasetInfo.file_id
+          }
         };
 
         // Save to Zustand store

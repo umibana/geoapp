@@ -632,7 +632,211 @@ class DatabaseManager:
             print(f"❌ Traceback: {traceback.format_exc()}")
             return np.array([], dtype=np.float32), {}
 
-    
+    def compute_histogram(self, data: np.ndarray, column_name: str, num_bins: int = 30) -> Dict:
+        """
+        Compute histogram data for a column using numpy.
+
+        Args:
+            data: Numpy array of numeric values
+            column_name: Name of the column
+            num_bins: Number of bins for histogram (default: 30)
+
+        Returns:
+            Dict with histogram data structure matching HistogramData protobuf
+        """
+        try:
+            if len(data) == 0:
+                return {}
+
+            # Remove NaN values
+            data = data[~np.isnan(data)]
+
+            if len(data) == 0:
+                return {}
+
+            min_val = float(np.min(data))
+            max_val = float(np.max(data))
+
+            # Compute histogram using numpy
+            counts, bin_edges = np.histogram(data, bins=num_bins, range=(min_val, max_val))
+
+            # Create bin range strings
+            bin_ranges = []
+            for i in range(len(counts)):
+                bin_ranges.append(f"{bin_edges[i]:.2f} - {bin_edges[i+1]:.2f}")
+
+            return {
+                'bin_ranges': bin_ranges,
+                'bin_counts': counts.astype(int).tolist(),
+                'bin_edges': bin_edges.tolist(),
+                'num_bins': num_bins,
+                'min_value': min_val,
+                'max_value': max_val,
+                'total_count': len(data)
+            }
+
+        except Exception as e:
+            print(f"❌ Error computing histogram for {column_name}: {e}")
+            return {}
+
+    def compute_boxplot(self, data: np.ndarray, column_name: str) -> Dict:
+        """
+        Compute box plot statistics for a column using numpy.
+
+        Args:
+            data: Numpy array of numeric values
+            column_name: Name of the column
+
+        Returns:
+            Dict with box plot data structure matching BoxPlotData protobuf
+        """
+        try:
+            if len(data) == 0:
+                return {}
+
+            # Remove NaN values
+            data = data[~np.isnan(data)]
+
+            if len(data) == 0:
+                return {}
+
+            # Compute quartiles
+            q1 = float(np.percentile(data, 25))
+            median = float(np.percentile(data, 50))
+            q3 = float(np.percentile(data, 75))
+
+            # IQR and fences
+            iqr = q3 - q1
+            lower_fence = q1 - 1.5 * iqr
+            upper_fence = q3 + 1.5 * iqr
+
+            # Find outliers
+            outliers = data[(data < lower_fence) | (data > upper_fence)]
+
+            # Min/max excluding outliers
+            non_outliers = data[(data >= lower_fence) & (data <= upper_fence)]
+            min_val = float(np.min(non_outliers)) if len(non_outliers) > 0 else float(np.min(data))
+            max_val = float(np.max(non_outliers)) if len(non_outliers) > 0 else float(np.max(data))
+
+            return {
+                'column_name': column_name,
+                'min': min_val,
+                'q1': q1,
+                'median': median,
+                'q3': q3,
+                'max': max_val,
+                'mean': float(np.mean(data)),
+                'outliers': outliers.tolist(),
+                'lower_fence': lower_fence,
+                'upper_fence': upper_fence,
+                'iqr': iqr,
+                'total_count': len(data)
+            }
+
+        except Exception as e:
+            print(f"❌ Error computing box plot for {column_name}: {e}")
+            return {}
+
+    def compute_heatmap(self, x_data: np.ndarray, y_data: np.ndarray, value_data: np.ndarray,
+                        x_column: str, y_column: str, value_column: str,
+                        grid_size: int = 50) -> Dict:
+        """
+        Compute 2D heatmap aggregation using numpy.
+
+        Args:
+            x_data: X coordinate values
+            y_data: Y coordinate values
+            value_data: Values to aggregate
+            x_column: Name of X column
+            y_column: Name of Y column
+            value_column: Name of value column
+            grid_size: Grid size for binning (default: 50x50)
+
+        Returns:
+            Dict with heatmap data structure matching HeatmapData protobuf
+        """
+        try:
+            if len(x_data) == 0 or len(y_data) == 0 or len(value_data) == 0:
+                return {}
+
+            # Remove NaN values
+            mask = ~(np.isnan(x_data) | np.isnan(y_data) | np.isnan(value_data))
+            x_data = x_data[mask]
+            y_data = y_data[mask]
+            value_data = value_data[mask]
+
+            if len(x_data) == 0:
+                return {}
+
+            # Calculate bounds
+            min_x, max_x = float(np.min(x_data)), float(np.max(x_data))
+            min_y, max_y = float(np.min(y_data)), float(np.max(y_data))
+
+            # Calculate bin sizes
+            x_bin_size = (max_x - min_x) / grid_size
+            y_bin_size = (max_y - min_y) / grid_size
+
+            # Compute bin indices
+            x_bins = np.floor((x_data - min_x) / x_bin_size).astype(int)
+            y_bins = np.floor((y_data - min_y) / y_bin_size).astype(int)
+
+            # Clip to grid bounds
+            x_bins = np.clip(x_bins, 0, grid_size - 1)
+            y_bins = np.clip(y_bins, 0, grid_size - 1)
+
+            # Aggregate using dictionary (faster than nested loops)
+            cell_sums = {}
+            cell_counts = {}
+
+            for i in range(len(x_data)):
+                key = (x_bins[i], y_bins[i])
+                if key not in cell_sums:
+                    cell_sums[key] = 0.0
+                    cell_counts[key] = 0
+                cell_sums[key] += value_data[i]
+                cell_counts[key] += 1
+
+            # Build cells list
+            cells = []
+            for (x_idx, y_idx), total in cell_sums.items():
+                count = cell_counts[(x_idx, y_idx)]
+                avg_value = total / count
+                cells.append({
+                    'x_index': int(x_idx),
+                    'y_index': int(y_idx),
+                    'avg_value': float(avg_value),
+                    'count': int(count)
+                })
+
+            # Calculate min/max aggregated values
+            avg_values = [cell['avg_value'] for cell in cells]
+            min_value = float(np.min(avg_values)) if avg_values else 0.0
+            max_value = float(np.max(avg_values)) if avg_values else 0.0
+
+            return {
+                'cells': cells,
+                'grid_size_x': grid_size,
+                'grid_size_y': grid_size,
+                'min_value': min_value,
+                'max_value': max_value,
+                'x_bin_size': x_bin_size,
+                'y_bin_size': y_bin_size,
+                'min_x': min_x,
+                'max_x': max_x,
+                'min_y': min_y,
+                'max_y': max_y,
+                'x_column': x_column,
+                'y_column': y_column,
+                'value_column': value_column
+            }
+
+        except Exception as e:
+            print(f"❌ Error computing heatmap: {e}")
+            import traceback
+            print(traceback.format_exc())
+            return {}
+
+
     def store_column_statistics(self, dataset_id: str, column_stats: Dict[str, Dict[str, Any]]):
         """
         Store pandas describe() statistics for dataset columns in the database

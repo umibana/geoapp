@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { HistogramData, BoxPlotData, HeatmapData, DataBoundaries } from '@/generated/projects';
 
 /**
  * Brush selection data structure
@@ -20,6 +21,23 @@ export interface BrushSelection {
     value: string;
   };
   timestamp: number;              // When selection was made (for debugging/history)
+
+  // Pre-computed statistics from backend (computed once, used by all charts)
+  statistics?: {
+    histograms?: Record<string, HistogramData>;      // Key: column_name, Value: histogram data
+    boxPlots?: BoxPlotData[];                        // Box plot data for all columns
+    heatmap?: HeatmapData;                           // Heatmap aggregation
+    totalCount: number;                              // Total number of selected points
+    boundaries?: Record<string, DataBoundaries>;     // Data boundaries for each column
+  };
+
+  // Dataset metadata
+  datasetInfo?: {
+    id: string;                   // Dataset ID
+    name: string;                 // Dataset/file name
+    totalRows: number;            // Total rows in full dataset
+    fileId: string;               // Parent file ID
+  };
 }
 
 /**

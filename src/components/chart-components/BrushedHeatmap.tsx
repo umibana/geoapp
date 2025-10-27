@@ -8,69 +8,43 @@ import { useBrushSelection } from '@/hooks/useBrushSelection';
 /**
  * BrushedHeatmap Component
  * Displays the currently selected brush data as a 2D heatmap
- * Uses binning/aggregation to create a grid visualization
+ * Uses BACKEND-COMPUTED aggregation (no frontend binning!)
  */
 const BrushedHeatmap: React.FC = () => {
   const activeBrushSelection = useBrushSelection();
 
-  // Generate heatmap chart options from brush data
+  // Generate heatmap chart options from BACKEND-COMPUTED heatmap data
   const chartOptions = useMemo(() => {
-    if (!activeBrushSelection || !activeBrushSelection.selectedPoints) return null;
+    console.log('🔍 BrushedHeatmap: Checking for statistics');
+    console.log('📊 activeBrushSelection:', activeBrushSelection);
+    console.log('📊 Has statistics?', !!activeBrushSelection?.statistics);
+    console.log('📊 Has heatmap?', !!activeBrushSelection?.statistics?.heatmap);
 
-    const data = activeBrushSelection.selectedPoints;
-    const { xAxis, yAxis, value } = activeBrushSelection.columns;
-
-    // Calculate bounds
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    let minValue = Infinity, maxValue = -Infinity;
-
-    for (let i = 0; i < data.length; i += 3) {
-      const x = data[i];
-      const y = data[i + 1];
-      const v = data[i + 2];
-
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-      minValue = Math.min(minValue, v);
-      maxValue = Math.max(maxValue, v);
+    // Check if we have backend statistics
+    if (!activeBrushSelection?.statistics?.heatmap) {
+      console.log('❌ No heatmap in statistics');
+      return null;
     }
 
-    // Create grid bins (e.g., 50x50 grid)
-    const gridSize = 50;
-    const xBinSize = (maxX - minX) / gridSize;
-    const yBinSize = (maxY - minY) / gridSize;
+    const heatmap = activeBrushSelection.statistics.heatmap;
+    console.log('📊 Heatmap object:', heatmap);
+    console.log('📊 Heatmap cells count:', heatmap.cells?.length || 0);
 
-    // Initialize grid with sum and count for averaging
-    const grid: { sum: number; count: number }[][] = Array.from({ length: gridSize }, () =>
-      Array.from({ length: gridSize }, () => ({ sum: 0, count: 0 }))
-    );
-
-    // Bin the data
-    for (let i = 0; i < data.length; i += 3) {
-      const x = data[i];
-      const y = data[i + 1];
-      const v = data[i + 2];
-
-      const xBin = Math.min(Math.floor((x - minX) / xBinSize), gridSize - 1);
-      const yBin = Math.min(Math.floor((y - minY) / yBinSize), gridSize - 1);
-
-      grid[yBin][xBin].sum += v;
-      grid[yBin][xBin].count += 1;
+    // Need cells to render
+    if (!heatmap.cells || heatmap.cells.length === 0) {
+      console.log('❌ Heatmap cells array is empty');
+      return null;
     }
 
-    // Convert grid to heatmap data format: [x, y, value]
-    const heatmapData: [number, number, number][] = [];
-    for (let yi = 0; yi < gridSize; yi++) {
-      for (let xi = 0; xi < gridSize; xi++) {
-        if (grid[yi][xi].count > 0) {
-          const avgValue = grid[yi][xi].sum / grid[yi][xi].count;
-          heatmapData.push([xi, yi, avgValue]);
-        }
-      }
-    }
+    console.log('✅ Heatmap found with', heatmap.cells.length, 'cells');
+
+    // All computation is done in backend - just use the data!
+    // Convert cells to ECharts format: [x_index, y_index, avg_value]
+    const heatmapData: [number, number, number][] = heatmap.cells.map(cell => [
+      cell.x_index,
+      cell.y_index,
+      cell.avg_value
+    ]);
 
     return {
       animation: false,
@@ -86,13 +60,13 @@ const BrushedHeatmap: React.FC = () => {
         position: 'top',
         formatter: function(params: { data: [number, number, number] }) {
           const [xBin, yBin, val] = params.data;
-          const xCenter = minX + (xBin + 0.5) * xBinSize;
-          const yCenter = minY + (yBin + 0.5) * yBinSize;
+          const xCenter = heatmap.min_x + (xBin + 0.5) * heatmap.x_bin_size;
+          const yCenter = heatmap.min_y + (yBin + 0.5) * heatmap.y_bin_size;
           return `
             <strong>Celda [${xBin}, ${yBin}]</strong><br/>
-            ${xAxis}: ${xCenter.toFixed(4)}<br/>
-            ${yAxis}: ${yCenter.toFixed(4)}<br/>
-            ${value} (avg): ${val.toFixed(4)}
+            ${heatmap.x_column}: ${xCenter.toFixed(4)}<br/>
+            ${heatmap.y_column}: ${yCenter.toFixed(4)}<br/>
+            ${heatmap.value_column} (avg): ${val.toFixed(4)}
           `;
         }
       },
@@ -103,9 +77,9 @@ const BrushedHeatmap: React.FC = () => {
         bottom: '15%'
       },
       xAxis: {
-        name: xAxis,
+        name: heatmap.x_column,
         type: 'category',
-        data: Array.from({ length: gridSize }, (_, i) => i),
+        data: Array.from({ length: heatmap.grid_size_x }, (_, i) => i),
         nameLocation: 'middle',
         nameGap: 25,
         splitArea: {
@@ -113,9 +87,9 @@ const BrushedHeatmap: React.FC = () => {
         }
       },
       yAxis: {
-        name: yAxis,
+        name: heatmap.y_column,
         type: 'category',
-        data: Array.from({ length: gridSize }, (_, i) => i),
+        data: Array.from({ length: heatmap.grid_size_y }, (_, i) => i),
         nameLocation: 'middle',
         nameGap: 40,
         splitArea: {
@@ -123,8 +97,8 @@ const BrushedHeatmap: React.FC = () => {
         }
       },
       visualMap: {
-        min: minValue,
-        max: maxValue,
+        min: heatmap.min_value,
+        max: heatmap.max_value,
         calculable: true,
         orient: 'vertical',
         right: 10,
@@ -138,7 +112,7 @@ const BrushedHeatmap: React.FC = () => {
         }
       },
       series: [{
-        name: value,
+        name: heatmap.value_column,
         type: 'heatmap',
         data: heatmapData,
         emphasis: {
@@ -150,6 +124,8 @@ const BrushedHeatmap: React.FC = () => {
       }]
     };
   }, [activeBrushSelection]);
+
+  console.log('📈 BrushedHeatmap render - chartOptions:', !!chartOptions);
 
   // No brush selection
   if (!activeBrushSelection) {
@@ -221,12 +197,18 @@ const BrushedHeatmap: React.FC = () => {
       {/* Chart */}
       <Card className="flex-1 flex flex-col min-h-0">
         <CardContent className="flex-1 p-4">
-          {chartOptions && (
+          {chartOptions ? (
             <ReactECharts
               option={chartOptions}
               style={{ height: '100%', width: '100%', minHeight: '300px' }}
               opts={{ renderer: 'canvas' }}
             />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-muted-foreground">
+                ⚠️ No chart data available. Check console for details.
+              </p>
+            </div>
           )}
         </CardContent>
       </Card>

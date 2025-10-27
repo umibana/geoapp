@@ -1,7 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { Brush, AlertCircle } from 'lucide-react';
 import { useBrushSelection } from '@/hooks/useBrushSelection';
 
@@ -9,52 +11,65 @@ import { useBrushSelection } from '@/hooks/useBrushSelection';
  * BrushedBarChart Component
  * Displays the currently selected brush data as a bar chart (histogram)
  * Shows distribution of values across bins
+ * Allows selecting which column's histogram to display
  */
 const BrushedBarChart: React.FC = () => {
   const activeBrushSelection = useBrushSelection();
 
-  // Generate bar chart options from brush data
+  // State for selected column (defaults to value column)
+  const [selectedColumn, setSelectedColumn] = useState<string>('');
+
+  // Get available columns from histograms
+  const availableColumns = useMemo(() => {
+    if (!activeBrushSelection?.statistics?.histograms) return [];
+    return Object.keys(activeBrushSelection.statistics.histograms);
+  }, [activeBrushSelection?.statistics?.histograms]);
+
+  // Initialize selected column when brush selection changes
+  useEffect(() => {
+    if (availableColumns.length > 0 && !selectedColumn) {
+      // Default to value column if available, otherwise first column
+      const defaultCol = activeBrushSelection?.columns?.value || availableColumns[0];
+      if (availableColumns.includes(defaultCol)) {
+        setSelectedColumn(defaultCol);
+      } else {
+        setSelectedColumn(availableColumns[0]);
+      }
+    }
+  }, [availableColumns, selectedColumn, activeBrushSelection?.columns?.value]);
+
+  // Generate bar chart options from BACKEND-COMPUTED histogram data
   const chartOptions = useMemo(() => {
-    if (!activeBrushSelection || !activeBrushSelection.selectedPoints) return null;
+    console.log('🔍 BrushedBarChart: Checking for statistics');
+    console.log('📊 activeBrushSelection:', activeBrushSelection);
 
-    const data = activeBrushSelection.selectedPoints;
-    const { value } = activeBrushSelection.columns;
-
-    // Extract values (every 3rd element starting at index 2)
-    const values: number[] = [];
-    for (let i = 2; i < data.length; i += 3) {
-      values.push(data[i]);
+    // Check if we have backend statistics
+    if (!activeBrushSelection?.statistics?.histograms) {
+      console.log('❌ No statistics or histograms found');
+      return null;
     }
 
-    // Calculate histogram bins
-    const numBins = 30;
-    const minValue = Math.min(...values);
-    const maxValue = Math.max(...values);
-    const binSize = (maxValue - minValue) / numBins;
+    // Use selected column, fallback to value column
+    const columnToDisplay = selectedColumn || activeBrushSelection.columns.value;
+    console.log('📈 Looking for histogram for column:', columnToDisplay);
+    console.log('📊 Available histograms:', Object.keys(activeBrushSelection.statistics.histograms));
 
-    // Create bins
-    const bins: { range: string; count: number; min: number; max: number }[] = [];
-    for (let i = 0; i < numBins; i++) {
-      const binMin = minValue + i * binSize;
-      const binMax = minValue + (i + 1) * binSize;
-      bins.push({
-        range: `${binMin.toFixed(2)} - ${binMax.toFixed(2)}`,
-        count: 0,
-        min: binMin,
-        max: binMax
-      });
+    const histogram = activeBrushSelection.statistics.histograms[columnToDisplay];
+
+    // If histogram for this column doesn't exist, return null
+    if (!histogram || !histogram.bin_ranges || histogram.bin_ranges.length === 0) {
+      console.log('❌ Histogram not found or empty for column:', columnToDisplay);
+      return null;
     }
 
-    // Count values in each bin
-    for (const val of values) {
-      const binIndex = Math.min(Math.floor((val - minValue) / binSize), numBins - 1);
-      bins[binIndex].count++;
-    }
+    console.log('✅ Histogram found with', histogram.bin_ranges.length, 'bins');
+    console.log('📊 Total count:', histogram.total_count);
 
+    // All computation is done in backend - just use the data!
     return {
       animation: false,
       title: {
-        text: 'Histograma - Distribución de Valores',
+        text: `Histograma - ${columnToDisplay}`,
         left: 'center',
         textStyle: {
           fontSize: 14,
@@ -68,11 +83,13 @@ const BrushedBarChart: React.FC = () => {
         },
         formatter: function(params: any) {
           const dataIndex = params[0].dataIndex;
-          const bin = bins[dataIndex];
+          const binRange = histogram.bin_ranges[dataIndex];
+          const count = histogram.bin_counts[dataIndex];
+          const percentage = ((count / histogram.total_count) * 100).toFixed(2);
           return `
-            <strong>Rango: ${bin.range}</strong><br/>
-            Frecuencia: ${bin.count} puntos<br/>
-            Porcentaje: ${((bin.count / values.length) * 100).toFixed(2)}%
+            <strong>Rango: ${binRange}</strong><br/>
+            Frecuencia: ${count} puntos<br/>
+            Porcentaje: ${percentage}%
           `;
         }
       },
@@ -84,9 +101,9 @@ const BrushedBarChart: React.FC = () => {
         containLabel: true
       },
       xAxis: {
-        name: value,
+        name: columnToDisplay,
         type: 'category',
-        data: bins.map(b => b.range),
+        data: histogram.bin_ranges,
         nameLocation: 'middle',
         nameGap: 40,
         axisLabel: {
@@ -116,7 +133,7 @@ const BrushedBarChart: React.FC = () => {
       series: [{
         name: 'Frecuencia',
         type: 'bar',
-        data: bins.map(b => b.count),
+        data: histogram.bin_counts,
         itemStyle: {
           color: '#3b82f6',
           borderRadius: [4, 4, 0, 0]
@@ -128,7 +145,9 @@ const BrushedBarChart: React.FC = () => {
         }
       }]
     };
-  }, [activeBrushSelection]);
+  }, [activeBrushSelection, selectedColumn]);
+
+  console.log('📈 BrushedBarChart render - chartOptions:', !!chartOptions);
 
   // No brush selection
   if (!activeBrushSelection) {
@@ -170,13 +189,36 @@ const BrushedBarChart: React.FC = () => {
           </p>
         </div>
         <Badge variant="default" className="px-3 py-1">
-          {activeBrushSelection.selectedIndices.length.toLocaleString()} puntos
+          {(activeBrushSelection.statistics?.totalCount || activeBrushSelection.selectedIndices.length).toLocaleString()} puntos
         </Badge>
       </div>
 
-      {/* Info Card */}
+      {/* Info Card with Column Selector */}
       <Card className="flex-shrink-0">
-        <CardContent className="pt-4">
+        <CardContent className="pt-4 space-y-4">
+          {/* Column Selector */}
+          <div>
+            <Label htmlFor="column-select" className="text-sm font-medium">
+              Columna a visualizar
+            </Label>
+            <Select value={selectedColumn} onValueChange={setSelectedColumn}>
+              <SelectTrigger id="column-select" className="mt-1">
+                <SelectValue placeholder="Seleccionar columna" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableColumns.map((col) => (
+                  <SelectItem key={col} value={col}>
+                    {col}
+                    {col === activeBrushSelection.columns.xAxis && ' (X)'}
+                    {col === activeBrushSelection.columns.yAxis && ' (Y)'}
+                    {col === activeBrushSelection.columns.value && ' (Valor)'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Column Info */}
           <div className="grid grid-cols-3 gap-4 text-sm">
             <div>
               <p className="text-muted-foreground">Eje X</p>
@@ -191,7 +233,7 @@ const BrushedBarChart: React.FC = () => {
               <p className="font-medium">{activeBrushSelection.columns.value}</p>
             </div>
           </div>
-          <div className="mt-3 text-xs text-muted-foreground">
+          <div className="text-xs text-muted-foreground">
             <p>Bounds: X [{activeBrushSelection.coordRange.x1.toFixed(2)}, {activeBrushSelection.coordRange.x2.toFixed(2)}] • Y [{activeBrushSelection.coordRange.y1.toFixed(2)}, {activeBrushSelection.coordRange.y2.toFixed(2)}]</p>
           </div>
         </CardContent>
@@ -200,12 +242,18 @@ const BrushedBarChart: React.FC = () => {
       {/* Chart */}
       <Card className="flex-1 flex flex-col min-h-0">
         <CardContent className="flex-1 p-4">
-          {chartOptions && (
+          {chartOptions ? (
             <ReactECharts
               option={chartOptions}
               style={{ height: '100%', width: '100%', minHeight: '300px' }}
               opts={{ renderer: 'canvas' }}
             />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-muted-foreground">
+                ⚠️ No chart data available. Check console for details.
+              </p>
+            </div>
           )}
         </CardContent>
       </Card>

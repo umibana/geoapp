@@ -918,14 +918,21 @@ class ProjectManager:
     
     def get_dataset_data(self, request: projects_pb2.GetDatasetDataRequest) -> projects_pb2.GetDatasetDataResponse:
         try:
-            # Use default columns if not specified
-            columns = list(request.columns) if request.columns else ["x", "y", "z"]
+            # Columns for visualization (raw data points - typically x, y, z)
+            viz_columns = list(request.columns) if request.columns else ["x", "y", "z"]
+            print(f"📋 Visualization columns (for raw data): {viz_columns}")
 
             # Obtener información del dataset primero
             dataset = self.db.get_dataset_by_id(request.dataset_id)
             if not dataset:
                 response = projects_pb2.GetDatasetDataResponse()
                 return response
+
+            # Get ALL numeric column names from dataset for statistics computation
+            import json
+            column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
+            all_numeric_columns = [m['column_name'] for m in column_mappings if m['column_type'] == 1]  # NUMERIC only
+            print(f"📊 All numeric columns (for statistics): {all_numeric_columns} ({len(all_numeric_columns)} columns)")
 
             # Extract optional filtering parameters
             bounding_box = list(request.bounding_box) if request.bounding_box else None
@@ -943,12 +950,20 @@ class ProjectManager:
             if function:
                 print(f"🔧 Function: {function}")
 
-            # Get data with optional bounding box filter
+            # Get visualization data (only requested columns for raw data)
             data, boundaries = self.db.get_dataset_data_and_stats_combined(
                 request.dataset_id,
-                columns,
+                viz_columns,
                 bounding_box=bounding_box
             )
+
+            # Get ALL numeric columns data for statistics computation
+            all_data, all_boundaries = self.db.get_dataset_data_and_stats_combined(
+                request.dataset_id,
+                all_numeric_columns,
+                bounding_box=bounding_box
+            )
+            print(f"📊 Fetched {len(all_data)} values for {len(all_numeric_columns)} columns")
 
             # Direct binary conversion without unnecessary copying
             binary_data = data.tobytes()
@@ -966,6 +981,91 @@ class ProjectManager:
                 boundary.min_value = float(stats['min_value'])
                 boundary.max_value = float(stats['max_value'])
                 boundary.valid_count = int(stats['valid_count'])
+
+            # ========== Compute statistics for ALL numeric columns ==========
+            if len(all_data) > 0:
+                num_points = len(all_data) // len(all_numeric_columns)
+                print(f"📊 Computing statistics for {num_points} points across {len(all_numeric_columns)} columns...")
+
+                # 1. Compute histograms for ALL numeric columns
+                for i, col_name in enumerate(all_numeric_columns):
+                    col_data = all_data[i::len(all_numeric_columns)]  # Extract column data from interleaved format
+                    histogram = self.db.compute_histogram(col_data, col_name, num_bins=30)
+
+                    if histogram:
+                        hist_proto = response.histograms[col_name]
+                        hist_proto.bin_ranges.extend(histogram['bin_ranges'])
+                        hist_proto.bin_counts.extend(histogram['bin_counts'])
+                        hist_proto.bin_edges.extend(histogram['bin_edges'])
+                        hist_proto.num_bins = histogram['num_bins']
+                        hist_proto.min_value = histogram['min_value']
+                        hist_proto.max_value = histogram['max_value']
+                        hist_proto.total_count = histogram['total_count']
+                        print(f"  ✅ Histogram for '{col_name}': {histogram['num_bins']} bins")
+
+                # 2. Compute box plots for ALL numeric columns
+                for i, col_name in enumerate(all_numeric_columns):
+                    col_data = all_data[i::len(all_numeric_columns)]  # Extract column data from interleaved format
+                    boxplot = self.db.compute_boxplot(col_data, col_name)
+
+                    if boxplot:
+                        bp_proto = response.box_plots.add()
+                        bp_proto.column_name = boxplot['column_name']
+                        bp_proto.min = boxplot['min']
+                        bp_proto.q1 = boxplot['q1']
+                        bp_proto.median = boxplot['median']
+                        bp_proto.q3 = boxplot['q3']
+                        bp_proto.max = boxplot['max']
+                        bp_proto.mean = boxplot['mean']
+                        bp_proto.outliers.extend(boxplot['outliers'])
+                        bp_proto.lower_fence = boxplot['lower_fence']
+                        bp_proto.upper_fence = boxplot['upper_fence']
+                        bp_proto.iqr = boxplot['iqr']
+                        bp_proto.total_count = boxplot['total_count']
+                        print(f"  ✅ Box plot for '{col_name}': median={boxplot['median']:.2f}, {len(boxplot['outliers'])} outliers")
+
+                # 3. Compute heatmap (using visualization columns only - x, y, z)
+                if len(viz_columns) >= 3:
+                    # Extract x, y, z from all_data for heatmap
+                    x_idx = all_numeric_columns.index(viz_columns[0]) if viz_columns[0] in all_numeric_columns else 0
+                    y_idx = all_numeric_columns.index(viz_columns[1]) if viz_columns[1] in all_numeric_columns else 1
+                    z_idx = all_numeric_columns.index(viz_columns[2]) if viz_columns[2] in all_numeric_columns else 2
+
+                    x_data = all_data[x_idx::len(all_numeric_columns)]
+                    y_data = all_data[y_idx::len(all_numeric_columns)]
+                    z_data = all_data[z_idx::len(all_numeric_columns)]
+
+                    heatmap = self.db.compute_heatmap(
+                        x_data, y_data, z_data,
+                        viz_columns[0], viz_columns[1], viz_columns[2],
+                        grid_size=50
+                    )
+
+                    if heatmap and heatmap.get('cells'):
+                        hm_proto = response.heatmap
+                        for cell in heatmap['cells']:
+                            cell_proto = hm_proto.cells.add()
+                            cell_proto.x_index = cell['x_index']
+                            cell_proto.y_index = cell['y_index']
+                            cell_proto.avg_value = cell['avg_value']
+                            cell_proto.count = cell['count']
+
+                        hm_proto.grid_size_x = heatmap['grid_size_x']
+                        hm_proto.grid_size_y = heatmap['grid_size_y']
+                        hm_proto.min_value = heatmap['min_value']
+                        hm_proto.max_value = heatmap['max_value']
+                        hm_proto.x_bin_size = heatmap['x_bin_size']
+                        hm_proto.y_bin_size = heatmap['y_bin_size']
+                        hm_proto.min_x = heatmap['min_x']
+                        hm_proto.max_x = heatmap['max_x']
+                        hm_proto.min_y = heatmap['min_y']
+                        hm_proto.max_y = heatmap['max_y']
+                        hm_proto.x_column = heatmap['x_column']
+                        hm_proto.y_column = heatmap['y_column']
+                        hm_proto.value_column = heatmap['value_column']
+                        print(f"  ✅ Heatmap: {len(heatmap['cells'])} cells in {heatmap['grid_size_x']}x{heatmap['grid_size_y']} grid")
+
+                print(f"✅ Statistics computation complete!")
 
             return response
 

@@ -8,82 +8,50 @@ import { useBrushSelection } from '@/hooks/useBrushSelection';
 /**
  * Brushed BoxPlot Component
  * Displays the currently selected brush data as a box plot
- * Shows statistics using describe from pandas
+ * Uses BACKEND-COMPUTED statistics (no frontend calculation!)
  */
-
-
-//TODO: FETCH statistics from backend according to the filtered selection
-// This can be done using PANDAS.describe function in python
 const BrushedBoxPlot: React.FC = () => {
   const activeBrushSelection = useBrushSelection();
 
-  // Generate box plot options from brush data
+  // Generate box plot options from BACKEND-COMPUTED box plot data
   const chartOptions = useMemo(() => {
-    if (!activeBrushSelection || !activeBrushSelection.selectedPoints) return null;
+    console.log('🔍 BrushedBoxPlot: Checking for statistics');
+    console.log('📊 activeBrushSelection:', activeBrushSelection);
+    console.log('📊 Has statistics?', !!activeBrushSelection?.statistics);
+    console.log('📊 Has boxPlots?', !!activeBrushSelection?.statistics?.boxPlots);
 
-    const data = activeBrushSelection.selectedPoints;
-    const { xAxis, yAxis, value } = activeBrushSelection.columns;
-
-    // Extract X, Y, and Value arrays
-    const xValues: number[] = [];
-    const yValues: number[] = [];
-    const values: number[] = [];
-
-    for (let i = 0; i < data.length; i += 3) {
-      xValues.push(data[i]);
-      yValues.push(data[i + 1]);
-      values.push(data[i + 2]);
+    // Check if we have backend statistics
+    if (!activeBrushSelection?.statistics?.boxPlots) {
+      console.log('❌ No boxPlots in statistics');
+      return null;
     }
 
-    // Calculate statistics for box plot
-    const calculateStats = (arr: number[]) => {
-      const sorted = [...arr].sort((a, b) => a - b);
-      const len = sorted.length;
+    const boxPlots = activeBrushSelection.statistics.boxPlots;
+    console.log('📊 Box plots array:', boxPlots);
+    console.log('📊 Box plots length:', boxPlots.length);
 
-      const min = sorted[0];
-      const max = sorted[len - 1];
-      const median = len % 2 === 0
-        ? (sorted[len / 2 - 1] + sorted[len / 2]) / 2
-        : sorted[Math.floor(len / 2)];
-      const q1 = sorted[Math.floor(len * 0.25)];
-      const q3 = sorted[Math.floor(len * 0.75)];
+    // Need at least one box plot
+    if (!boxPlots || boxPlots.length === 0) {
+      console.log('❌ Box plots array is empty');
+      return null;
+    }
 
-      // Calculate outliers (IQR method)
-      const iqr = q3 - q1;
-      const lowerBound = q1 - 1.5 * iqr;
-      const upperBound = q3 + 1.5 * iqr;
-      const outliers = sorted.filter(v => v < lowerBound || v > upperBound);
+    console.log('✅ Box plots found:', boxPlots.length, 'columns');
 
-      return {
-        min,
-        q1,
-        median,
-        q3,
-        max,
-        mean: arr.reduce((a, b) => a + b, 0) / len,
-        outliers,
-        lowerBound,
-        upperBound
-      };
-    };
-
-    const xStats = calculateStats(xValues);
-    const yStats = calculateStats(yValues);
-    const valueStats = calculateStats(values);
-
+    // All computation is done in backend - just use the data!
     // Box plot data format: [min, Q1, median, Q3, max]
-    const boxplotData = [
-      [xStats.min, xStats.q1, xStats.median, xStats.q3, xStats.max],
-      [yStats.min, yStats.q1, yStats.median, yStats.q3, yStats.max],
-      [valueStats.min, valueStats.q1, valueStats.median, valueStats.q3, valueStats.max]
-    ];
+    const boxplotData = boxPlots.map(bp => [
+      bp.min,
+      bp.q1,
+      bp.median,
+      bp.q3,
+      bp.max
+    ]);
 
-    // Outliers data
-    const outlierData = [
-      xStats.outliers.map(v => [0, v]),
-      yStats.outliers.map(v => [1, v]),
-      valueStats.outliers.map(v => [2, v])
-    ].flat();
+    // Outliers data: [columnIndex, outlierValue]
+    const outlierData = boxPlots.flatMap((bp, i) =>
+      bp.outliers.map(v => [i, v])
+    );
 
     return {
       animation: false,
@@ -102,15 +70,17 @@ const BrushedBoxPlot: React.FC = () => {
         },
         formatter: function(params: any) {
           if (params.componentSubType === 'boxplot') {
-            const [min, q1, median, q3, max] = params.data;
-            const categories = [xAxis, yAxis, value];
+            const bp = boxPlots[params.dataIndex];
             return `
-              <strong>${categories[params.dataIndex]}</strong><br/>
-              Máximo: ${max.toFixed(4)}<br/>
-              Q3 (75%): ${q3.toFixed(4)}<br/>
-              Mediana: ${median.toFixed(4)}<br/>
-              Q1 (25%): ${q1.toFixed(4)}<br/>
-              Mínimo: ${min.toFixed(4)}
+              <strong>${bp.column_name}</strong><br/>
+              Máximo: ${bp.max.toFixed(4)}<br/>
+              Q3 (75%): ${bp.q3.toFixed(4)}<br/>
+              Mediana: ${bp.median.toFixed(4)}<br/>
+              Media: ${bp.mean.toFixed(4)}<br/>
+              Q1 (25%): ${bp.q1.toFixed(4)}<br/>
+              Mínimo: ${bp.min.toFixed(4)}<br/>
+              IQR: ${bp.iqr.toFixed(4)}<br/>
+              Outliers: ${bp.outliers.length}
             `;
           } else {
             return `Outlier: ${params.data[1].toFixed(4)}`;
@@ -126,7 +96,7 @@ const BrushedBoxPlot: React.FC = () => {
       },
       xAxis: {
         type: 'category',
-        data: [xAxis, yAxis, value],
+        data: boxPlots.map(bp => bp.column_name),
         boundaryGap: true,
         nameGap: 30,
         scale: true,
@@ -181,6 +151,8 @@ const BrushedBoxPlot: React.FC = () => {
       ]
     };
   }, [activeBrushSelection]);
+
+  console.log('📈 BrushedBoxPlot render - chartOptions:', !!chartOptions);
 
   // No brush selection
   if (!activeBrushSelection) {
@@ -252,12 +224,18 @@ const BrushedBoxPlot: React.FC = () => {
       {/* Chart */}
       <Card className="flex-1 flex flex-col min-h-0">
         <CardContent className="flex-1 p-4">
-          {chartOptions && (
+          {chartOptions ? (
             <ReactECharts
               option={chartOptions}
               style={{ height: '100%', width: '100%', minHeight: '300px' }}
               opts={{ renderer: 'canvas' }}
             />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-muted-foreground">
+                ⚠️ No chart data available. Check console for details.
+              </p>
+            </div>
           )}
         </CardContent>
       </Card>
