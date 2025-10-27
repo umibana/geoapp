@@ -154,6 +154,212 @@ message DeleteFileResponse {
   string error_message = 2;
 }
 
+// Update file metadata
+message UpdateFileRequest {
+  string file_id = 1;
+  string name = 2;
+}
+
+message UpdateFileResponse {
+  File file = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+// Rename file columns in DuckDB
+message RenameFileColumnRequest {
+  string file_id = 1;
+  map<string, string> column_renames = 2;  // old_name -> new_name
+}
+
+message RenameFileColumnResponse {
+  repeated string renamed_columns = 1;  // List of new column names
+  bool success = 2;
+  string error_message = 3;
+}
+
+// Get file statistics
+message GetFileStatisticsRequest {
+  string file_id = 1;
+  repeated string columns = 2;  // Optional: specific columns to get stats for
+}
+
+message ColumnStatistics {
+  string column_name = 1;
+  string data_type = 2;  // "numeric" or "categorical"
+  int32 count = 3;
+  int32 null_count = 4;
+  int32 unique_count = 5;
+
+  // For numeric columns
+  optional double mean = 6;
+  optional double std = 7;
+  optional double min = 8;
+  optional double q25 = 9;
+  optional double q50 = 10;  // median
+  optional double q75 = 11;
+  optional double max = 12;
+
+  // For categorical columns
+  repeated string top_values = 13;
+  repeated int32 top_counts = 14;
+}
+
+message GetFileStatisticsResponse {
+  repeated ColumnStatistics statistics = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+// ========== Data Manipulation Operations ==========
+
+// Replace file data (data cleaning)
+message DataReplacement {
+  string from_value = 1;
+  string to_value = 2;
+}
+
+message ReplaceFileDataRequest {
+  string file_id = 1;
+  repeated DataReplacement replacements = 2;
+  repeated string columns = 3;  // Optional: specific columns to apply replacements
+}
+
+message ReplaceFileDataResponse {
+  int32 rows_affected = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+// Search/filter file data with pagination
+message SearchFileDataRequest {
+  string file_id = 1;
+  string query = 2;  // Search query/filter condition
+  int32 limit = 3;   // Max results to return
+  int32 offset = 4;  // Pagination offset
+}
+
+message SearchFileDataResponse {
+  string file_id = 1;
+  int32 total_rows = 2;
+  int32 current_page = 3;
+  repeated DataRow data = 4;
+  bool success = 5;
+  string error_message = 6;
+}
+
+// Filter file data with optional new file creation
+message FilterFileDataRequest {
+  string file_id = 1;
+  string column = 2;
+  string operation = 3;  // "=", "!=", ">", "<", ">=", "<=", "LIKE"
+  string value = 4;
+  bool create_new_file = 5;
+  string new_file_name = 6;  // Required if create_new_file=true
+}
+
+message FilterFileDataResponse {
+  string file_id = 1;  // Original or new file_id
+  int32 total_rows = 2;
+  bool success = 3;
+  string error_message = 4;
+}
+
+// Delete specific points/rows from file
+message DeleteFilePointsRequest {
+  string file_id = 1;
+  repeated int32 row_indices = 2;  // Row indices to delete
+}
+
+message DeleteFilePointsResponse {
+  int32 rows_deleted = 1;
+  int32 rows_remaining = 2;
+  bool success = 3;
+  string error_message = 4;
+}
+
+// Add a filtered column (non-destructive filtering)
+message AddFilteredColumnRequest {
+  string file_id = 1;
+  string new_column_name = 2;       // Name for the new column
+  string source_column = 3;          // Column to filter on
+  string operation = 4;              // "=", "!=", ">", "<", ">=", "<=", "LIKE"
+  string value = 5;                  // Value to compare against
+}
+
+message AddFilteredColumnResponse {
+  string new_column_name = 1;
+  int32 rows_with_values = 2;        // Number of rows matching the filter
+  int32 rows_with_null = 3;          // Number of rows with NULL (non-matching)
+  bool success = 4;
+  string error_message = 5;
+}
+
+// ========== Advanced Column Operations ==========
+
+// Add new columns to file
+message NewColumn {
+  string column_name = 1;
+  repeated string values = 2;  // Must match row count
+}
+
+message AddFileColumnsRequest {
+  string file_id = 1;
+  repeated NewColumn new_columns = 2;
+}
+
+message AddFileColumnsResponse {
+  repeated string added_columns = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+// Duplicate existing columns
+message ColumnDuplicate {
+  string source_column = 1;
+  string new_column_name = 2;  // Optional - if empty, auto-generate as source_column_copy
+}
+
+message DuplicateFileColumnsRequest {
+  string file_id = 1;
+  repeated ColumnDuplicate columns = 2;
+}
+
+message DuplicateFileColumnsResponse {
+  repeated string duplicated_columns = 1;  // New column names created
+  bool success = 2;
+  string error_message = 3;
+}
+
+// ========== Dataset Merging ==========
+
+enum MergeMode {
+  MERGE_MODE_UNSPECIFIED = 0;
+  MERGE_MODE_BY_ROWS = 1;      // UNION ALL - append rows
+  MERGE_MODE_BY_COLUMNS = 2;   // JOIN - add columns
+}
+
+message MergeDatasetsRequest {
+  string first_dataset_id = 1;
+  string second_dataset_id = 2;
+  MergeMode mode = 3;
+
+  // Only for BY_COLUMNS mode
+  repeated string exclude_columns_first = 4;   // Columns to exclude from first dataset
+  repeated string exclude_columns_second = 5;  // Columns to exclude from second dataset
+
+  string output_file = 6;  // Optional: name for merged file
+}
+
+message MergeDatasetsResponse {
+  string dataset_id = 1;         // ID of resulting dataset
+  int32 rows_merged = 2;
+  int32 columns_merged = 3;
+  repeated string warnings = 4;
+  bool success = 5;
+  string error_message = 6;
+}
+
 // Enhanced CSV analysis with column type detection
 message AnalyzeCsvForProjectRequest {
   string file_id = 1;
@@ -190,10 +396,71 @@ message DataBoundaries {
   int32 valid_count = 4;  // Number of valid (non-null, numeric) values
 }
 
+// Pre-computed statistics for efficient frontend visualization
+
+// Histogram data for bar charts
+message HistogramData {
+  repeated string bin_ranges = 1;      // Human-readable ranges: ["0.00 - 10.00", "10.00 - 20.00", ...]
+  repeated int32 bin_counts = 2;       // Count of values in each bin
+  repeated double bin_edges = 3;       // Numeric bin edges for precise rendering
+  int32 num_bins = 4;                  // Number of bins used
+  double min_value = 5;                // Minimum value in data
+  double max_value = 6;                // Maximum value in data
+  int32 total_count = 7;               // Total number of values
+}
+
+// Box plot statistical data
+message BoxPlotData {
+  string column_name = 1;
+  double min = 2;                      // Minimum value (excluding outliers)
+  double q1 = 3;                       // First quartile (25th percentile)
+  double median = 4;                   // Median (50th percentile)
+  double q3 = 5;                       // Third quartile (75th percentile)
+  double max = 6;                      // Maximum value (excluding outliers)
+  double mean = 7;                     // Mean/average value
+  repeated double outliers = 8;        // Outlier values
+  double lower_fence = 9;              // Lower fence (Q1 - 1.5*IQR)
+  double upper_fence = 10;             // Upper fence (Q3 + 1.5*IQR)
+  double iqr = 11;                     // Interquartile range (Q3 - Q1)
+  int32 total_count = 12;              // Total number of values
+}
+
+// Heatmap cell data
+message HeatmapCell {
+  int32 x_index = 1;                   // X bin index
+  int32 y_index = 2;                   // Y bin index
+  double avg_value = 3;                // Average value in this cell
+  int32 count = 4;                     // Number of points in this cell
+}
+
+// Heatmap aggregated data
+message HeatmapData {
+  repeated HeatmapCell cells = 1;      // Grid cells with aggregated values
+  int32 grid_size_x = 2;               // Number of bins in X direction
+  int32 grid_size_y = 3;               // Number of bins in Y direction
+  double min_value = 4;                // Minimum aggregated value
+  double max_value = 5;                // Maximum aggregated value
+  double x_bin_size = 6;               // Width of each X bin
+  double y_bin_size = 7;               // Height of each Y bin
+  double min_x = 8;                    // Minimum X coordinate
+  double max_x = 9;                    // Maximum X coordinate
+  double min_y = 10;                   // Minimum Y coordinate
+  double max_y = 11;                   // Maximum Y coordinate
+  string x_column = 12;                // X column name
+  string y_column = 13;                // Y column name
+  string value_column = 14;            // Value column name
+}
+
 // Get dataset data with pagination
 message GetDatasetDataRequest {
   string dataset_id = 1;
   repeated string columns = 2;
+
+  // Optional filtering and visualization parameters
+  optional string shape = 3;           // e.g. "circle" | "rect" | "triangle" | ...
+  optional string color = 4;           // color name or hex
+  optional string function = 5;        // e.g. "IDW" | "NONE" | "log" (default: "NONE")
+  repeated double bounding_box = 6;    // [x1, x2, y1, y2] for 2D or [x1, x2, y1, y2, z1, z2] for 3D
 }
 
 message GetDatasetDataResponse {
@@ -201,6 +468,11 @@ message GetDatasetDataResponse {
   int32 data_length = 2;
   int32 total_count = 3;
   repeated DataBoundaries data_boundaries = 4;
+
+  // Pre-computed statistics for visualization (computed on backend)
+  map<string, HistogramData> histograms = 5;     // Key: column_name, Value: histogram data
+  repeated BoxPlotData box_plots = 6;             // Box plot data for all numeric columns
+  optional HeatmapData heatmap = 7;               // Heatmap aggregation (if x,y,value columns provided)
 }
 
 // Note: DataBoundaries are now included directly in GetDatasetDataResponse

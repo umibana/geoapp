@@ -40,219 +40,103 @@ For example, after compiling the above schema using the following command to com
 
 ### [gRPC](https://grpc.io/docs/what-is-grpc/introduction/)
 
-
-
-
------ README WORK IN PROGRESS ----
-
-
-
-### Flujo de Comunicación
+To make use of the protocol buffers we use gRPC in this project. This allows to call functions directly from the server as long as we have connection to it.
+The current implementation in this project allows us to call functions defined in grpc_server.py from the frontend like this.
 ```
-Componentes React (Proceso Renderer)
-        ↓ Context Bridge Auto-generado (window.autoGrpc)
-        ↓ IPC Seguro con Tipos Auto-generados
-Proceso Principal (Handlers IPC Auto-generados)
-        ├── Streaming Columnar (100K-2M puntos)
-        ↓ Cliente gRPC Auto-generado (@grpc/grpc-js)
-Servidor Python gRPC (puerto 50077)
-        ├── Generador de Datos Numpy (columnar)
-        ├── Procesamiento CSV con pandas
-        └── Base de Datos SQLite (proyectos)
-```
-
-## 🚀 API y Métodos Disponibles
-
-### Sistema Auto-generado (`window.autoGrpc`)
-La aplicación utiliza un **sistema completamente auto-generado** que elimina código de API manual:
-
-#### Métodos Principales Disponibles
-```typescript
-// Métodos de ejemplo simples
-await window.autoGrpc.helloWorld({ message: "Hello!" });
-await window.autoGrpc.echoParameter({ value: 42, operation: "square" });
-await window.autoGrpc.healthCheck({});
-
-// Datos geoespaciales
-await window.autoGrpc.getFeatures({ bounds, feature_types: [], limit: 20 });
-
-// ✅ RECOMENDADO: Formato columnar para datasets grandes
-await window.autoGrpc.getBatchDataColumnar({ 
-  bounds, 
-  data_types: ['elevation'], 
-  max_points: 1000000, 
-  resolution: 20 
-});
-
-// ✅ RECOMENDADO: Streaming columnar para datasets ultra-grandes
-await window.autoGrpc.getBatchDataColumnarStreamed({ 
-  bounds, 
-  data_types: ['elevation'], 
-  max_points: 5000000, 
-  resolution: 30 
-}, (chunk) => {
-  console.log(`Chunk ${chunk.chunk_number}/${chunk.total_chunks}: ${chunk.points_in_chunk} puntos`);
-});
-
-// Gestión de proyectos
-await window.autoGrpc.createProject({ name: "Mi Proyecto", description: "Descripción" });
-await window.autoGrpc.getProjects({ limit: 100, offset: 0 });
-
-// Procesamiento de archivos CSV
-await window.autoGrpc.analyzeCsv({ file_path: "/path/to/file.csv", rows_to_analyze: 2 });
-await window.autoGrpc.sendFile({ 
-  file_path, 
-  x_variable: "lng", 
-  y_variable: "lat", 
-  z_variable: "elevation" 
-});
-```
-
-### Cómo Añadir Nuevos Métodos
-
-#### Opción A: Auto-generado (Recomendado) ⚡
-1. **Actualiza Protocol Buffers**: Edita archivos en `/protos/` (ej: `geospatial.proto`)
-2. **Implementa Backend**: Añade método en `backend/grpc_server.py`
-3. **Regenera Código**: Ejecuta `npm run generate:full-stack`
-4. **Usa Inmediatamente**: `const result = await window.autoGrpc.nuevoMetodo({ params })`
-
-## 📁 Estructura del Proyecto
+const response = await window.autoGrpc.deleteProject({ project_id: projectId });
 
 ```
-📦 geospatialWebapp/
-├── 🗂️ backend/                    # Backend Python gRPC
-│   ├── grpc_server.py             # Servidor gRPC principal (puerto 50077)
-│   ├── data_generator.py          # Generador de datos numpy columnar
-│   ├── database.py                # Gestor de base de datos SQLite
-│   ├── build_server.py            # PyInstaller para empaquetado
-│   ├── requirements.txt           # Dependencias Python (grpcio, numpy, pandas)
-│   └── generated/                 # Stubs Protocol Buffer auto-generados
-├── 🗂️ src/                        # Frontend Electron + React
-│   ├── main.ts                    # Proceso principal Electron
-│   ├── preload.ts                 # Context bridge (window.autoGrpc)
-│   ├── renderer.ts                # Entrada del renderer React
-│   ├── App.tsx                    # Componente React principal
-│   ├── 🗂️ components/             # Componentes React
-│   │   ├── GrpcDemo.tsx           # Demo principal con todos los ejemplos
-│   │   ├── ChildProcessVisualization.tsx   # Streaming columnar
-│   │   ├── ProjectManager.tsx     # Gestión de proyectos
-│   │   ├── EnhancedCsvProcessor.tsx # Procesamiento CSV avanzado
-│   │   └── ui/                    # Componentes shadcn/ui
-│   ├── 🗂️ grpc-auto/             # Sistema auto-generado (Link Electron main <-> renderer)
-│   │   ├── auto-grpc-client.ts    # Cliente gRPC para renderer
-│   │   ├── auto-ipc-handlers.ts   # Handlers IPC para main process
-│   │   ├── auto-main-client.ts    # Cliente gRPC para main process
-│   │   └── auto-context.ts        # Context bridge auto-generado
-│   ├── 🗂️ helpers/               # Utilidades y helpers
-│   │   ├── backend_helpers.ts     # Gestión del proceso backend Python
-│   │   └── ipc/                   # Sistema IPC modular por dominios
-│   │       ├── backend/           # IPC para backend
-│   │       ├── theme/             # IPC para temas
-│   │       └── window/            # IPC para ventana
-│   ├── 🗂️ generated/             # Stubs TypeScript de Protocol Buffers
-│   └── 🗂️ pages/                 # Páginas de la aplicación
-├── 🗂️ protos/                    # 📋 Definiciones Protocol Buffer (fuente única de verdad)
-│   ├── main_service.proto         # Servicio principal que combina todos
-│   ├── geospatial.proto          # Tipos y métodos geoespaciales + columnar
-│   ├── files.proto               # Procesamiento de archivos CSV
-│   └── projects.proto            # Gestión de proyectos y datasets
-├── 🗂️ scripts/                   # Scripts de generación y utilidades
-│   ├── generate-full-stack.js    # 🔥 Generador principal auto-generado
-│   └── generate-protos.js        # Generador básico de Protocol Buffers
-└── package.json                  # Dependencias y scripts npm
-```
+In this case, we have a grpc client which we can access using window.autoGrpc -- followed by the method we want to use. Since the protocol buffers requires strict typing, we have access to all the methods defined using intellisense and which parameters it accepts.
 
-### 🔑 Archivos Clave
-- **`protos/main_service.proto`**: Punto de entrada principal que define todos los servicios disponibles
-- **`src/grpc-auto/`**: Directorio completamente auto-generado - contiene toda la lógica de comunicación gRPC
-- **`backend/grpc_server.py`**: Implementación del servidor gRPC con todos los métodos de negocio
-- **`src/components/GrpcDemo.tsx`**: Componente principal que demuestra todas las capacidades de la aplicación
+### Electron.
 
-## 💻 Desarrollo
+Since we need to able to build this application for all Operating Systems and we're looking for quick iteration development, we use Electron (with React) in this application.
 
-### Configuración Inicial
-```bash
-npm install                       # Instalar dependencias frontend
-npm run setup:backend            # Instalar dependencias Python en venv/
-```
+The usage of it is very similar to a common web application built with React, with a few changes.
 
-### Desarrollo Diario
-```bash
-npm run dev                       # 🚀 RECOMENDADO: Inicia todo (genera protos + backend + frontend)
-```
+#### IPC
 
-### Comandos Individuales
-```bash
-# Aplicación
-npm start                         # Solo aplicación Electron (genera protos automáticamente)
-npm run dev:backend              # Solo servidor gRPC Python (puerto 50077)
+Electron has two processes, the renderer (The React window, where the UI gets displayes) and "main" (Node.JS proccess). To communicate between both processes we have to use inter-process communication. (see preload.ts). Since generating code for each different RPC we want to use, we auto-generate generic IPC calls (check generate-full-stack-optimized.js) which allows us to easily use gRPC.
 
-# Generación de código
-npm run generate:full-stack      # 🔥 Regenera sistema auto-generado completo
-npm run generate:protos          # Genera solo stubs básicos de Protocol Buffers
+## Project structure
 
-# Testing
-npm run test                     # Tests unitarios (Vitest)
-npm run test:e2e                # Tests end-to-end (Playwright) - requiere app empaquetada
-npm run test:all                # Todos los tests
+Both backend and frontend are managed in the same repository, since we need the have both codebases to build the final application. Due to this, we have the following structure (Only the main files/folders will be listed in this structure): 
 
-# Build y empaquetado
-npm run build:backend           # Construye ejecutable Python (PyInstaller)
-npm run make                    # Crea distributables de la aplicación (incluye backend)
-npm run build:full             # Build backend + empaqueta aplicación Electron
+geoapp/
+├── tsconfig.json
+├── components.json                    # shadcn/ui configuration
+├── forge.config.ts                    # Electron Forge packaging config
+│
+├── protos/                            # Protobuf definitions
+│   ├── main_service.proto             # Main GeospatialService definition
+│   └── ****.proto                     # Various other protos
+│
+├── scripts/                            # Build and generation scripts 
+│   └── generate-full-stack-optimized.js # Main script for back/front protobuf generation
+│
+├── backend/                           # Python gRPC backend
+│   ├── grpc_server.py                 # Main server
+│   ├── ****.py                        # Various others python functions
+│   └── generated/                     # Auto-generated code (from protobuf)
+│
+└── src/                                # Frontend TypeScript/React code
+    ├── App.tsx
+    ├── main.ts                        # Electron main process
+    ├── preload.ts                     # Electron preload script
+    ├── assets/                        # Various assets (fonts,images,etc)
+    │
+    ├── components/                    #  React components, separated by usage
+    │   ├── ****.tsx                   # Main, self-built components
+    │   │
+    │   ├── template/                  # Components used in the general layout of the app
+    │   │   ├── AppSidebar.tsx         # Sidebar that's always visible, add routing from routes.tsx here.
+    │   │   ├── Footer.tsx
+    │   │   └── NavigationMenu.tsx
+    │   │
+    │   └── ui/                        # shadcn/ui components (check shadcn docs)
+    │
+    ├── contexts/                      # React contexts (Only used for window management for now)
+    │   └── WindowContext.tsx
+    │
+    ├── generated/                     # Auto-generated TypeScript protobuf files
+    │   ├── ****.ts
+    │
+    ├── grpc-auto/                     # Auto-generated gRPC system
+    │   ├── ****-grpc-client.ts        
+    │
+    ├── helpers/                       # Pure function utilities (no JSX)
+    │   ├── backend_helpers.ts         # Backend process management
+    │   ├── theme_helpers.ts           # Theme utilities (provided by shadcn)
+    │   ├── language_helpers.ts        # Language utilities (i18n)
+    │   ├── window_helpers.ts          # Window utilities (from window management)
+    │   │
+    │   └── ipc/                       # Electron IPC system (In case we need custom functionality)
+    │
+    ├── hooks/                         # React hooks 
+    │
+    ├── localization/                  # Translation using i18n
+    │
+    ├── pages/                         # App Pages 
+    │   ├── HomePage.tsx
+    │   └── SecondPage.tsx
+    │  
+    ├── routes/                        # Tanstack Router routing and config
+    │   ├── ****.tsx                   # Various config files
+    │   └── routes.tsx                 # Define routes here
+    │  
+    ├── stores/                        # Zustand state stores
+    │
+    ├── styles/                        # Global styles (We use Tailwind, so this doesn't get used a lot)
+    │   └── global.css
+    │
+    ├── tests/                         # Test files (TODO)
+    │
+    ├── types/                         # TypeScript type definitions (for functions,components)
+    │   ├── grpc-bytes.d.ts
+    │   └── theme-mode.ts
+    │
+    └── utils/                         # Utility for shadcn (Auto-generated -- should be moved to helpers)
+        └── tailwind.ts
 
-# Code quality
-npm run lint                    # ESLint
-npm run format                  # Prettier check
-npm run format:write           # Prettier format
-```
 
-### Variables de Entorno Python
-La aplicación usa un entorno virtual Python en `venv/` para dependencias aisladas:
-- **Desarrollo**: `source venv/bin/activate` (automático en scripts npm)
-- **Dependencias**: grpcio≥1.73.0, numpy≥1.24.0, pandas≥1.5.0, protobuf≥6.30.0
-
-
-## 📦 Empaquetado y Distribución
-
-### Build de Desarrollo
-```bash
-npm run dev                       # Desarrollo completo con hot reload
-```
-
-### Build de Producción
-```bash
-npm run build:backend            # 1. Construye ejecutable Python (PyInstaller)
-npm run make                     # 2. Crea distributables de Electron (incluye backend)
-```
-
-**Notas**:
-- El ejecutable Python se genera en `backend/dist/grpc-server`
-- Electron Forge incluye automáticamente el backend como recurso extra
-- La aplicación empaquetada es completamente portable (no requiere Python instalado)
-
-## 🛡️ Seguridad
-
-### Medidas de Seguridad Implementadas
-- **Context Isolation**: Habilitado en Electron para máxima seguridad
-- **Secure IPC**: Toda comunicación vía context bridges seguros
-- **Process Isolation**: Backend gRPC ejecuta en proceso separado
-- **No Remote Access**: gRPC server solo acepta conexiones localhost
-- **Type Safety**: Tipos TypeScript auto-generados previenen errores
-## 📚 Recursos Adicionales
-
-### Documentación Técnica
-- **Protocol Buffers**: [protobuf.dev](https://protobuf.dev)
-- **gRPC Python**: [grpc.io/docs/languages/python](https://grpc.io/docs/languages/python)
-- **Electron**: [electronjs.org/docs](https://electronjs.org/docs)
-- **React 19**: [react.dev](https://react.dev)
-
-### Arquitectura de Referencias
-- **Auto-Generated APIs**: Inspecciona `src/grpc-auto/` para entender el sistema
-- **Protocol Buffers**: Revisa `protos/` para la definición completa de APIs
-- **Backend Implementation**: Estudia `backend/grpc_server.py` para lógica de negocio
-- **Frontend Examples**: Analiza `src/components/GrpcDemo.tsx` para patrones de uso
-
-## 📄 Licencia
-Apache License 2.0
-
+## Quick start

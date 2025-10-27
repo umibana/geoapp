@@ -33,8 +33,8 @@ root.render(
    <React.StrictMode>
   {/* // Tanstack query venía con el template, */}
   {/* // Se deja en caso que se necesite, aunque todas las requests deberian ser por IPC y no por renderer */}
-     <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}>
       <App />
-     </QueryClientProvider>
+    </QueryClientProvider>
   </React.StrictMode>,
 );

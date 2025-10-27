@@ -1,6 +1,8 @@
 import React from "react";
 import BaseLayout from "@/layouts/BaseLayout";
 import { Outlet, createRootRoute } from "@tanstack/react-router";
+import { DndProvider } from "react-dnd";
+import { HTML5Backend } from "react-dnd-html5-backend";
 
 export const RootRoute = createRootRoute({
   component: Root,
@@ -8,8 +10,10 @@ export const RootRoute = createRootRoute({
 
 function Root() {
   return (
-    <BaseLayout>
-      <Outlet />
-    </BaseLayout>
+    <DndProvider backend={HTML5Backend}>
+      <BaseLayout>
+        <Outlet />
+      </BaseLayout>
+    </DndProvider>
   );
 }

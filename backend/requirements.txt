@@ -7,4 +7,4 @@ sqlmodel>=0.0.21
 # Update to 1.4.1 when its available
 duckdb[all]==1.3.2
 duckdb-engine>=0.17.0
-
+grpcio-reflection>=1.75.1

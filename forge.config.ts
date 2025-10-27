@@ -17,10 +17,15 @@ const config: ForgeConfig = {
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
+    // Windows: Squirrel installer
+    new MakerSquirrel({}, ["win32"]),
+
+    // macOS: ZIP for both x64 and arm64
     new MakerZIP({}, ["darwin"]),
-    new MakerRpm({}),
-    new MakerDeb({}),
+
+    // Linux: DEB and RPM packages
+    new MakerDeb({}, ["linux"]),
+    new MakerRpm({}, ["linux"]),
   ],
   plugins: [
     new VitePlugin({

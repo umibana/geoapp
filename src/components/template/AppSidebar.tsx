@@ -1,4 +1,4 @@
-import {  Home, TestTube, TestTube2, TestTubeDiagonal, Wifi, FolderOpen, Zap } from "lucide-react"
+import {  Home, TestTube, TestTube2, TestTubeDiagonal, Wifi, FolderOpen, Zap, Paintbrush, Database, LayoutGrid } from "lucide-react"
 
 import {
   Sidebar,
@@ -13,11 +13,12 @@ import {
 import React from "react"
 import { Link } from "@tanstack/react-router"
 import { useWindows } from "@/contexts/WindowContext"
-import { 
-  Prueba2D,
-  Prueba3D,
-  GrpcDemo
-} from "@/components/WindowComponents"
+import BrushedDataViewer from "@/components/chart-components/BrushedDataViewer"
+import DataManipulationTester from "@/components/DataManipulationTester"
+import BrushedBarChart from "../chart-components/BrushedBarChart"
+import BrushedBoxPlot from "../chart-components/BrushedBoxPlot"
+import BrushedHeatmap from "../chart-components/BrushedHeatmap"
+import BrushedLineChart from "../chart-components/BrushedLineChart"
 
 // Navigation items
 const navigationItems = [
@@ -31,28 +32,54 @@ const navigationItems = [
     url: "/projects",
     icon: FolderOpen,
   },
+  {
+    title: "Chart Mosaic Example",
+    url: "/chart-mosaic-example",
+    icon: LayoutGrid,
+  }
 ]
 
 // Window items that can be opened
 const windowItems = [
   {
-    title: "gRPC Demo",
-    icon: Wifi,
-    component: <GrpcDemo />,
-    size: { width: 800, height: 600 },
+    title: "Data Manipulation Tester",
+    icon: Database,
+    component: <DataManipulationTester />,
+    size: { width: 1000, height: 700 },
   },
   {
-    title: "Prueba 2D",
-    icon: TestTube2,
-    component: <Prueba2D />,
-    size: { width: 500, height: 400 },
+    title: "Brushed Data Viewer",
+    icon: Paintbrush,
+    component: <BrushedDataViewer />,
+    size: { width: 700, height: 600 },
+  },
+
+  {
+    title: "Brushed Bar Viewer",
+    icon: Paintbrush,
+    component: <BrushedBarChart />,
+    size: { width: 700, height: 600 },
   },
   {
-    title: "Prueba 3D",
-    icon: TestTubeDiagonal,
-    component: <Prueba3D />,
-    size: { width: 400, height: 500 },
+    title: "Brushed Boxplot",
+    icon: Paintbrush,
+    component: <BrushedBoxPlot />,
+    size: { width: 700, height: 600 },
   },
+  {
+    title: "Brushed Heatmap",
+    icon: Paintbrush,
+    component: <BrushedHeatmap />,
+    size: { width: 700, height: 600 },
+  },
+  {
+    title: "Brushed Line (TODO)",
+    icon: Paintbrush,
+    component: <BrushedLineChart />,
+    size: { width: 700, height: 600 },
+  },
+
+
 ]
 
 export function AppSidebar() {

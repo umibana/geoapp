@@ -1,0 +1,313 @@
+name: Build Multi-Platform
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [created]
+
+jobs:
+  # ====================
+  # macOS x64 Build
+  # ====================
+  build-macos-x64:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Setup Python environment
+        run: |
+          python3 -m venv venv
+          venv/bin/pip install --upgrade pip
+          venv/bin/pip install -r backend/requirements.txt
+
+      - name: Generate Protocol Buffers
+        run: |
+          export PATH="${{ github.workspace }}/venv/bin:$PATH"
+          npm run generate:full-stack
+        shell: bash
+
+      - name: Build Python backend (macOS)
+        run: |
+          export PATH="${{ github.workspace }}/venv/bin:$PATH"
+          npm run build:backend
+        shell: bash
+
+      - name: Build Electron app (macOS x64)
+        run: npm run make:mac:x64
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: geoapp-macos-x64
+          path: out/make/**/*x64*.zip
+          retention-days: 7
+
+  # ====================
+  # macOS arm64 Build
+  # ====================
+  build-macos-arm64:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Setup Python environment
+        run: |
+          python3 -m venv venv
+          venv/bin/pip install --upgrade pip
+          venv/bin/pip install -r backend/requirements.txt
+
+      - name: Generate Protocol Buffers
+        run: |
+          export PATH="${{ github.workspace }}/venv/bin:$PATH"
+          npm run generate:full-stack
+        shell: bash
+
+      - name: Build Python backend (macOS)
+        run: |
+          export PATH="${{ github.workspace }}/venv/bin:$PATH"
+          npm run build:backend
+        shell: bash
+
+      - name: Build Electron app (macOS arm64)
+        run: npm run make:mac:arm64
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: geoapp-macos-arm64
+          path: out/make/**/*arm64*.zip
+          retention-days: 7
+
+  # ====================
+  # Windows Build
+  # ====================
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Setup Python environment
+        run: |
+          python -m venv venv
+          venv\Scripts\pip install --upgrade pip
+          venv\Scripts\pip install -r backend\requirements.txt
+        shell: powershell
+
+      - name: Generate Protocol Buffers
+        run: |
+          $env:PATH = "${{ github.workspace }}\venv\Scripts;$env:PATH"
+          npm run generate:full-stack
+        shell: powershell
+
+      - name: Build Python backend (Windows)
+        run: |
+          $env:PATH = "${{ github.workspace }}\venv\Scripts;$env:PATH"
+          npm run build:backend
+        shell: powershell
+
+      - name: Build Electron app (Windows)
+        run: npm run make:win
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: geoapp-windows
+          path: |
+            out/make/**/*.exe
+            out/make/**/*.nupkg
+          retention-days: 7
+
+  # ====================
+  # Linux Build
+  # ====================
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm fakeroot dpkg
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Setup Python environment
+        run: |
+          python3 -m venv venv
+          venv/bin/pip install --upgrade pip
+          venv/bin/pip install -r backend/requirements.txt
+
+      - name: Generate Protocol Buffers
+        run: |
+          export PATH="${{ github.workspace }}/venv/bin:$PATH"
+          npm run generate:full-stack
+        shell: bash
+
+      - name: Build Python backend (Linux)
+        run: |
+          export PATH="${{ github.workspace }}/venv/bin:$PATH"
+          npm run build:backend
+        shell: bash
+
+      - name: Build Electron app (Linux)
+        run: npm run make:linux
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: geoapp-linux
+          path: |
+            out/make/**/*.deb
+            out/make/**/*.rpm
+          retention-days: 7
+
+  # ====================
+  # Tests
+  # ====================
+  # test:
+  #   runs-on: ubuntu-latest
+
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #         cache: 'npm'
+
+  #     - name: Setup Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.11'
+  #         cache: 'pip'
+
+  #     - name: Install dependencies
+  #       run: |
+  #         npm ci
+  #         python3 -m venv venv
+  #         venv/bin/pip install --upgrade pip
+  #         venv/bin/pip install -r backend/requirements.txt
+
+  #     - name: Generate Protocol Buffers
+  #       run: |
+  #         export PATH="${{ github.workspace }}/venv/bin:$PATH"
+  #         npm run generate:full-stack
+  #       shell: bash
+
+  #     - name: Run linter
+  #       run: npm run lint
+
+  #     - name: Run formatter check
+  #       run: npm run format
+
+  #     - name: Run unit tests
+  #       run: npm run test:unit
+
+  # ====================
+  # Release (on tags)
+  # ====================
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-macos-x64, build-macos-arm64, build-windows, build-linux]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/geoapp-macos-x64/**/*.zip
+            artifacts/geoapp-macos-arm64/**/*.zip
+            artifacts/geoapp-windows/**/*.exe
+            artifacts/geoapp-linux/**/*.deb
+            artifacts/geoapp-linux/**/*.rpm
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

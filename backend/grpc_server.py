@@ -15,11 +15,14 @@ sys.path.insert(0, str(script_dir / 'generated'))
 
 import grpc
 
+from grpc_reflection.v1alpha import reflection
+
 # Importar los archivos protobuf generados
 import geospatial_pb2
 import files_pb2
 import projects_pb2
 import main_service_pb2_grpc
+import main_service_pb2
 
 from database import DatabaseManager
 from data_generation import DataGenerator
@@ -179,9 +182,43 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
     
     def DeleteFile(self, request, context):
         return self.project_manager.delete_file(request)
-    
+
+    def UpdateFile(self, request, context):
+        return self.project_manager.update_file(request)
+
+    def RenameFileColumn(self, request, context):
+        return self.project_manager.rename_file_column(request)
+
+    def GetFileStatistics(self, request, context):
+        return self.project_manager.get_file_statistics(request)
+
+    # ---------- Manipulación de datos de archivos ----------
+
+    def ReplaceFileData(self, request, context):
+        return self.project_manager.replace_file_data(request)
+
+    def SearchFileData(self, request, context):
+        return self.project_manager.search_file_data(request)
+
+    def FilterFileData(self, request, context):
+        return self.project_manager.filter_file_data(request)
+
+    def DeleteFilePoints(self, request, context):
+        return self.project_manager.delete_file_points(request)
+
+    def AddFilteredColumn(self, request, context):
+        return self.project_manager.add_filtered_column(request)
+
+    # ---------- Operaciones avanzadas de columnas ----------
+
+    def AddFileColumns(self, request, context):
+        return self.project_manager.add_file_columns(request)
+
+    def DuplicateFileColumns(self, request, context):
+        return self.project_manager.duplicate_file_columns(request)
+
     # ---------- Manejo de datasets ----------
-    
+
     def AnalyzeCsvForProject(self, request, context):
         return self.project_manager.analyze_csv_for_project(request)
     
@@ -193,6 +230,9 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
     
     def DeleteDataset(self, request, context):
         return self.project_manager.delete_dataset(request)
+
+    def MergeDatasets(self, request, context):
+        return self.project_manager.merge_datasets(request)
 
 
 # Servidor gRPC
@@ -218,6 +258,14 @@ def serve():
         main_service_pb2_grpc.add_GeospatialServiceServicer_to_server(
             GeospatialServicer(), server
         )
+
+        # Esto se hace para que el servidor gRPC sea reflectivo (Osea, exponga metodos en servicio)
+        # Muy util para probar API con grpc_cli/grpcurl o Kreya 
+        SERVICE_NAMES = (
+            main_service_pb2.DESCRIPTOR.services_by_name['GeospatialService'].full_name,
+            reflection.SERVICE_NAME,
+        )
+        reflection.enable_server_reflection(SERVICE_NAMES, server)
         
         listen_addr = f'127.0.0.1:{port}'
         server.add_insecure_port(listen_addr)

@@ -29,28 +29,6 @@ message ColumnInfo {
     repeated string sample_values = 5; // Sample values from the column
 }
 
-// Solicitud para analizar las primeras filas y detectar columnas
-message AnalyzeCsvRequest {
-    string file_path = 1;
-    string file_name = 2;
-    int32 rows_to_analyze = 3; // default: 1000 for comprehensive statistics
-    bool save_to_sql = 4; // optional: save analyzed data to SQL database
-}
-
-// Respuesta con información de columnas detectadas
-message AnalyzeCsvResponse {
-    repeated ColumnInfo columns = 1;
-    map<string, string> auto_detected_mapping = 2; // suggested mappings like "id" -> "ID_COLUMN"
-    bool success = 3;
-    string error_message = 4;
-    int32 total_rows = 5; // Total number of rows in the dataset
-    int32 total_columns = 6; // Total number of columns
-    double file_size_mb = 7; // File size in megabytes
-    string encoding = 8; // File encoding detected
-    repeated string numeric_columns = 9; // List of numeric column names
-    repeated string categorical_columns = 10; // List of categorical column names
-}
-
 // Solicitud para procesar el archivo completo con mapping de variables
 message SendFileRequest {
     string file_path = 1;
@@ -77,28 +55,3 @@ message SendFileResponse {
     string processing_time = 6;
 }
 
-// =============================================================================
-// CHUNKED ACCESS TO LOADED CSV DATA
-// =============================================================================
-
-message CsvDataRow {
-    double x = 1;
-    double y = 2;
-    double z = 3;
-    string id = 4;
-    map<string, double> metrics = 5; // numeric properties (e.g., ppm_cu)
-    map<string, string> attrs = 6;   // string properties
-}
-
-message GetLoadedDataChunkRequest {
-    int32 offset = 1;
-    int32 limit = 2;
-}
-
-message GetLoadedDataChunkResponse {
-    repeated CsvDataRow rows = 1;
-    int32 total_rows = 2;
-    bool is_complete = 3;
-    int32 next_offset = 4;
-    repeated string available_metric_keys = 5;
-}

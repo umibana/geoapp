@@ -243,22 +243,450 @@ class ProjectManager:
     def delete_file(self, request: projects_pb2.DeleteFileRequest) -> projects_pb2.DeleteFileResponse:
         """Eliminar un archivo"""
         try:
-            
+
             success = self.db.delete_file(request.file_id)
-            
+
             response = projects_pb2.DeleteFileResponse()
             response.success = success
             if not success:
                 response.error_message = "Archivo no encontrado"
-            
+
             return response
-            
+
         except Exception as e:
             response = projects_pb2.DeleteFileResponse()
             response.success = False
             response.error_message = str(e)
             return response
-    
+
+    def update_file(self, request: projects_pb2.UpdateFileRequest) -> projects_pb2.UpdateFileResponse:
+        """Actualizar metadata de archivo (nombre)"""
+        try:
+
+            file_data = self.db.update_file(request.file_id, request.name)
+
+            response = projects_pb2.UpdateFileResponse()
+            if file_data:
+                response.success = True
+                response.file.id = file_data.id
+                response.file.project_id = file_data.project_id
+                response.file.name = file_data.name
+                response.file.dataset_type = file_data.dataset_type
+                response.file.original_filename = file_data.original_filename
+                response.file.file_size = file_data.file_size
+                response.file.created_at = file_data.created_at
+            else:
+                response.success = False
+                response.error_message = "Archivo no encontrado"
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.UpdateFileResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def rename_file_column(self, request: projects_pb2.RenameFileColumnRequest) -> projects_pb2.RenameFileColumnResponse:
+        """Renombrar columnas en tabla DuckDB de un archivo"""
+        try:
+
+            # Convert protobuf map to Python dict
+            column_renames = dict(request.column_renames)
+
+            print(f"🔄 [BACKEND/ProjectManager] Renaming columns for file_id: {request.file_id}")
+            print(f"🔄 [BACKEND/ProjectManager] Column renames: {column_renames}")
+
+            success, renamed_columns, error_msg = self.db.rename_file_columns(
+                request.file_id,
+                column_renames
+            )
+
+            print(f"🔄 [BACKEND/ProjectManager] Rename result - success: {success}, renamed_columns: {renamed_columns}")
+
+            response = projects_pb2.RenameFileColumnResponse()
+            response.success = success
+            response.renamed_columns.extend(renamed_columns)
+
+            if not success:
+                response.error_message = error_msg
+                print(f"❌ [BACKEND/ProjectManager] Rename failed: {error_msg}")
+
+            return response
+
+        except Exception as e:
+            print(f"❌ [BACKEND/ProjectManager] Exception during rename: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            response = projects_pb2.RenameFileColumnResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def get_file_statistics(self, request: projects_pb2.GetFileStatisticsRequest) -> projects_pb2.GetFileStatisticsResponse:
+        """Obtener estadísticas de archivo"""
+        try:
+
+            print(f"📊 [BACKEND/ProjectManager] Getting file statistics for file_id: {request.file_id}")
+
+            # Get column names filter if provided
+            column_names = list(request.columns) if request.columns else None
+            print(f"📊 [BACKEND/ProjectManager] Column filter: {column_names}")
+
+            statistics = self.db.get_file_statistics(request.file_id, column_names)
+            print(f"📊 [BACKEND/ProjectManager] Retrieved statistics for {len(statistics)} columns")
+            print(f"📊 [BACKEND/ProjectManager] Column names: {list(statistics.keys())}")
+
+            response = projects_pb2.GetFileStatisticsResponse()
+            response.success = True
+
+            # Build response with statistics
+            for col_name, stats in statistics.items():
+                col_stat = response.statistics.add()
+                col_stat.column_name = col_name
+                col_stat.data_type = stats.get('column_type', 'numeric')
+                col_stat.count = stats.get('count', 0)
+                col_stat.null_count = stats.get('null_count', 0)
+                col_stat.unique_count = stats.get('unique_count', 0)
+
+                # Add numeric statistics if available
+                if stats.get('column_type') == 'numeric':
+                    if stats.get('mean') is not None:
+                        col_stat.mean = stats['mean']
+                    if stats.get('std') is not None:
+                        col_stat.std = stats['std']
+                    if stats.get('min') is not None:
+                        col_stat.min = stats['min']
+                    if stats.get('q25') is not None:
+                        col_stat.q25 = stats['q25']
+                    if stats.get('q50') is not None:
+                        col_stat.q50 = stats['q50']
+                    if stats.get('q75') is not None:
+                        col_stat.q75 = stats['q75']
+                    if stats.get('max') is not None:
+                        col_stat.max = stats['max']
+
+                # Add categorical statistics if available
+                if stats.get('column_type') == 'categorical':
+                    if stats.get('top_values'):
+                        col_stat.top_values.extend(stats['top_values'])
+                    if stats.get('top_counts'):
+                        col_stat.top_counts.extend(stats['top_counts'])
+
+            print(f"✅ [BACKEND/ProjectManager] Returning statistics response with {len(response.statistics)} columns")
+
+            return response
+
+        except Exception as e:
+            print(f"❌ [BACKEND/ProjectManager] Error getting file statistics: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            response = projects_pb2.GetFileStatisticsResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    # ========== Métodos de manipulación de datos ==========
+
+    def replace_file_data(self, request: projects_pb2.ReplaceFileDataRequest) -> projects_pb2.ReplaceFileDataResponse:
+        """Reemplazar valores en archivo"""
+        try:
+
+            # Convert protobuf replacements to list of tuples
+            replacements = [(r.from_value, r.to_value) for r in request.replacements]
+            # Convert columns - if empty array, treat as None (all columns)
+            columns = list(request.columns) if request.columns and len(request.columns) > 0 else None
+
+            success, rows_affected, error_msg = self.db.replace_file_data(
+                request.file_id,
+                replacements,
+                columns
+            )
+
+            response = projects_pb2.ReplaceFileDataResponse()
+            response.success = success
+            response.rows_affected = rows_affected
+
+            if not success:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.ReplaceFileDataResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def search_file_data(self, request: projects_pb2.SearchFileDataRequest) -> projects_pb2.SearchFileDataResponse:
+        """Buscar/filtrar datos en archivo con paginación"""
+        try:
+
+            success, data_rows, total_rows, error_msg = self.db.search_file_data(
+                request.file_id,
+                request.query,
+                request.limit or 100,
+                request.offset or 0
+            )
+
+            response = projects_pb2.SearchFileDataResponse()
+            response.success = success
+            response.file_id = request.file_id
+            response.total_rows = total_rows
+            response.current_page = (request.offset // request.limit) + 1 if request.limit else 1
+
+            if success:
+                for row_dict in data_rows:
+                    data_row = response.data.add()
+                    data_row.fields.update(row_dict)
+            else:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.SearchFileDataResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def filter_file_data(self, request: projects_pb2.FilterFileDataRequest) -> projects_pb2.FilterFileDataResponse:
+        """Filtrar datos de archivo con opción de crear nuevo archivo"""
+        try:
+
+            # Get project_id if creating new file
+            project_id = None
+            if request.create_new_file:
+                # Get project_id from the original file using SQLModel session
+                from sqlmodel import Session, select
+                from database import File
+
+                with Session(self.db.engine) as session:
+                    file_record = session.get(File, request.file_id)
+                    if file_record:
+                        project_id = file_record.project_id
+                    else:
+                        # Fallback: query directly if get() fails
+                        file_record = session.exec(select(File).where(File.id == request.file_id)).first()
+                        if file_record:
+                            project_id = file_record.project_id
+
+            success, result_file_id, total_rows, error_msg = self.db.filter_file_data(
+                request.file_id,
+                request.column,
+                request.operation,
+                request.value,
+                request.create_new_file,
+                request.new_file_name if request.create_new_file else None,
+                project_id
+            )
+
+            response = projects_pb2.FilterFileDataResponse()
+            response.success = success
+            response.file_id = result_file_id
+            response.total_rows = total_rows
+
+            if not success:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.FilterFileDataResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def add_filtered_column(self, request: projects_pb2.AddFilteredColumnRequest) -> projects_pb2.AddFilteredColumnResponse:
+        """Agregar columna filtrada (no destructivo)"""
+        try:
+            print(f"🔍 [BACKEND/ProjectManager] Adding filtered column for file_id: {request.file_id}")
+            print(f"🔍 [BACKEND/ProjectManager] New column: {request.new_column_name}")
+            print(f"🔍 [BACKEND/ProjectManager] Filter: {request.source_column} {request.operation} {request.value}")
+
+            success, new_column_name, rows_with_values, error_msg = self.db.add_filtered_column(
+                request.file_id,
+                request.new_column_name,
+                request.source_column,
+                request.operation,
+                request.value
+            )
+
+            # Get total rows to calculate null rows
+            from sqlmodel import Session, select
+            from database import Dataset
+            total_rows = 0
+
+            if success:
+                # Get row count from DuckDB
+                table_name = f"data_{request.file_id.replace('-', '_')}"
+                with self.db.engine.connect() as conn:
+                    from sqlalchemy import text
+                    count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
+                    total_rows = int(count_result[0])
+
+            rows_with_null = total_rows - rows_with_values if success else 0
+
+            response = projects_pb2.AddFilteredColumnResponse()
+            response.success = success
+            response.new_column_name = new_column_name
+            response.rows_with_values = rows_with_values
+            response.rows_with_null = rows_with_null
+
+            if not success:
+                response.error_message = error_msg
+            else:
+                print(f"✅ [BACKEND/ProjectManager] Filtered column added: {rows_with_values} matches, {rows_with_null} NULL")
+
+            return response
+
+        except Exception as e:
+            print(f"❌ [BACKEND/ProjectManager] Exception during add_filtered_column: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            response = projects_pb2.AddFilteredColumnResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def delete_file_points(self, request: projects_pb2.DeleteFilePointsRequest) -> projects_pb2.DeleteFilePointsResponse:
+        """Eliminar puntos/filas específicas de archivo"""
+        try:
+
+            row_indices = list(request.row_indices)
+
+            success, rows_deleted, rows_remaining, error_msg = self.db.delete_file_points(
+                request.file_id,
+                row_indices
+            )
+
+            response = projects_pb2.DeleteFilePointsResponse()
+            response.success = success
+            response.rows_deleted = rows_deleted
+            response.rows_remaining = rows_remaining
+
+            if not success:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.DeleteFilePointsResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    # ========== Operaciones avanzadas de columnas ==========
+
+    def add_file_columns(self, request: projects_pb2.AddFileColumnsRequest) -> projects_pb2.AddFileColumnsResponse:
+        """Agregar nuevas columnas a archivo"""
+        try:
+
+            # Convert protobuf columns to list of tuples
+            new_columns = [(col.column_name, list(col.values)) for col in request.new_columns]
+
+            success, added_columns, error_msg = self.db.add_file_columns(
+                request.file_id,
+                new_columns
+            )
+
+            response = projects_pb2.AddFileColumnsResponse()
+            response.success = success
+            response.added_columns.extend(added_columns)
+
+            if not success:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.AddFileColumnsResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def duplicate_file_columns(self, request: projects_pb2.DuplicateFileColumnsRequest) -> projects_pb2.DuplicateFileColumnsResponse:
+        """Duplicar columnas existentes con nombres personalizados opcionales"""
+        try:
+
+            print(f"🔄 [BACKEND/ProjectManager] Duplicating columns for file_id: {request.file_id}")
+            print(f"🔄 [BACKEND/ProjectManager] Number of columns to duplicate: {len(request.columns)}")
+
+            # Convert protobuf columns to list of tuples (source_column, new_column_name)
+            columns_to_duplicate = [(col.source_column, col.new_column_name) for col in request.columns]
+            
+            print(f"🔄 [BACKEND/ProjectManager] Columns to duplicate: {columns_to_duplicate}")
+
+            success, duplicated_columns, error_msg = self.db.duplicate_file_columns(
+                request.file_id,
+                columns_to_duplicate
+            )
+
+            response = projects_pb2.DuplicateFileColumnsResponse()
+            response.success = success
+            response.duplicated_columns.extend(duplicated_columns)
+
+            if not success:
+                response.error_message = error_msg
+                print(f"❌ [BACKEND/ProjectManager] Duplication failed: {error_msg}")
+            else:
+                print(f"✅ [BACKEND/ProjectManager] Successfully duplicated {len(duplicated_columns)} columns")
+
+            return response
+
+        except Exception as e:
+            print(f"❌ [BACKEND/ProjectManager] Exception during duplication: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            response = projects_pb2.DuplicateFileColumnsResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    # ========== Fusión de datasets ==========
+
+    def merge_datasets(self, request: projects_pb2.MergeDatasetsRequest) -> projects_pb2.MergeDatasetsResponse:
+        """Fusionar dos datasets por filas o columnas"""
+        try:
+
+            # Convert merge mode enum to string
+            mode_map = {
+                projects_pb2.MERGE_MODE_BY_ROWS: "BY_ROWS",
+                projects_pb2.MERGE_MODE_BY_COLUMNS: "BY_COLUMNS"
+            }
+            mode = mode_map.get(request.mode, "BY_ROWS")
+
+            exclude_first = list(request.exclude_columns_first) if request.exclude_columns_first else None
+            exclude_second = list(request.exclude_columns_second) if request.exclude_columns_second else None
+            output_file = request.output_file if request.output_file else None
+
+            success, dataset_id, rows_merged, columns_merged, warnings, error_msg = self.db.merge_datasets(
+                request.first_dataset_id,
+                request.second_dataset_id,
+                mode,
+                exclude_first,
+                exclude_second,
+                output_file
+            )
+
+            response = projects_pb2.MergeDatasetsResponse()
+            response.success = success
+            response.dataset_id = dataset_id
+            response.rows_merged = rows_merged
+            response.columns_merged = columns_merged
+            response.warnings.extend(warnings)
+
+            if not success:
+                response.error_message = error_msg
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.MergeDatasetsResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
     # ========== Métodos de procesamiento CSV mejorado ==========
     
     def analyze_csv_for_project(self, request: projects_pb2.AnalyzeCsvForProjectRequest) -> projects_pb2.AnalyzeCsvForProjectResponse:
@@ -490,29 +918,62 @@ class ProjectManager:
     
     def get_dataset_data(self, request: projects_pb2.GetDatasetDataRequest) -> projects_pb2.GetDatasetDataResponse:
         try:
-            # Use default columns if not specified
-            columns = list(request.columns) if request.columns else ["x", "y", "z"]
-            
+            # Columns for visualization (raw data points - typically x, y, z)
+            viz_columns = list(request.columns) if request.columns else ["x", "y", "z"]
+            print(f"📋 Visualization columns (for raw data): {viz_columns}")
+
             # Obtener información del dataset primero
             dataset = self.db.get_dataset_by_id(request.dataset_id)
             if not dataset:
                 response = projects_pb2.GetDatasetDataResponse()
                 return response
-            
+
+            # Get ALL numeric column names from dataset for statistics computation
+            import json
+            column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
+            all_numeric_columns = [m['column_name'] for m in column_mappings if m['column_type'] == 1]  # NUMERIC only
+            print(f"📊 All numeric columns (for statistics): {all_numeric_columns} ({len(all_numeric_columns)} columns)")
+
+            # Extract optional filtering parameters
+            bounding_box = list(request.bounding_box) if request.bounding_box else None
+            shape = request.shape if request.HasField('shape') else None
+            color = request.color if request.HasField('color') else None
+            function = request.function if request.HasField('function') else None
+
+            # Log optional parameters if provided
+            if bounding_box:
+                print(f"📦 GetDatasetData with bounding_box: {bounding_box}")
+            if shape:
+                print(f"🔷 Shape: {shape}")
+            if color:
+                print(f"🎨 Color: {color}")
+            if function:
+                print(f"🔧 Function: {function}")
+
+            # Get visualization data (only requested columns for raw data)
             data, boundaries = self.db.get_dataset_data_and_stats_combined(
-                request.dataset_id, 
-                columns
+                request.dataset_id,
+                viz_columns,
+                bounding_box=bounding_box
             )
-            
+
+            # Get ALL numeric columns data for statistics computation
+            all_data, all_boundaries = self.db.get_dataset_data_and_stats_combined(
+                request.dataset_id,
+                all_numeric_columns,
+                bounding_box=bounding_box
+            )
+            print(f"📊 Fetched {len(all_data)} values for {len(all_numeric_columns)} columns")
+
             # Direct binary conversion without unnecessary copying
             binary_data = data.tobytes()
-            
+
             # Configurar campos de respuesta
             response = projects_pb2.GetDatasetDataResponse()
             response.binary_data = binary_data
             response.data_length = len(data)
             response.total_count = len(data) // 3  # Each point has 3 values (x,y,z)
-   
+
             # Use boundaries from combined query (already available)
             for col_name, stats in boundaries.items():
                 boundary = response.data_boundaries.add()
@@ -520,9 +981,94 @@ class ProjectManager:
                 boundary.min_value = float(stats['min_value'])
                 boundary.max_value = float(stats['max_value'])
                 boundary.valid_count = int(stats['valid_count'])
-            
+
+            # ========== Compute statistics for ALL numeric columns ==========
+            if len(all_data) > 0:
+                num_points = len(all_data) // len(all_numeric_columns)
+                print(f"📊 Computing statistics for {num_points} points across {len(all_numeric_columns)} columns...")
+
+                # 1. Compute histograms for ALL numeric columns
+                for i, col_name in enumerate(all_numeric_columns):
+                    col_data = all_data[i::len(all_numeric_columns)]  # Extract column data from interleaved format
+                    histogram = self.db.compute_histogram(col_data, col_name, num_bins=30)
+
+                    if histogram:
+                        hist_proto = response.histograms[col_name]
+                        hist_proto.bin_ranges.extend(histogram['bin_ranges'])
+                        hist_proto.bin_counts.extend(histogram['bin_counts'])
+                        hist_proto.bin_edges.extend(histogram['bin_edges'])
+                        hist_proto.num_bins = histogram['num_bins']
+                        hist_proto.min_value = histogram['min_value']
+                        hist_proto.max_value = histogram['max_value']
+                        hist_proto.total_count = histogram['total_count']
+                        print(f"  ✅ Histogram for '{col_name}': {histogram['num_bins']} bins")
+
+                # 2. Compute box plots for ALL numeric columns
+                for i, col_name in enumerate(all_numeric_columns):
+                    col_data = all_data[i::len(all_numeric_columns)]  # Extract column data from interleaved format
+                    boxplot = self.db.compute_boxplot(col_data, col_name)
+
+                    if boxplot:
+                        bp_proto = response.box_plots.add()
+                        bp_proto.column_name = boxplot['column_name']
+                        bp_proto.min = boxplot['min']
+                        bp_proto.q1 = boxplot['q1']
+                        bp_proto.median = boxplot['median']
+                        bp_proto.q3 = boxplot['q3']
+                        bp_proto.max = boxplot['max']
+                        bp_proto.mean = boxplot['mean']
+                        bp_proto.outliers.extend(boxplot['outliers'])
+                        bp_proto.lower_fence = boxplot['lower_fence']
+                        bp_proto.upper_fence = boxplot['upper_fence']
+                        bp_proto.iqr = boxplot['iqr']
+                        bp_proto.total_count = boxplot['total_count']
+                        print(f"  ✅ Box plot for '{col_name}': median={boxplot['median']:.2f}, {len(boxplot['outliers'])} outliers")
+
+                # 3. Compute heatmap (using visualization columns only - x, y, z)
+                if len(viz_columns) >= 3:
+                    # Extract x, y, z from all_data for heatmap
+                    x_idx = all_numeric_columns.index(viz_columns[0]) if viz_columns[0] in all_numeric_columns else 0
+                    y_idx = all_numeric_columns.index(viz_columns[1]) if viz_columns[1] in all_numeric_columns else 1
+                    z_idx = all_numeric_columns.index(viz_columns[2]) if viz_columns[2] in all_numeric_columns else 2
+
+                    x_data = all_data[x_idx::len(all_numeric_columns)]
+                    y_data = all_data[y_idx::len(all_numeric_columns)]
+                    z_data = all_data[z_idx::len(all_numeric_columns)]
+
+                    heatmap = self.db.compute_heatmap(
+                        x_data, y_data, z_data,
+                        viz_columns[0], viz_columns[1], viz_columns[2],
+                        grid_size=50
+                    )
+
+                    if heatmap and heatmap.get('cells'):
+                        hm_proto = response.heatmap
+                        for cell in heatmap['cells']:
+                            cell_proto = hm_proto.cells.add()
+                            cell_proto.x_index = cell['x_index']
+                            cell_proto.y_index = cell['y_index']
+                            cell_proto.avg_value = cell['avg_value']
+                            cell_proto.count = cell['count']
+
+                        hm_proto.grid_size_x = heatmap['grid_size_x']
+                        hm_proto.grid_size_y = heatmap['grid_size_y']
+                        hm_proto.min_value = heatmap['min_value']
+                        hm_proto.max_value = heatmap['max_value']
+                        hm_proto.x_bin_size = heatmap['x_bin_size']
+                        hm_proto.y_bin_size = heatmap['y_bin_size']
+                        hm_proto.min_x = heatmap['min_x']
+                        hm_proto.max_x = heatmap['max_x']
+                        hm_proto.min_y = heatmap['min_y']
+                        hm_proto.max_y = heatmap['max_y']
+                        hm_proto.x_column = heatmap['x_column']
+                        hm_proto.y_column = heatmap['y_column']
+                        hm_proto.value_column = heatmap['value_column']
+                        print(f"  ✅ Heatmap: {len(heatmap['cells'])} cells in {heatmap['grid_size_x']}x{heatmap['grid_size_y']} grid")
+
+                print(f"✅ Statistics computation complete!")
+
             return response
-            
+
         except Exception as e:
             import traceback
             print(f"❌ Error in ultra-optimized dataset retrieval: {e}")
