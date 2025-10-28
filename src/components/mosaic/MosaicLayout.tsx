@@ -9,6 +9,7 @@ import {
 import { LayoutGrid } from 'lucide-react';
 import 'react-mosaic-component/react-mosaic-component.css';
 import './mosaic-theme.css';
+import { DEFAULT_TOOLBAR_CONTROLS } from './MosaicToolbarControls';
 
 /**
  * Component configuration for mosaic windows
@@ -124,7 +125,7 @@ export const MosaicLayout: React.FC<MosaicLayoutProps> = ({
         <MosaicWindow
           path={path}
           title={config.title}
-          toolbarControls={closable ? undefined : []}
+          toolbarControls={closable ? DEFAULT_TOOLBAR_CONTROLS : []}
           createNode={() => id}
           draggable={true}
         >

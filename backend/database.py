@@ -499,14 +499,17 @@ class DatabaseManager:
             return dataset
 
 
-    def get_dataset_data_and_stats_combined(self, dataset_id: str, columns: List[str], bounding_box: List[float] = None) -> Tuple[np.ndarray, Dict[str, Dict[str, float]]]:
+    def get_dataset_data_and_stats_combined(self, dataset_id: str, columns: List[str], bounding_box: List[float] = None,
+                                            filter_columns: List[str] = None) -> Tuple[np.ndarray, Dict[str, Dict[str, float]]]:
         """
         Get dataset data with optional bounding box filtering
 
         Args:
             dataset_id: The dataset ID
-            columns: List of column names [x_col, y_col, value_col]
+            columns: List of column names to fetch (can be 3 for viz or many for statistics)
             bounding_box: Optional bounding box [x1, x2, y1, y2] for 2D or [x1, x2, y1, y2, z1, z2] for 3D
+            filter_columns: Optional list [x_col, y_col, z_col] to use for bounding box filtering.
+                           If not provided, uses columns[0], columns[1], columns[2]
 
         Returns:
             Tuple of (flat_numpy_array, boundaries_dict)
@@ -522,9 +525,10 @@ class DatabaseManager:
             table_name = dataset.duckdb_table_name
             print(f"📊 Using DuckDB table: {table_name}")
 
-            # consigo las columnas que necesito - quote column names to handle special characters
-            data_query = f'SELECT "{columns[0]}", "{columns[1]}", "{columns[2]}" FROM {table_name}'
-            print(f"🔍 Executing query: {data_query}")
+            # Build query for all requested columns - quote column names to handle special characters
+            quoted_columns = [f'"{col}"' for col in columns]
+            data_query = f'SELECT {", ".join(quoted_columns)} FROM {table_name}'
+            print(f"🔍 Executing query: SELECT {len(columns)} columns FROM {table_name}")
 
             # obtengo los datos usando DuckDB's fetchnumpy para optimizar el rendimiento
             with self.engine.connect() as conn:
@@ -539,84 +543,73 @@ class DatabaseManager:
 
             print(f"✅ Data found: {len(rows_data[columns[0]])} rows")
 
-            # obtengo las columnas que necesito
-            x_data = rows_data[columns[0]]
-            y_data = rows_data[columns[1]]
-            z_data = rows_data[columns[2]]
-
             # Apply bounding box filter if provided
             if bounding_box and len(bounding_box) in [4, 6]:
                 x1, x2, y1, y2 = bounding_box[0], bounding_box[1], bounding_box[2], bounding_box[3]
                 is_3d = len(bounding_box) == 6
                 z1, z2 = (bounding_box[4], bounding_box[5]) if is_3d else (None, None)
 
+                # Determine which columns to use for filtering
+                if filter_columns and len(filter_columns) >= 2:
+                    x_col, y_col = filter_columns[0], filter_columns[1]
+                    z_col = filter_columns[2] if len(filter_columns) >= 3 else None
+                    print(f"🔍 Using specified filter columns: x='{x_col}', y='{y_col}'")
+                else:
+                    # Default to first 3 columns for backward compatibility
+                    x_col, y_col = columns[0], columns[1]
+                    z_col = columns[2] if len(columns) >= 3 else None
+                    print(f"🔍 Using default filter columns (first 3): x='{x_col}', y='{y_col}'")
+
                 print(f"🔍 Filtering dataset {dataset_id} with bounding box: x[{x1}, {x2}], y[{y1}, {y2}]" +
                       (f", z[{z1}, {z2}]" if is_3d else ""))
+
+                # Get coordinate data for filtering
+                x_data = rows_data[x_col]
+                y_data = rows_data[y_col]
 
                 # Apply bounding box filter using numpy boolean masking
                 mask = (x_data >= x1) & (x_data <= x2) & (y_data >= y1) & (y_data <= y2)
 
                 # Apply 3D filter if applicable
-                if is_3d and z1 is not None and z2 is not None:
+                if is_3d and z1 is not None and z2 is not None and z_col:
+                    z_data = rows_data[z_col]
                     mask = mask & (z_data >= z1) & (z_data <= z2)
 
-                # Filter data
-                x_data = x_data[mask]
-                y_data = y_data[mask]
-                z_data = z_data[mask]
+                # Apply mask to ALL columns
+                for col in columns:
+                    rows_data[col] = rows_data[col][mask]
 
-                print(f"✅ Filtered to {len(x_data)} points from bounding box")
+                num_filtered = np.sum(mask)
+                print(f"✅ Filtered to {num_filtered} points from bounding box")
 
-            # pre-alloco un array para optimizar el rendimiento
-            num_points = len(x_data)
+            # Get number of points after filtering
+            num_points = len(rows_data[columns[0]])
 
             if num_points == 0:
                 return np.array([], dtype=np.float32), {}
 
-            flat_numpy = np.empty(num_points * 3, dtype=np.float32)
+            # Interleave all columns into flat array
+            num_cols = len(columns)
+            flat_numpy = np.empty(num_points * num_cols, dtype=np.float32)
 
             # Direct strided assignment for optimal cache performance
-            flat_numpy[0::3] = x_data.astype(np.float32, copy=False)
-            flat_numpy[1::3] = y_data.astype(np.float32, copy=False)
-            flat_numpy[2::3] = z_data.astype(np.float32, copy=False)
+            # Format: [col1_row1, col2_row1, ..., colN_row1, col1_row2, col2_row2, ...]
+            for i, col in enumerate(columns):
+                flat_numpy[i::num_cols] = rows_data[col].astype(np.float32, copy=False)
 
-            # obtengo las estadisticas - si hay filtro, calculo desde los datos filtrados
-            if bounding_box and len(bounding_box) in [4, 6]:
-                # Calculate boundaries from filtered data
-                boundaries = {
-                    columns[0]: {
-                        'min_value': float(np.min(x_data)),
-                        'max_value': float(np.max(x_data)),
-                        'valid_count': num_points
-                    },
-                    columns[1]: {
-                        'min_value': float(np.min(y_data)),
-                        'max_value': float(np.max(y_data)),
-                        'valid_count': num_points
-                    },
-                    columns[2]: {
-                        'min_value': float(np.min(z_data)),
-                        'max_value': float(np.max(z_data)),
-                        'valid_count': num_points
+            # Calculate boundaries from the actual fetched data
+            boundaries = {}
+            for col in columns:
+                col_data = rows_data[col]
+                mask = ~np.isnan(col_data)
+                valid_data = col_data[mask]
+
+                if len(valid_data) > 0:
+                    boundaries[col] = {
+                        'min_value': float(np.min(valid_data)),
+                        'max_value': float(np.max(valid_data)),
+                        'valid_count': len(valid_data)
                     }
-                }
-            else:
-                # Get boundaries from database (existing behavior)
-                boundaries = {}
-                with Session(self.engine) as session:
-                    stats = session.exec(
-                        select(DatasetColumnStats)
-                        .where(DatasetColumnStats.dataset_id == dataset_id)
-                        .where(DatasetColumnStats.column_type == "numeric")
-                    ).all()
-
-                    for stat in stats:
-                        if stat.column_name in columns and stat.min_value is not None and stat.max_value is not None:
-                            boundaries[stat.column_name] = {
-                                'min_value': float(stat.min_value),
-                                'max_value': float(stat.max_value),
-                                'valid_count': int(stat.count) if stat.count else num_points
-                            }
 
             return flat_numpy, boundaries
 

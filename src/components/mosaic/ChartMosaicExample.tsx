@@ -58,27 +58,27 @@ const ChartMosaicExample: React.FC = () => {
     },
   };
 
-  // Optional custom initial layout
+  // Balanced grid layout with proper divider scoping
   const customLayout = {
-    direction: 'row' as const,
+    direction: 'column' as const,
     first: {
-      direction: 'column' as const,
+      direction: 'row' as const,
       first: 'line-chart',
-      second: 'bar-chart',
-      splitPercentage: 60,
-    },
-    second: {
-      direction: 'column' as const,
-      first: 'heatmap',
-      second: {
-        direction: 'row' as const,
-        first: 'box-plot',
-        second: 'data-viewer',
-        splitPercentage: 50,
-      },
+      second: 'heatmap',
       splitPercentage: 50,
     },
-    splitPercentage: 50,
+    second: {
+      direction: 'row' as const,
+      first: {
+        direction: 'column' as const,
+        first: 'box-plot',
+        second: 'bar-chart',
+        splitPercentage: 50,
+      },
+      second: 'data-viewer',
+      splitPercentage: 50,
+    },
+    splitPercentage: 33,
   };
 
   return (

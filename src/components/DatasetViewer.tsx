@@ -493,18 +493,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     }
   };
 
-
-
-  const prepareChartData = () => {
-    if (!dataset || !selectedValueColumn || !selectedXAxis || !selectedYAxis) {
-      return;
-    }
-    // Creamos el Float32Array desde el binary_data_f32 si existe (deberia!), sino desde el binary_data
-    const float32Data = dataset.binary_data_f32 ?? new Float32Array(dataset.binary_data.buffer, dataset.binary_data.byteOffset, dataset.data_length);
-    
-    setChartData(float32Data);
-  };
-
   // Generate chart options - memoized for performance
   const chartOptions = useMemo(() => {
     if (!chartData || chartData.length === 0) return null;
@@ -515,8 +503,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       return dataset.data_boundaries.find(b => b.column_name === columnName);
     };
 
-    const xBoundary = getBoundaryForColumn(selectedXAxis);
-    const yBoundary = getBoundaryForColumn(selectedYAxis);
     const valueBoundary = getBoundaryForColumn(selectedValueColumn);
 
 
@@ -539,8 +525,9 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         top: 'center',
         text: ['ALTO', 'BAJO'],
         calculable: true,
+        realtime: true,
         inRange: {
-          color: ['#1e40af', '#3b82f6', '#60a5fa', '#93c5fd', '#dbeafe', '#fef3c7', '#fcd34d', '#f59e0b', '#d97706', '#b45309']
+          color: ['#1e3a8a', '#1e40af', '#3b82f6', '#60a5fa', '#fbbf24', '#f59e0b', '#ea580c', '#dc2626', '#b91c1c', '#7f1d1d'],
         },
         textStyle: {
           color: '#374151'
@@ -567,10 +554,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         nameLocation: 'middle',
         nameGap: 30,
         scale:true
-        // ...(xBoundary && {
-        //   min: xBoundary.min_value,
-        //   max: xBoundary.max_value
-        // })
+
       },
       yAxis: {
         name: selectedYAxis,
@@ -578,22 +562,19 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         nameLocation: 'middle',
         scale:true,
         nameGap: 50,
-        // ...(yBoundary && {
-        //   min: yBoundary.min_value,
-        //   max: yBoundary.max_value
-        // })
+
       },
       dataZoom: [
         {
           type: 'inside',
           xAxisIndex: 0,
-          filterMode: 'filter',
+          filterMode: 'empty',
           throttle: 30,
         },
         {
           type: 'inside',
           yAxisIndex: 0,
-          filterMode: 'filter',
+          filterMode: 'empty',
           throttle: 30,
         }
       ],

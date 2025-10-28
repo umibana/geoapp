@@ -1,8 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Brush, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Brush, AlertCircle, ListFilter } from 'lucide-react';
 import { useBrushSelection } from '@/hooks/useBrushSelection';
 
 /**
@@ -12,9 +15,24 @@ import { useBrushSelection } from '@/hooks/useBrushSelection';
  */
 const BrushedBoxPlot: React.FC = () => {
   const activeBrushSelection = useBrushSelection();
+  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
+  const [showColumnSelector, setShowColumnSelector] = useState(false);
+
+  // Initialize selected columns when brush selection changes
+  useEffect(() => {
+    console.log('🔄 useEffect triggered - datasetId:', activeBrushSelection?.datasetId);
+    if (activeBrushSelection?.statistics?.boxPlots) {
+      const allColumns = activeBrushSelection.statistics.boxPlots.map(bp => bp.column_name);
+      console.log('🔄 Setting selectedColumns to all columns:', allColumns);
+      setSelectedColumns(allColumns);
+    } else {
+      console.log('🔄 No box plots available, clearing selectedColumns');
+      setSelectedColumns([]);
+    }
+  }, [activeBrushSelection?.datasetId]); // Reset when dataset changes
 
   // Generate box plot options from BACKEND-COMPUTED box plot data
-  const chartOptions = useMemo(() => {
+  const chartData = useMemo(() => {
     console.log('🔍 BrushedBoxPlot: Checking for statistics');
     console.log('📊 activeBrushSelection:', activeBrushSelection);
     console.log('📊 Has statistics?', !!activeBrushSelection?.statistics);
@@ -26,9 +44,19 @@ const BrushedBoxPlot: React.FC = () => {
       return null;
     }
 
-    const boxPlots = activeBrushSelection.statistics.boxPlots;
-    console.log('📊 Box plots array:', boxPlots);
-    console.log('📊 Box plots length:', boxPlots.length);
+    // Filter box plots based on selected columns
+    const allBoxPlots = activeBrushSelection.statistics.boxPlots;
+    console.log('🔍 selectedColumns:', selectedColumns);
+    console.log('🔍 selectedColumns.length:', selectedColumns.length);
+
+    // If no columns selected yet, show all
+    const boxPlots = selectedColumns.length > 0
+      ? allBoxPlots.filter(bp => selectedColumns.includes(bp.column_name))
+      : allBoxPlots;
+
+    console.log('📊 All box plots count:', allBoxPlots.length);
+    console.log('📊 Filtered box plots array:', boxPlots);
+    console.log('📊 Filtered box plots length:', boxPlots.length);
 
     // Need at least one box plot
     if (!boxPlots || boxPlots.length === 0) {
@@ -53,7 +81,33 @@ const BrushedBoxPlot: React.FC = () => {
       bp.outliers.map(v => [i, v])
     );
 
-    return {
+    // Calculate smart zoom range based on IQR (excluding extreme outliers)
+    // This helps visualize the main distribution when outliers are far away
+    const allQ1 = boxPlots.map(bp => bp.q1);
+    const allQ3 = boxPlots.map(bp => bp.q3);
+    const allMedians = boxPlots.map(bp => bp.median);
+
+    const minQ1 = Math.min(...allQ1);
+    const maxQ3 = Math.max(...allQ3);
+    const iqrRange = maxQ3 - minQ1;
+
+    // Extend the view by 50% of IQR on each side to show whiskers and some outliers
+    const viewMin = minQ1 - iqrRange * 0.5;
+    const viewMax = maxQ3 + iqrRange * 0.5;
+
+    // Get actual data range including outliers
+    const allMin = Math.min(...boxPlots.map(bp => bp.min), ...outlierData.map(d => d[1]));
+    const allMax = Math.max(...boxPlots.map(bp => bp.max), ...outlierData.map(d => d[1]));
+    const totalRange = allMax - allMin;
+
+    // Calculate start/end percentages for dataZoom
+    const startPercent = Math.max(0, ((viewMin - allMin) / totalRange) * 100);
+    const endPercent = Math.min(100, ((viewMax - allMin) / totalRange) * 100);
+
+    console.log(`📊 Smart zoom: IQR range [${minQ1.toFixed(2)}, ${maxQ3.toFixed(2)}], view [${viewMin.toFixed(2)}, ${viewMax.toFixed(2)}]`);
+    console.log(`📊 Data range: [${allMin.toFixed(2)}, ${allMax.toFixed(2)}], zoom: ${startPercent.toFixed(1)}% - ${endPercent.toFixed(1)}%`);
+
+    const chartOptions = {
       animation: false,
       title: {
         text: 'Box Plot - Distribución Estadística',
@@ -117,6 +171,80 @@ const BrushedBoxPlot: React.FC = () => {
           show: true
         }
       },
+      dataZoom: [
+        {
+          type: 'slider',
+          yAxisIndex: 0,
+          show: true,
+          filterMode: 'none', // Show all data, just zoom the view
+          start: startPercent, // Smart zoom to IQR range
+          end: endPercent,
+          width: 20,
+          right: 10,
+          showDetail: true,
+          showDataShadow: true,
+          brushSelect: false,
+          backgroundColor: 'rgba(47, 69, 84, 0.1)',
+          dataBackground: {
+            lineStyle: {
+              color: '#3b82f6',
+              width: 1
+            },
+            areaStyle: {
+              color: 'rgba(59, 130, 246, 0.2)'
+            }
+          },
+          selectedDataBackground: {
+            lineStyle: {
+              color: '#1e40af'
+            },
+            areaStyle: {
+              color: 'rgba(59, 130, 246, 0.4)'
+            }
+          },
+          fillerColor: 'rgba(59, 130, 246, 0.15)',
+          borderColor: '#ccc',
+          handleSize: '80%',
+          handleStyle: {
+            color: '#3b82f6',
+            borderColor: '#1e40af'
+          },
+          textStyle: {
+            color: '#666'
+          }
+        },
+        {
+          type: 'inside',
+          yAxisIndex: 0,
+          filterMode: 'none',
+          start: startPercent, // Match slider zoom
+          end: endPercent,
+          zoomOnMouseWheel: 'shift', // Hold shift to zoom with mouse wheel
+          moveOnMouseMove: true,
+          moveOnMouseWheel: true
+        }
+      ],
+      toolbox: {
+        show: true,
+        feature: {
+          dataZoom: {
+            yAxisIndex: 'none',
+            title: {
+              zoom: 'Zoom',
+              back: 'Reset Zoom'
+            }
+          },
+          restore: {
+            title: 'Restaurar'
+          },
+          saveAsImage: {
+            title: 'Guardar como imagen',
+            pixelRatio: 2
+          }
+        },
+        right: 50,
+        top: 10
+      },
       series: [
         {
           name: 'boxplot',
@@ -150,9 +278,11 @@ const BrushedBoxPlot: React.FC = () => {
         }
       ]
     };
-  }, [activeBrushSelection]);
 
-  console.log('📈 BrushedBoxPlot render - chartOptions:', !!chartOptions);
+    return chartOptions;
+  }, [activeBrushSelection, selectedColumns]);
+
+  console.log('📈 BrushedBoxPlot render - chartOptions:', !!chartData);
 
   // No brush selection
   if (!activeBrushSelection) {
@@ -193,41 +323,91 @@ const BrushedBoxPlot: React.FC = () => {
             Dataset: {activeBrushSelection.datasetId}
           </p>
         </div>
-        <Badge variant="default" className="px-3 py-1">
-          {activeBrushSelection.selectedIndices.length.toLocaleString()} puntos
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowColumnSelector(!showColumnSelector)}
+            className="flex items-center gap-2"
+          >
+            <ListFilter className="h-4 w-4" />
+            Filtrar Columnas ({selectedColumns.length})
+          </Button>
+          <Badge variant="default" className="px-3 py-1">
+            {activeBrushSelection.selectedIndices.length.toLocaleString()} puntos
+          </Badge>
+        </div>
       </div>
 
-      {/* Info Card */}
-      <Card className="flex-shrink-0">
-        <CardContent className="pt-4">
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div>
-              <p className="text-muted-foreground">Eje X</p>
-              <p className="font-medium">{activeBrushSelection.columns.xAxis}</p>
+      {/* Column Selector */}
+      {showColumnSelector && activeBrushSelection?.statistics?.boxPlots && (
+        <Card className="flex-shrink-0">
+          <CardHeader>
+            <CardTitle className="text-sm">Seleccionar Columnas</CardTitle>
+            <CardDescription className="text-xs">
+              Selecciona qué columnas mostrar en el box plot (útil para agrupar escalas similares)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2 mb-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const allColumns = activeBrushSelection?.statistics?.boxPlots?.map(bp => bp.column_name) || [];
+                  setSelectedColumns(allColumns);
+                }}
+              >
+                Seleccionar Todas
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedColumns([])}
+              >
+                Deseleccionar Todas
+              </Button>
             </div>
-            <div>
-              <p className="text-muted-foreground">Eje Y</p>
-              <p className="font-medium">{activeBrushSelection.columns.yAxis}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Valor</p>
-              <p className="font-medium">{activeBrushSelection.columns.value}</p>
-            </div>
-          </div>
-          <div className="mt-3 text-xs text-muted-foreground">
-            <p>Bounds: X [{activeBrushSelection.coordRange.x1.toFixed(2)}, {activeBrushSelection.coordRange.x2.toFixed(2)}] • Y [{activeBrushSelection.coordRange.y1.toFixed(2)}, {activeBrushSelection.coordRange.y2.toFixed(2)}]</p>
-          </div>
-        </CardContent>
-      </Card>
+            <ScrollArea className="h-[200px] pr-4">
+              <div className="space-y-2">
+                {activeBrushSelection.statistics.boxPlots.map((bp) => (
+                  <div key={bp.column_name} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`col-${bp.column_name}`}
+                      checked={selectedColumns.includes(bp.column_name)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedColumns([...selectedColumns, bp.column_name]);
+                        } else {
+                          setSelectedColumns(selectedColumns.filter(c => c !== bp.column_name));
+                        }
+                      }}
+                    />
+                    <label
+                      htmlFor={`col-${bp.column_name}`}
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+                    >
+                      {bp.column_name}
+                      <span className="text-xs text-muted-foreground ml-2">
+                        (median: {bp.median.toFixed(2)})
+                      </span>
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      )}
+
 
       {/* Chart */}
       <Card className="flex-1 flex flex-col min-h-0">
-        <CardContent className="flex-1 p-4">
-          {chartOptions ? (
+        <CardContent className="flex flex-1 p-4">
+          {chartData ? (
             <ReactECharts
-              option={chartOptions}
-              style={{ height: '100%', width: '100%', minHeight: '300px' }}
+              option={chartData}
+              style={{ height: '100%', width: '100%', minHeight: '500px' }}
               opts={{ renderer: 'canvas' }}
             />
           ) : (

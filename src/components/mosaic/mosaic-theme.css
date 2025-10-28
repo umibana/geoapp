@@ -18,6 +18,7 @@
   background: hsl(var(--background));
 }
 
+
 /* Window Container */
 .mosaic-custom-theme .mosaic-window {
   display: flex;
@@ -27,6 +28,8 @@
   border-radius: 0.5rem;
   overflow: hidden;
   box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  position: relative;
+  z-index: 10; /* Ensure windows appear above split dividers */
 }
 
 /* Window Toolbar */
@@ -109,46 +112,61 @@
 
 /* Split Lines (Resizable Dividers) */
 .mosaic-custom-theme .mosaic-split {
-  background: hsl(var(--border));
+  background: transparent; /* Make background transparent by default */
   position: relative;
+  z-index: 1; /* Lower z-index so windows appear above */
+  transition: background 0.15s ease;
+  pointer-events: auto;
 }
 
+/* Only show visual feedback when hovering directly over the split area */
 .mosaic-custom-theme .mosaic-split:hover {
-  background: hsl(var(--primary) / 0.3);
+  background: hsl(var(--primary) / 0.5);
 }
 
 .mosaic-custom-theme .mosaic-split.-row {
-  width: 1px;
+  width: 3px;
   cursor: col-resize;
-  margin: 0 2px;
+  margin: 0 3px;
+  max-width: 9px;
 }
 
 .mosaic-custom-theme .mosaic-split.-column {
-  height: 1px;
+  height: 3px;
   cursor: row-resize;
-  margin: 2px 0;
+  margin: 3px 0;
+  max-height: 9px;
 }
 
-/* Split Hover State */
-.mosaic-custom-theme .mosaic-split:hover::before {
+/* Add a subtle visible line only in the center of the split */
+.mosaic-custom-theme .mosaic-split::after {
   content: '';
   position: absolute;
-  background: hsl(var(--primary));
-  transition: all 0.2s ease;
+  background: hsl(var(--border));
+  transition: background 0.15s ease;
 }
 
-.mosaic-custom-theme .mosaic-split.-row:hover::before {
-  width: 3px;
+.mosaic-custom-theme .mosaic-split.-row::after {
+  width: 1px;
   height: 100%;
   left: 50%;
   transform: translateX(-50%);
 }
 
-.mosaic-custom-theme .mosaic-split.-column:hover::before {
-  height: 3px;
+.mosaic-custom-theme .mosaic-split.-column::after {
+  height: 1px;
   width: 100%;
   top: 50%;
   transform: translateY(-50%);
+}
+
+.mosaic-custom-theme .mosaic-split:hover::after {
+  background: hsl(var(--primary));
+}
+
+/* Split Hover State - remove the ::before pseudo-element that extends beyond bounds */
+.mosaic-custom-theme .mosaic-split:hover::before {
+  display: none; /* Disable the extending hover effect */
 }
 
 /* Zero State (Empty) */
@@ -169,6 +187,12 @@
 
 .mosaic-custom-theme .mosaic-tile {
   background: transparent;
+  pointer-events: none; /* Disable pointer events on tile container */
+}
+
+/* Re-enable pointer events for actual content */
+.mosaic-custom-theme .mosaic-tile > * {
+  pointer-events: auto;
 }
 
 /* Additional Controls Drawer (if used) */
