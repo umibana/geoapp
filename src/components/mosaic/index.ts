@@ -52,7 +52,6 @@ export {
 
 // Examples
 export { default as ChartMosaicExample } from './ChartMosaicExample';
-export { default as SimpleMosaicExample } from './SimpleMosaicExample';
 
 // Re-export useful types from react-mosaic for convenience
 export type {
