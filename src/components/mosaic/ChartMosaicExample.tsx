@@ -6,24 +6,30 @@ import BrushedHeatmap from '@/components/chart-components/BrushedHeatmap';
 import BrushedBoxPlot from '@/components/chart-components/BrushedBoxPlot';
 import BrushedDataViewer from '@/components/chart-components/BrushedDataViewer';
 
-/**
- * ChartMosaicExample - Example usage of MosaicLayout with chart components
- *
- * This demonstrates how easy it is to create a flexible dashboard layout
- * with your existing chart components. Simply register your components
- * and the MosaicLayout handles all the window management!
- *
- * Features demonstrated:
- * - Easy component registration with icons and titles
- * - Auto-balanced initial layout
- * - Drag-and-drop window repositioning
- * - Resizable panes
- * - Window controls (maximize, close)
- * - All charts share the same Zustand brush selection state
- */
 const ChartMosaicExample: React.FC = () => {
-  // Define your component registry
-  // This is all you need to do - no complex setup!
+  // component registry
+  // We could also define directly in the component like this:
+  // But we use the current method to keep the components separate and easy to manage.
+  // const SimpleMosaicExample: React.FC = () => {
+  //   return (
+  //     <div className="w-full h-screen">
+  //       <MosaicLayout
+  //         components={{
+  //           'chart-1': {
+  //             id: 'chart-1',
+  //             title: 'Bar Chart',
+  //             component: BrushedBarChart,
+  //           },
+  //           'chart-2': {
+  //             id: 'chart-2',
+  //             title: 'Line Chart',
+  //             component: BrushedLineChart,
+  //           },
+  //         }}
+  //       />
+  //     </div>
+  //   );
+  // };
   const components: Record<string, MosaicComponentConfig> = {
     'bar-chart': {
       id: 'bar-chart',
@@ -52,8 +58,7 @@ const ChartMosaicExample: React.FC = () => {
     },
   };
 
-  // Optional: Define a custom initial layout
-  // If not provided, MosaicLayout will auto-balance all components
+  // Optional custom initial layout
   const customLayout = {
     direction: 'row' as const,
     first: {
@@ -82,7 +87,8 @@ const ChartMosaicExample: React.FC = () => {
         components={components}
         initialLayout={customLayout}
         onChange={(newLayout) => {
-          // Optional: persist layout to localStorage or backend
+          // TODO: do something with layout change
+          // Maybe we can cleanup old data?
           console.log('Layout changed:', newLayout);
         }}
       />
