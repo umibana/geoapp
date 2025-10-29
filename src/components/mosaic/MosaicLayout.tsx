@@ -37,6 +37,8 @@ export interface MosaicLayoutProps {
   components: Record<string, MosaicComponentConfig>;
   /** Initial layout configuration (optional - will auto-balance if not provided) */
   initialLayout?: MosaicNode<string> | null;
+  /** Controlled value for layout (if provided, component becomes fully controlled) */
+  value?: MosaicNode<string> | null;
   /** Custom empty state when no windows are open */
   emptyState?: React.ReactNode;
   /** Mosaic ID for drag-drop context (default: 'mosaic-layout') */
@@ -71,11 +73,15 @@ export interface MosaicLayoutProps {
 export const MosaicLayout: React.FC<MosaicLayoutProps> = ({
   components,
   initialLayout,
+  value: controlledValue,
   emptyState,
   mosaicId = 'mosaic-layout',
   className = '',
   onChange,
 }) => {
+  // Determine if component is controlled or uncontrolled
+  const isControlled = controlledValue !== undefined;
+
   // Auto-create balanced layout from all components if no initial layout provided
   const autoLayout = useMemo(() => {
     if (initialLayout !== undefined) return initialLayout;
@@ -87,14 +93,19 @@ export const MosaicLayout: React.FC<MosaicLayoutProps> = ({
     return createBalancedTreeFromLeaves(componentIds);
   }, [components, initialLayout]);
 
-  const [currentNode, setCurrentNode] = useState<MosaicNode<string> | null>(autoLayout);
+  const [internalNode, setInternalNode] = useState<MosaicNode<string> | null>(autoLayout);
+
+  // Use controlled value if provided, otherwise use internal state
+  const currentNode = isControlled ? controlledValue : internalNode;
 
   const handleChange = useCallback(
     (newNode: MosaicNode<string> | null) => {
-      setCurrentNode(newNode);
+      if (!isControlled) {
+        setInternalNode(newNode);
+      }
       onChange?.(newNode);
     },
-    [onChange]
+    [onChange, isControlled]
   );
 
   /**

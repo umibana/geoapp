@@ -15,28 +15,19 @@ const BrushedHeatmap: React.FC = () => {
 
   // Generate heatmap chart options from BACKEND-COMPUTED heatmap data
   const chartOptions = useMemo(() => {
-    console.log('🔍 BrushedHeatmap: Checking for statistics');
-    console.log('📊 activeBrushSelection:', activeBrushSelection);
-    console.log('📊 Has statistics?', !!activeBrushSelection?.statistics);
-    console.log('📊 Has heatmap?', !!activeBrushSelection?.statistics?.heatmap);
 
     // Check if we have backend statistics
     if (!activeBrushSelection?.statistics?.heatmap) {
-      console.log('❌ No heatmap in statistics');
       return null;
     }
 
     const heatmap = activeBrushSelection.statistics.heatmap;
-    console.log('📊 Heatmap object:', heatmap);
-    console.log('📊 Heatmap cells count:', heatmap.cells?.length || 0);
 
     // Need cells to render
     if (!heatmap.cells || heatmap.cells.length === 0) {
-      console.log('❌ Heatmap cells array is empty');
       return null;
     }
 
-    console.log('✅ Heatmap found with', heatmap.cells.length, 'cells');
 
     // All computation is done in backend - just use the data!
     // Convert cells to ECharts format: [x_index, y_index, avg_value]
@@ -125,8 +116,6 @@ const BrushedHeatmap: React.FC = () => {
     };
   }, [activeBrushSelection]);
 
-  console.log('📈 BrushedHeatmap render - chartOptions:', !!chartOptions);
-
   // No brush selection
   if (!activeBrushSelection) {
     return (
@@ -171,32 +160,8 @@ const BrushedHeatmap: React.FC = () => {
         </Badge>
       </div>
 
-      {/* Info Card */}
-      <Card className="flex-shrink-0">
-        <CardContent className="pt-4">
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div>
-              <p className="text-muted-foreground">Eje X</p>
-              <p className="font-medium">{activeBrushSelection.columns.xAxis}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Eje Y</p>
-              <p className="font-medium">{activeBrushSelection.columns.yAxis}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Valor</p>
-              <p className="font-medium">{activeBrushSelection.columns.value}</p>
-            </div>
-          </div>
-          <div className="mt-3 text-xs text-muted-foreground">
-            <p>Bounds: X [{activeBrushSelection.coordRange.x1.toFixed(2)}, {activeBrushSelection.coordRange.x2.toFixed(2)}] • Y [{activeBrushSelection.coordRange.y1.toFixed(2)}, {activeBrushSelection.coordRange.y2.toFixed(2)}]</p>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Chart */}
-      <Card className="flex-1 flex flex-col min-h-0">
-        <CardContent className="flex-1 p-4">
           {chartOptions ? (
             <ReactECharts
               option={chartOptions}
@@ -206,12 +171,10 @@ const BrushedHeatmap: React.FC = () => {
           ) : (
             <div className="flex items-center justify-center h-full">
               <p className="text-muted-foreground">
-                ⚠️ No chart data available. Check console for details.
+                No hay datos disponibles para mostrar
               </p>
             </div>
           )}
-        </CardContent>
-      </Card>
     </div>
   );
 };

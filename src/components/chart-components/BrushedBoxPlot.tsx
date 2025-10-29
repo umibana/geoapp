@@ -20,51 +20,34 @@ const BrushedBoxPlot: React.FC = () => {
 
   // Initialize selected columns when brush selection changes
   useEffect(() => {
-    console.log('🔄 useEffect triggered - datasetId:', activeBrushSelection?.datasetId);
     if (activeBrushSelection?.statistics?.boxPlots) {
       const allColumns = activeBrushSelection.statistics.boxPlots.map(bp => bp.column_name);
-      console.log('🔄 Setting selectedColumns to all columns:', allColumns);
       setSelectedColumns(allColumns);
     } else {
-      console.log('🔄 No box plots available, clearing selectedColumns');
       setSelectedColumns([]);
     }
   }, [activeBrushSelection?.datasetId]); // Reset when dataset changes
 
   // Generate box plot options from BACKEND-COMPUTED box plot data
   const chartData = useMemo(() => {
-    console.log('🔍 BrushedBoxPlot: Checking for statistics');
-    console.log('📊 activeBrushSelection:', activeBrushSelection);
-    console.log('📊 Has statistics?', !!activeBrushSelection?.statistics);
-    console.log('📊 Has boxPlots?', !!activeBrushSelection?.statistics?.boxPlots);
-
-    // Check if we have backend statistics
     if (!activeBrushSelection?.statistics?.boxPlots) {
-      console.log('❌ No boxPlots in statistics');
       return null;
     }
 
     // Filter box plots based on selected columns
     const allBoxPlots = activeBrushSelection.statistics.boxPlots;
-    console.log('🔍 selectedColumns:', selectedColumns);
-    console.log('🔍 selectedColumns.length:', selectedColumns.length);
 
     // If no columns selected yet, show all
     const boxPlots = selectedColumns.length > 0
       ? allBoxPlots.filter(bp => selectedColumns.includes(bp.column_name))
       : allBoxPlots;
 
-    console.log('📊 All box plots count:', allBoxPlots.length);
-    console.log('📊 Filtered box plots array:', boxPlots);
-    console.log('📊 Filtered box plots length:', boxPlots.length);
 
     // Need at least one box plot
     if (!boxPlots || boxPlots.length === 0) {
-      console.log('❌ Box plots array is empty');
       return null;
     }
 
-    console.log('✅ Box plots found:', boxPlots.length, 'columns');
 
     // All computation is done in backend - just use the data!
     // Box plot data format: [min, Q1, median, Q3, max]
@@ -85,7 +68,6 @@ const BrushedBoxPlot: React.FC = () => {
     // This helps visualize the main distribution when outliers are far away
     const allQ1 = boxPlots.map(bp => bp.q1);
     const allQ3 = boxPlots.map(bp => bp.q3);
-    const allMedians = boxPlots.map(bp => bp.median);
 
     const minQ1 = Math.min(...allQ1);
     const maxQ3 = Math.max(...allQ3);
@@ -104,8 +86,6 @@ const BrushedBoxPlot: React.FC = () => {
     const startPercent = Math.max(0, ((viewMin - allMin) / totalRange) * 100);
     const endPercent = Math.min(100, ((viewMax - allMin) / totalRange) * 100);
 
-    console.log(`📊 Smart zoom: IQR range [${minQ1.toFixed(2)}, ${maxQ3.toFixed(2)}], view [${viewMin.toFixed(2)}, ${viewMax.toFixed(2)}]`);
-    console.log(`📊 Data range: [${allMin.toFixed(2)}, ${allMax.toFixed(2)}], zoom: ${startPercent.toFixed(1)}% - ${endPercent.toFixed(1)}%`);
 
     const chartOptions = {
       animation: false,
@@ -145,7 +125,7 @@ const BrushedBoxPlot: React.FC = () => {
         left: '10%',
         right: '5%',
         top: '15%',
-        bottom: '10%',
+        bottom: boxPlots.length > 10 ? '25%' : (boxPlots.length > 5 ? '20%' : '10%'), // More space for rotated labels
         containLabel: true
       },
       xAxis: {
@@ -154,6 +134,16 @@ const BrushedBoxPlot: React.FC = () => {
         boundaryGap: true,
         nameGap: 30,
         scale: true,
+        axisLabel: {
+          rotate: boxPlots.length > 10 ? 90 : (boxPlots.length > 5 ? 45 : 0), // 90° for >10 columns, 45° for >5, straight for ≤5
+          interval: 0, // Show ALL labels - never skip any
+          fontSize: boxPlots.length > 20 ? 9 : (boxPlots.length > 10 ? 10 : 12), // Smaller font for many columns
+          overflow: 'truncate', // Truncate long labels
+          width: boxPlots.length > 10 ? 100 : 120, // Width for truncation
+          ellipsis: '...', // Show ellipsis for truncated labels
+          align: boxPlots.length > 10 ? 'right' : 'center', // Right-align when rotated 90°
+          verticalAlign: boxPlots.length > 10 ? 'middle' : 'top' // Middle vertical align for 90° rotation
+        },
         splitArea: {
           show: false
         },
@@ -282,7 +272,6 @@ const BrushedBoxPlot: React.FC = () => {
     return chartOptions;
   }, [activeBrushSelection, selectedColumns]);
 
-  console.log('📈 BrushedBoxPlot render - chartOptions:', !!chartData);
 
   // No brush selection
   if (!activeBrushSelection) {
@@ -402,8 +391,6 @@ const BrushedBoxPlot: React.FC = () => {
 
 
       {/* Chart */}
-      <Card className="flex-1 flex flex-col min-h-0">
-        <CardContent className="flex flex-1 p-4">
           {chartData ? (
             <ReactECharts
               option={chartData}
@@ -417,8 +404,6 @@ const BrushedBoxPlot: React.FC = () => {
               </p>
             </div>
           )}
-        </CardContent>
-      </Card>
     </div>
   );
 };

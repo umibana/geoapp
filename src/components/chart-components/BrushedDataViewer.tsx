@@ -155,32 +155,7 @@ const BrushedDataViewer: React.FC = () => {
         </Badge>
       </div>
 
-      {/* Info Card  -- Could be removed later, used for debugging*/}
-      <Card className="flex-shrink-0">
-        <CardContent className="pt-4">
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div>
-              <p className="text-muted-foreground">Eje X</p>
-              <p className="font-medium">{activeBrushSelection.columns.xAxis}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Eje Y</p>
-              <p className="font-medium">{activeBrushSelection.columns.yAxis}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Valor</p>
-              <p className="font-medium">{activeBrushSelection.columns.value}</p>
-            </div>
-          </div>
-          <div className="mt-3 text-xs text-muted-foreground">
-            <p>Bounds: X [{activeBrushSelection.coordRange.x1.toFixed(2)}, {activeBrushSelection.coordRange.x2.toFixed(2)}] • Y [{activeBrushSelection.coordRange.y1.toFixed(2)}, {activeBrushSelection.coordRange.y2.toFixed(2)}]</p>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Chart - Uses echarts-for-react for simplicity */}
-      <Card className="flex-1 flex flex-col min-h-0">
-        <CardContent className="flex-1 p-4">
           {chartOptions && (
             <ReactECharts
               option={chartOptions}
@@ -188,8 +163,6 @@ const BrushedDataViewer: React.FC = () => {
               opts={{ renderer: 'canvas' }}
             />
           )}
-        </CardContent>
-      </Card>
     </div>
   );
 };

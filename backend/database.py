@@ -595,21 +595,36 @@ class DatabaseManager:
             # Direct strided assignment for optimal cache performance
             # Format: [col1_row1, col2_row1, ..., colN_row1, col1_row2, col2_row2, ...]
             for i, col in enumerate(columns):
-                flat_numpy[i::num_cols] = rows_data[col].astype(np.float32, copy=False)
+                col_data = rows_data[col]
+
+                # Handle mixed-type or non-numeric columns gracefully
+                try:
+                    # Try direct conversion first (fastest path)
+                    flat_numpy[i::num_cols] = col_data.astype(np.float32, copy=False)
+                except (ValueError, TypeError):
+                    # If conversion fails, convert to float with error='coerce' (non-numeric -> NaN)
+                    print(f"⚠️ Column '{col}' has non-numeric values, converting to NaN")
+                    # Use pandas to_numeric with errors='coerce' for safe conversion
+                    import pandas as pd
+                    numeric_data = pd.to_numeric(col_data, errors='coerce')
+                    flat_numpy[i::num_cols] = numeric_data.astype(np.float32)
 
             # Calculate boundaries from the actual fetched data
             boundaries = {}
             for col in columns:
                 col_data = rows_data[col]
-                mask = ~np.isnan(col_data)
-                valid_data = col_data[mask]
 
-                if len(valid_data) > 0:
-                    boundaries[col] = {
-                        'min_value': float(np.min(valid_data)),
-                        'max_value': float(np.max(valid_data)),
-                        'valid_count': len(valid_data)
-                    }
+                # Only process numeric columns for boundaries (skip categorical/string columns)
+                if np.issubdtype(col_data.dtype, np.number):
+                    mask = ~np.isnan(col_data)
+                    valid_data = col_data[mask]
+
+                    if len(valid_data) > 0:
+                        boundaries[col] = {
+                            'min_value': float(np.min(valid_data)),
+                            'max_value': float(np.max(valid_data)),
+                            'valid_count': len(valid_data)
+                        }
 
             return flat_numpy, boundaries
 

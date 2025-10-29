@@ -67,6 +67,7 @@
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@types/react-rnd": "^8.0.0",
+    "@types/uuid": "^10.0.0",
     "concurrently": "^8.2.2",
     "electron": "^38.2.0",
     "electron-devtools-installer": "^4.0.0",

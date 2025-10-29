@@ -23,7 +23,6 @@ interface DatasetViewerProps {
  * con escalado automático basado en límites calculados en el backend
  */
 const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) => {
-  console.log('🔄 DatasetViewer RENDER - NO ZUSTAND SUBSCRIPTIONS');
 
   const datasetInfo = DatasetInfo; // For consistency with the rest of the code
 
@@ -121,20 +120,8 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     updateBrushInfoRef();
   }, [updateBrushInfoRef]);
 
-  // For rendering, just check if we have a brush (no dependency on timestamp)
-  const hasBrush = brushInfoRef.current !== null;
-  const brushCount = brushInfoRef.current?.count || 0;
-
-  console.log('📊 brushInfo from ref:', hasBrush ? `${brushCount} points` : 'none');
-
   // Full dataset - never changes based on brush
   const fullData = useMemo(() => {
-    console.log('🔢 fullData useMemo recalculating - deps:', {
-      hasDataset: !!dataset,
-      selectedValueColumn,
-      selectedXAxis,
-      selectedYAxis
-    });
     if (!dataset || !selectedValueColumn || !selectedXAxis || !selectedYAxis || !dataset.binary_data) {
       return null;
     }
@@ -143,7 +130,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
   // Chart data - switches between full and filtered based on toggle
   const chartData = useMemo(() => {
-    console.log('📈 chartData useMemo recalculating - showOnlyBrushed:', showOnlyBrushed);
     if (!fullData) return null;
 
     // If filter is enabled and we have a brush selection, show only brushed points
@@ -188,7 +174,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     // Small delay to ensure chart is fully rendered
     const timer = setTimeout(() => {
       try {
-        console.log('Applying initial brush selection from store:', selection);
 
         // Set flag to prevent triggering brushSelected event
         isApplyingBrushProgrammatically.current = true;
@@ -207,7 +192,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           }]
         });
 
-        console.log('Initial brush applied successfully');
 
         // Reset flag after a short delay
         setTimeout(() => {
@@ -221,11 +205,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
     return () => clearTimeout(timer);
   }, [fullData, showOnlyBrushed]); // Don't apply brush when filter is active
-
-  // Note: Real-time synchronization disabled to prevent infinite loop
-  // Brush selections are still shared via the store and applied on component mount
-  // If you need real-time sync, you would need to implement a more sophisticated
-  // debouncing/throttling mechanism or use a different approach
 
   // Resize chart when container size changes with debouncing
   useEffect(() => {
@@ -258,7 +237,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
   const loadLiveColumns = async () => {
     try {
       setLoadingColumns(true);
-      console.log('📊 Loading live columns for file_id:', datasetInfo.file_id);
 
       const response = await window.autoGrpc.getFileStatistics({
         file_id: datasetInfo.file_id,
@@ -267,7 +245,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
       // Extract column names from statistics
       const columns = response.statistics?.map((stat: {column_name: string}) => stat.column_name) || [];
-      console.log('✅ Live columns loaded:', columns);
 
       setLiveColumns(columns);
     } catch (err) {
@@ -280,13 +257,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
   const loadDataset = async () => {
     try {
-      console.log('🔄 loadDataset called with:', {
-        dataset_id: datasetInfo.id,
-        file_id: datasetInfo.file_id,
-        file_name: datasetInfo.file_name,
-        columns: [selectedXAxis, selectedYAxis, selectedValueColumn]
-      });
-
       // Use different loading state for refetches vs initial load
       if (dataset) {
         setRefetching(true);
@@ -302,22 +272,13 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         dataset_id: datasetInfo.id,
         columns: [selectedXAxis, selectedYAxis, selectedValueColumn]
       }) as GetDatasetDataResponse;
-      console.log('📦 getDatasetData response:', {
-        total_count: response.total_count,
-        data_length: response.data_length,
-        has_binary_data: !!response.binary_data,
-        boundaries_count: response.data_boundaries?.length || 0
-      });
       setTimetook((performance.now() - timetook));
 
       if (response.binary_data && response.data_length > 0) {
         setDataset(response);
-        console.log('✅ Dataset loaded successfully');
       } else {
-        console.warn('⚠️ No data returned from backend:', {
-          has_binary_data: !!response.binary_data,
-          data_length: response.data_length
-        });
+        console.error('❌ Error loading dataset:', err);
+        setError('Error al cargar el dataset');
       }
     } catch (err) {
       console.error('❌ Error loading dataset:', err);
@@ -343,7 +304,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           }
         });
         setIsBrushMode(false);
-        console.log('👆 Pointer mode enabled (pan/zoom)');
       } else {
         // Enable brush mode
         chartInstance.dispatchAction({
@@ -355,7 +315,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           }
         });
         setIsBrushMode(true);
-        console.log('🖌️ Brush mode enabled');
       }
     }
   };
@@ -386,7 +345,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       isApplyingBrushProgrammatically.current = false;
     }, 100);
 
-    console.log('🧹 Brush selection cleared');
   };
 
   // Apply brush selection (works for both small and large datasets)
@@ -400,8 +358,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       setIsApplyingSelection(true);
       const rect = currentBrushRectRef.current;
 
-      console.log('📦 Applying brush selection with bounding box:', rect);
-      console.log(`📊 Dataset size: ${dataset?.total_count} points, isLarge: ${isLargeDataset}`);
 
       const timetook = performance.now();
       const response = await window.autoGrpc.getDatasetData({
@@ -410,20 +366,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         bounding_box: [rect.x1, rect.x2, rect.y1, rect.y2]
       }) as GetDatasetDataResponse;
 
-      const elapsed = performance.now() - timetook;
-      console.log(`✅ Backend filtering completed in ${elapsed.toFixed(2)}ms`);
-      console.log(`📊 Filtered to ${response.total_count} points`);
-      console.log(`📊 Response statistics:`, {
-        hasHistograms: !!response.histograms,
-        histogramKeys: response.histograms ? Object.keys(response.histograms) : [],
-        hasBoxPlots: !!response.box_plots,
-        boxPlotsCount: response.box_plots?.length || 0,
-        hasHeatmap: !!response.heatmap
-      });
-      console.log('📊 Full response object:', response);
-      console.log('📊 histograms object:', response.histograms);
-      console.log('📊 box_plots array:', response.box_plots);
-      console.log('📊 heatmap object:', response.heatmap);
 
       if (response.binary_data && response.data_length > 0) {
         // Convert binary data to Float32Array
@@ -642,7 +584,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
   // Memoized chart component that only re-renders when chart props actually change
   const MemoizedChart = useMemo(() => {
-    console.log('🎨 Creating memoized chart component');
     return (
       <ReactECharts
         ref={chartRef}
@@ -655,18 +596,14 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           'brushSelected': (params: {batch?: {areas?: {coordRange?: number[][]}[], selected?: {dataIndex: number[]}[]}[]}) => {
             // Ignore brush events triggered by programmatic actions
             if (isApplyingBrushProgrammatically.current) {
-              console.log('❌ Ignoring programmatic brush event');
               return;
             }
 
             // Debounce brush updates to prevent rapid-fire events
             const now = Date.now();
             if (now - lastBrushUpdateTime.current < BRUSH_UPDATE_DEBOUNCE) {
-              console.log('⏱️ Debouncing brush event');
               return;
             }
-
-            console.log('🖱️ Brush selection event received:', params);
 
             if (params.batch && params.batch.length > 0) {
               const batch = params.batch[0];
@@ -699,12 +636,8 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
                     y2: yRange[1]
                   };
 
-                  console.log(`📐 Brush rectangle:`, rectangle);
-                  console.log(`📊 Dataset has ${dataset?.total_count} points (threshold: ${LARGE_THRESHOLD})`);
-
                   // Store rectangle - user will click "Apply Selection" button
                   currentBrushRectRef.current = rectangle;
-                  console.log('✅ Rectangle stored, waiting for user to click "Aplicar Selección"');
 
                   // Force re-render to show "Apply Selection" button
                   forceUpdate({});

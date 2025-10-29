@@ -40,30 +40,21 @@ const BrushedBarChart: React.FC = () => {
 
   // Generate bar chart options from BACKEND-COMPUTED histogram data
   const chartOptions = useMemo(() => {
-    console.log('🔍 BrushedBarChart: Checking for statistics');
-    console.log('📊 activeBrushSelection:', activeBrushSelection);
-
     // Check if we have backend statistics
     if (!activeBrushSelection?.statistics?.histograms) {
-      console.log('❌ No statistics or histograms found');
       return null;
     }
 
     // Use selected column, fallback to value column
     const columnToDisplay = selectedColumn || activeBrushSelection.columns.value;
-    console.log('📈 Looking for histogram for column:', columnToDisplay);
-    console.log('📊 Available histograms:', Object.keys(activeBrushSelection.statistics.histograms));
 
     const histogram = activeBrushSelection.statistics.histograms[columnToDisplay];
 
     // If histogram for this column doesn't exist, return null
     if (!histogram || !histogram.bin_ranges || histogram.bin_ranges.length === 0) {
-      console.log('❌ Histogram not found or empty for column:', columnToDisplay);
       return null;
     }
 
-    console.log('✅ Histogram found with', histogram.bin_ranges.length, 'bins');
-    console.log('📊 Total count:', histogram.total_count);
 
     // All computation is done in backend - just use the data!
     return {
@@ -147,9 +138,7 @@ const BrushedBarChart: React.FC = () => {
     };
   }, [activeBrushSelection, selectedColumn]);
 
-  console.log('📈 BrushedBarChart render - chartOptions:', !!chartOptions);
-
-  // No brush selection
+  // No brush selection (no data!)
   if (!activeBrushSelection) {
     return (
       <Card className="w-full h-full flex flex-col">
@@ -194,8 +183,6 @@ const BrushedBarChart: React.FC = () => {
       </div>
 
       {/* Info Card with Column Selector */}
-      <Card className="flex-shrink-0">
-        <CardContent className="pt-4 space-y-4">
           {/* Column Selector */}
           <div>
             <Label htmlFor="column-select" className="text-sm font-medium">
@@ -218,30 +205,8 @@ const BrushedBarChart: React.FC = () => {
             </Select>
           </div>
 
-          {/* Column Info */}
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div>
-              <p className="text-muted-foreground">Eje X</p>
-              <p className="font-medium">{activeBrushSelection.columns.xAxis}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Eje Y</p>
-              <p className="font-medium">{activeBrushSelection.columns.yAxis}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Valor</p>
-              <p className="font-medium">{activeBrushSelection.columns.value}</p>
-            </div>
-          </div>
-          <div className="text-xs text-muted-foreground">
-            <p>Bounds: X [{activeBrushSelection.coordRange.x1.toFixed(2)}, {activeBrushSelection.coordRange.x2.toFixed(2)}] • Y [{activeBrushSelection.coordRange.y1.toFixed(2)}, {activeBrushSelection.coordRange.y2.toFixed(2)}]</p>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Chart */}
-      <Card className="flex-1 flex flex-col min-h-0">
-        <CardContent className="flex-1 p-4">
           {chartOptions ? (
             <ReactECharts
               option={chartOptions}
@@ -251,12 +216,10 @@ const BrushedBarChart: React.FC = () => {
           ) : (
             <div className="flex items-center justify-center h-full">
               <p className="text-muted-foreground">
-                ⚠️ No chart data available. Check console for details.
+                No hay datos disponibles para mostrar
               </p>
             </div>
           )}
-        </CardContent>
-      </Card>
     </div>
   );
 };
