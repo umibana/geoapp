@@ -1,0 +1,435 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Database, Info, Grid3x3, Calendar } from 'lucide-react';
+import { useBrushStore } from '@/stores/brushStore';
+import {
+  useReactTable,
+  getCoreRowModel,
+  flexRender,
+  ColumnDef,
+  PaginationState,
+} from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+
+/**
+ * DatasetInfoViewer Component
+ * Displays metadata and preview of the selected dataset
+ * Shows dataset info, column list, and preview of first 10 rows
+ * Uses TanStack Table with virtualization for performance
+ */
+
+interface DataRow {
+  rowNumber: number;
+  [key: string]: number;
+}
+
+const ROWS_PER_PAGE = 1000;
+
+const DatasetInfoViewer: React.FC = () => {
+  const selectedDataset = useBrushStore((state) => state.selectedDataset);
+  const [previewData, setPreviewData] = useState<DataRow[]>([]);
+  const [previewColumns, setPreviewColumns] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [totalRows, setTotalRows] = useState(0);
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: ROWS_PER_PAGE,
+  });
+  const tableContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Load paginated data
+  useEffect(() => {
+    if (!selectedDataset) return;
+
+    const loadPreview = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Calculate offset based on current page
+        const offset = pagination.pageIndex * pagination.pageSize;
+
+        // Use the new getDatasetTableData endpoint for efficient pagination
+        const response = await window.autoGrpc.getDatasetTableData({
+          dataset_id: selectedDataset.id,
+          limit: pagination.pageSize,
+          offset: offset,
+          columns: [] // Empty array means fetch ALL numeric columns
+        });
+
+        if (response.success && response.rows) {
+          // Set column names from response
+          setPreviewColumns(response.column_names);
+          setTotalRows(response.total_rows);
+
+          // Convert response rows to DataRow format
+          const rows: DataRow[] = response.rows.map((row, index) => {
+            const dataRow: DataRow = { rowNumber: offset + index + 1 };
+            // Add all column values from the row
+            for (const [colName, value] of Object.entries(row.values)) {
+              dataRow[colName] = value;
+            }
+            return dataRow;
+          });
+
+          setPreviewData(rows);
+        } else {
+          setError(response.error_message || 'Error al cargar datos');
+        }
+      } catch (err) {
+        console.error('Error loading preview:', err);
+        setError('Error al cargar la vista previa');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPreview();
+  }, [selectedDataset, pagination.pageIndex, pagination.pageSize]);
+
+  // Define table columns dynamically based on preview columns
+  const columns = useMemo<ColumnDef<DataRow>[]>(() => {
+    const cols: ColumnDef<DataRow>[] = [
+      {
+        accessorKey: 'rowNumber',
+        header: '#',
+        size: 60,
+        cell: info => <span className="font-medium">{info.getValue() as number}</span>,
+      },
+    ];
+
+    // Add data columns
+    previewColumns.forEach(colName => {
+      cols.push({
+        accessorKey: colName,
+        header: colName,
+        cell: info => {
+          const value = info.getValue() as number;
+          return typeof value === 'number' ? value.toFixed(4) : value;
+        },
+      });
+    });
+
+    return cols;
+  }, [previewColumns]);
+
+  // Create table instance with manual pagination
+  const pageCount = useMemo(() => Math.ceil(totalRows / pagination.pageSize), [totalRows, pagination.pageSize]);
+
+  const table = useReactTable({
+    data: previewData,
+    columns,
+    pageCount,
+    state: {
+      pagination,
+    },
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    manualPagination: true, // We handle pagination on the server
+  });
+
+  // Setup virtualizer for rows
+  const { rows } = table.getRowModel();
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 45, // Estimated row height in pixels
+    overscan: 5,
+  });
+
+  if (!selectedDataset) {
+    return (
+      <Card className="w-full h-full flex items-center justify-center">
+        <CardContent className="text-center py-12">
+          <Database className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+          <p className="text-lg font-medium">No hay dataset seleccionado</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            Selecciona un dataset desde el administrador de proyectos
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const formatDate = (timestamp: number) => {
+    return new Date(timestamp * 1000).toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  return (
+    <div className="space-y-6 p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">{selectedDataset.file_name}</h2>
+          <p className="text-muted-foreground mt-1">
+            Información y vista previa del dataset
+          </p>
+        </div>
+        <Badge variant="default" className="px-4 py-2 text-lg">
+          <Database className="mr-2 h-5 w-5" />
+          {selectedDataset.total_rows.toLocaleString()} filas
+        </Badge>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+          <p className="text-red-800">{error}</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Dataset Metadata */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Info className="mr-2 h-5 w-5" />
+              Metadatos del Dataset
+            </CardTitle>
+            <CardDescription>
+              Información general del dataset
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Nombre del archivo</p>
+              <p className="text-lg">{selectedDataset.file_name}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Archivo original</p>
+              <p className="text-lg">{selectedDataset.original_filename}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Total de filas</p>
+              <p className="text-lg">{selectedDataset.total_rows.toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Fecha de creación</p>
+              <p className="text-lg flex items-center">
+                <Calendar className="mr-2 h-4 w-4" />
+                {formatDate(selectedDataset.created_at)}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">ID del Dataset</p>
+              <p className="text-sm font-mono bg-muted px-2 py-1 rounded">{selectedDataset.id}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Columns List */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Grid3x3 className="mr-2 h-5 w-5" />
+              Columnas Disponibles
+            </CardTitle>
+            <CardDescription>
+              {selectedDataset.column_mappings?.length || 0} columnas en el dataset
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-[300px] pr-4">
+              <div className="space-y-2">
+                {selectedDataset.column_mappings?.map((mapping, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-2 border rounded-lg"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <span className="font-medium">{mapping.column_name}</span>
+                      {mapping.is_coordinate && (
+                        <Badge variant="secondary" className="text-xs">
+                          {mapping.mapped_field?.toUpperCase()}
+                        </Badge>
+                      )}
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {mapping.column_type === 1 ? 'Numeric' : mapping.column_type === 2 ? 'Text' : 'Unused'}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Data Preview */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Vista Previa de Datos</CardTitle>
+          <CardDescription>
+            Mostrando {pagination.pageIndex * pagination.pageSize + 1} - {Math.min((pagination.pageIndex + 1) * pagination.pageSize, totalRows)} de {totalRows.toLocaleString()} filas (columnas: {previewColumns.join(', ')})
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {previewData.length === 0 && !loading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No se pudo cargar la vista previa
+            </div>
+          ) : (
+            <div
+              ref={tableContainerRef}
+              className="h-[400px] overflow-auto border rounded-md"
+            >
+              <table className="w-full" style={{ minWidth: '800px' }}>
+                <thead className="sticky top-0 bg-muted z-10">
+                  {table.getHeaderGroups().map(headerGroup => (
+                    <tr key={headerGroup.id}>
+                      {headerGroup.headers.map((header, index) => (
+                        <th
+                          key={header.id}
+                          className="px-4 py-3 text-left text-sm font-medium text-muted-foreground border-b whitespace-nowrap"
+                          style={{ 
+                            width: index === 0 ? '80px' : '150px',
+                            minWidth: index === 0 ? '80px' : '150px'
+                          }}
+                        >
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                        </th>
+                      ))}
+                    </tr>
+                  ))}
+                </thead>
+                <tbody
+                  style={{
+                    height: `${rowVirtualizer.getTotalSize()}px`,
+                    position: 'relative',
+                  }}
+                >
+                  {loading ? (
+                    // Show skeleton rows during loading
+                    Array.from({ length: 10 }).map((_, index) => (
+                      <tr
+                        key={`skeleton-${index}`}
+                        className="border-b"
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: '45px',
+                          transform: `translateY(${index * 45}px)`,
+                        }}
+                      >
+                        <td className="px-4 py-3" style={{ width: '80px', minWidth: '80px' }}>
+                          <Skeleton className="h-4 w-12" />
+                        </td>
+                        {previewColumns.map((col, colIdx) => (
+                          <td key={`skeleton-col-${colIdx}`} className="px-4 py-3" style={{ width: '150px', minWidth: '150px' }}>
+                            <Skeleton className="h-4 w-24" />
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  ) : (
+                    // Show actual data rows
+                    rowVirtualizer.getVirtualItems().map(virtualRow => {
+                      const row = rows[virtualRow.index];
+                      return (
+                        <tr
+                          key={row.id}
+                          className="border-b hover:bg-muted/50"
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: `${virtualRow.size}px`,
+                            transform: `translateY(${virtualRow.start}px)`,
+                          }}
+                        >
+                          {row.getVisibleCells().map((cell, index) => (
+                            <td 
+                              key={cell.id} 
+                              className="px-4 py-3 text-sm"
+                              style={{ 
+                                width: index === 0 ? '80px' : '150px',
+                                minWidth: index === 0 ? '80px' : '150px'
+                              }}
+                            >
+                              {flexRender(
+                                cell.column.columnDef.cell,
+                                cell.getContext()
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Pagination Controls */}
+          {(previewData.length > 0 || loading) && (
+            <div className="flex items-center justify-between px-2">
+              <div className="flex items-center gap-2">
+                <p className="text-sm text-muted-foreground">
+                  Página {pagination.pageIndex + 1} de {pageCount.toLocaleString()}
+                </p>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.setPageIndex(0)}
+                  disabled={loading || !table.getCanPreviousPage()}
+                >
+                  <ChevronsLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.previousPage()}
+                  disabled={loading || !table.getCanPreviousPage()}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.nextPage()}
+                  disabled={loading || !table.getCanNextPage()}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.setPageIndex(pageCount - 1)}
+                  disabled={loading || !table.getCanNextPage()}
+                >
+                  <ChevronsRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
+export default DatasetInfoViewer;
+

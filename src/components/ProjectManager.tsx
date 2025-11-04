@@ -10,9 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Trash2, Edit, Plus, FolderOpen, Upload, BarChart3, Database, Eye, MoreVertical, RefreshCw } from 'lucide-react';
 import DatasetViewer from './DatasetViewer';
+import DatasetInfoViewer from './DatasetInfoViewer';
+import { useBrushStore } from '@/stores/brushStore';
 
 // Importar tipos generados
-import { DatasetType } from '@/generated/projects';
+import { DatasetType, GetDatasetDataResponse } from '@/generated/projects';
 
 /**
  * Propiedades del gestor de proyectos
@@ -92,8 +94,11 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
   const [error, setError] = useState<string | null>(null);                  // Mensajes de error
   
   // Estados de navegación entre vistas
-  const [currentView, setCurrentView] = useState<'projects' | 'datasets' | 'dataset-viewer'>('projects');
+  const [currentView, setCurrentView] = useState<'projects' | 'datasets' | 'dataset-info' | 'dataset-viewer'>('projects');
   const [selectedDataset, setSelectedDataset] = useState<DatasetData | null>(null);  // Dataset para visualizar
+  
+  // Get Zustand store actions
+  const setSelectedDatasetInStore = useBrushStore((state) => state.setSelectedDataset);
 
   // Dialog states
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -155,9 +160,103 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
     }
   };
 
-  const handleDatasetClick = (dataset: DatasetData) => {
-    setSelectedDataset(dataset);
-    setCurrentView('dataset-viewer');
+  const handleDatasetClick = async (dataset: DatasetData) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Find coordinate columns from dataset mappings
+      const coordColumns = dataset.column_mappings
+        ?.filter(m => m.is_coordinate)
+        .reduce((acc, m) => {
+          if (m.mapped_field === 'x') acc.x = m.column_name;
+          if (m.mapped_field === 'y') acc.y = m.column_name;
+          if (m.mapped_field === 'z') acc.z = m.column_name;
+          return acc;
+        }, { x: 'x', y: 'y', z: 'z' });
+
+      const initialColumns = {
+        xAxis: coordColumns?.x || 'x',
+        yAxis: coordColumns?.y || 'y',
+        value: coordColumns?.z || 'z'
+      };
+
+      // Fetch full dataset with initial columns (x, y, z)
+      // The backend will compute statistics for the full dataset
+      const datasetResponse = await window.autoGrpc.getDatasetData({
+        dataset_id: dataset.id,
+        columns: [initialColumns.xAxis, initialColumns.yAxis, initialColumns.value]
+      }) as GetDatasetDataResponse;
+
+      // Store in Zustand
+      setSelectedDatasetInStore(dataset, datasetResponse, initialColumns);
+      
+      // Create an initial "full dataset" brush selection so all charts have data immediately
+      if (datasetResponse.binary_data && datasetResponse.data_length > 0) {
+        const fullData = new Float32Array(
+          datasetResponse.binary_data.buffer,
+          datasetResponse.binary_data.byteOffset,
+          datasetResponse.data_length
+        );
+
+        // Get data boundaries for bounding box
+        const xBoundary = datasetResponse.data_boundaries?.find(b => b.column_name === initialColumns.xAxis);
+        const yBoundary = datasetResponse.data_boundaries?.find(b => b.column_name === initialColumns.yAxis);
+
+        // Convert data_boundaries array to Record
+        const boundariesMap: Record<string, any> = {};
+        if (datasetResponse.data_boundaries) {
+          datasetResponse.data_boundaries.forEach(boundary => {
+            boundariesMap[boundary.column_name] = boundary;
+          });
+        }
+
+        // Create initial brush selection representing the full dataset
+        const initialBrushSelection = {
+          datasetId: dataset.id,
+          coordRange: {
+            x1: xBoundary?.min_value ?? 0,
+            x2: xBoundary?.max_value ?? 100,
+            y1: yBoundary?.min_value ?? 0,
+            y2: yBoundary?.max_value ?? 100
+          },
+          selectedIndices: Array.from({ length: datasetResponse.total_count }, (_, i) => i),
+          selectedPoints: fullData,
+          columns: initialColumns,
+          timestamp: Date.now(),
+          statistics: {
+            histograms: datasetResponse.histograms || {},
+            boxPlots: datasetResponse.box_plots || [],
+            heatmap: datasetResponse.heatmap,
+            totalCount: datasetResponse.total_count,
+            boundaries: boundariesMap
+          },
+          datasetInfo: {
+            id: dataset.id,
+            name: dataset.file_name,
+            totalRows: dataset.total_rows,
+            fileId: dataset.file_id
+          }
+        };
+
+        // Store initial brush selection
+        const { setBrushSelection } = useBrushStore.getState();
+        setBrushSelection(dataset.id, initialBrushSelection);
+        
+        console.log('✅ Initial brush selection created with full dataset');
+      }
+      
+      // Update local state and navigate to info viewer
+      setSelectedDataset(dataset);
+      setCurrentView('dataset-info');
+      
+      console.log('✅ Dataset loaded and stored in Zustand');
+    } catch (err) {
+      console.error('❌ Error loading dataset:', err);
+      setError('Error al cargar el dataset');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBackToProjects = () => {
@@ -394,6 +493,14 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
   };
 
   // Conditional rendering based on current view
+  if (currentView === 'dataset-info') {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <DatasetInfoViewer />
+      </div>
+    );
+  }
+
   if (currentView === 'dataset-viewer' && selectedDataset) {
     return (
       <div className="min-h-screen flex flex-col">

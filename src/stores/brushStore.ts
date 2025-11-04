@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { HistogramData, BoxPlotData, HeatmapData, DataBoundaries } from '@/generated/projects';
+import type { HistogramData, BoxPlotData, HeatmapData, DataBoundaries, DatasetInfo, GetDatasetDataResponse } from '@/generated/projects';
 
 /**
  * Brush selection data structure
@@ -41,20 +41,40 @@ export interface BrushSelection {
 }
 
 /**
+ * Global column selection for all charts
+ */
+export interface GlobalColumns {
+  xAxis: string;
+  yAxis: string;
+  value: string;
+}
+
+/**
  * Brush store state and actions
  * Manages brush selections across all chart instances
  */
 interface BrushStore {
-  // State
+  // Brush selection state
   selections: Map<string, BrushSelection>;  // Key: datasetId, Value: selection data
   activeDatasetId: string | null;           // Currently active dataset for brush operations
 
-  // Actions
+  // Dataset state
+  selectedDataset: DatasetInfo | null;      // Currently selected dataset info
+  datasetData: GetDatasetDataResponse | null;  // Full dataset data
+  globalColumns: GlobalColumns | null;      // Global column selection (X, Y, Z)
+
+  // Brush actions
   setBrushSelection: (datasetId: string, selection: BrushSelection) => void;
   clearBrushSelection: (datasetId: string) => void;
   clearAllSelections: () => void;
   getBrushSelection: (datasetId: string) => BrushSelection | undefined;
   setActiveDataset: (datasetId: string | null) => void;
+
+  // Dataset actions
+  setSelectedDataset: (datasetInfo: DatasetInfo, datasetData: GetDatasetDataResponse, globalColumns: GlobalColumns) => void;
+  clearSelectedDataset: () => void;
+  setGlobalColumns: (columns: GlobalColumns) => void;
+  getGlobalColumns: () => GlobalColumns | null;
 
   // Helper to check if columns match
   columnsMatch: (datasetId: string, xAxis: string, yAxis: string, value: string) => boolean;
@@ -65,9 +85,14 @@ interface BrushStore {
  * Provides centralized state for brush interactions across multiple chart instances
  */
 export const useBrushStore = create<BrushStore>((set, get) => ({
-  // Initial state
+  // Initial brush selection state
   selections: new Map<string, BrushSelection>(),
   activeDatasetId: null,
+
+  // Initial dataset state
+  selectedDataset: null,
+  datasetData: null,
+  globalColumns: null,
 
   // Set or update brush selection for a dataset
   setBrushSelection: (datasetId: string, selection: BrushSelection) => {
@@ -126,5 +151,34 @@ export const useBrushStore = create<BrushStore>((set, get) => ({
       selection.columns.yAxis === yAxis &&
       selection.columns.value === value
     );
+  },
+
+  // Set selected dataset with full data and initial global columns
+  setSelectedDataset: (datasetInfo: DatasetInfo, datasetData: GetDatasetDataResponse, globalColumns: GlobalColumns) => {
+    set({
+      selectedDataset: datasetInfo,
+      datasetData: datasetData,
+      globalColumns: globalColumns,
+      activeDatasetId: datasetInfo.id
+    });
+  },
+
+  // Clear selected dataset and related data
+  clearSelectedDataset: () => {
+    set({
+      selectedDataset: null,
+      datasetData: null,
+      globalColumns: null
+    });
+  },
+
+  // Update global column selection
+  setGlobalColumns: (columns: GlobalColumns) => {
+    set({ globalColumns: columns });
+  },
+
+  // Get current global columns
+  getGlobalColumns: () => {
+    return get().globalColumns;
   }
 }));

@@ -498,6 +498,26 @@ message GetProjectDatasetsResponse {
   repeated DatasetInfo datasets = 1;
 }
 
+// Get paginated table data for dataset (for displaying in tables/grids)
+message GetDatasetTableDataRequest {
+  string dataset_id = 1;
+  int32 limit = 2;           // Number of rows to return (e.g., 1000)
+  int32 offset = 3;          // Number of rows to skip (for pagination)
+  repeated string columns = 4;  // Optional: specific columns to fetch (empty = all columns)
+}
+
+message TableRow {
+  map<string, double> values = 1;  // Column name -> value mapping
+}
+
+message GetDatasetTableDataResponse {
+  repeated TableRow rows = 1;
+  int32 total_rows = 2;           // Total number of rows in dataset
+  repeated string column_names = 3; // Column names in order
+  bool success = 4;
+  string error_message = 5;
+}
+
 // Delete dataset
 message DeleteDatasetRequest {
   string dataset_id = 1;

@@ -228,6 +228,9 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
     def GetDatasetData(self, request, context):
         return self.project_manager.get_dataset_data(request)
     
+    def GetDatasetTableData(self, request, context):
+        return self.project_manager.get_dataset_table_data(request)
+    
     def DeleteDataset(self, request, context):
         return self.project_manager.delete_dataset(request)
 

@@ -1113,6 +1113,80 @@ class ProjectManager:
             response = projects_pb2.GetDatasetDataResponse()
             return response
     
+    def get_dataset_table_data(self, request: projects_pb2.GetDatasetTableDataRequest) -> projects_pb2.GetDatasetTableDataResponse:
+        """Get paginated table data for dataset (efficient for large datasets)"""
+        try:
+            print(f"📊 [GetDatasetTableData] dataset_id={request.dataset_id}, limit={request.limit}, offset={request.offset}")
+            
+            # Get dataset info
+            dataset = self.db.get_dataset_by_id(request.dataset_id)
+            if not dataset:
+                response = projects_pb2.GetDatasetTableDataResponse()
+                response.success = False
+                response.error_message = "Dataset no encontrado"
+                return response
+            
+            # Get column names - either from request or all numeric columns from mappings
+            column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
+            
+            if request.columns and len(request.columns) > 0:
+                # Use specified columns
+                columns_to_fetch = list(request.columns)
+            else:
+                # Get all numeric columns
+                columns_to_fetch = [m['column_name'] for m in column_mappings if m['column_type'] == 1]  # NUMERIC only
+            
+            if not columns_to_fetch:
+                response = projects_pb2.GetDatasetTableDataResponse()
+                response.success = False
+                response.error_message = "No hay columnas numéricas para mostrar"
+                return response
+            
+            print(f"📊 [GetDatasetTableData] Fetching {len(columns_to_fetch)} columns")
+            
+            # Build SQL query with pagination
+            table_name = f"data_{dataset.file_id.replace('-', '_')}"
+            columns_str = ', '.join([f'"{col}"' for col in columns_to_fetch])
+            
+            query = f"""
+                SELECT {columns_str}
+                FROM {table_name}
+                LIMIT {request.limit}
+                OFFSET {request.offset}
+            """
+            
+            # Execute query
+            with self.db.engine.connect() as conn:
+                from sqlalchemy import text
+                result = conn.execute(text(query))
+                rows_data = result.fetchall()
+            
+            print(f"📊 [GetDatasetTableData] Fetched {len(rows_data)} rows")
+            
+            # Build response
+            response = projects_pb2.GetDatasetTableDataResponse()
+            response.success = True
+            response.total_rows = dataset.total_rows
+            response.column_names.extend(columns_to_fetch)
+            
+            # Convert rows to protobuf format
+            for row in rows_data:
+                table_row = response.rows.add()
+                for i, col_name in enumerate(columns_to_fetch):
+                    table_row.values[col_name] = float(row[i]) if row[i] is not None else 0.0
+            
+            print(f"✅ [GetDatasetTableData] Returning {len(response.rows)} rows")
+            return response
+            
+        except Exception as e:
+            print(f"❌ Error getting dataset table data: {e}")
+            import traceback
+            traceback.print_exc()
+            response = projects_pb2.GetDatasetTableDataResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+    
     def delete_dataset(self, request: projects_pb2.DeleteDatasetRequest) -> projects_pb2.DeleteDatasetResponse:
         """Eliminar un dataset usando operaciones bulk eficientes"""
         try:
