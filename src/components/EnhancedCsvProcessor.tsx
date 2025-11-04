@@ -4,7 +4,6 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { CheckCircle2, XCircle, AlertCircle, FileText, Settings, Database } from 'lucide-react';
 
@@ -37,9 +36,6 @@ const columnTypeBadgeColors = {
   [ColumnType.UNSPECIFIED]: 'bg-yellow-100 text-yellow-800'
 };
 
-// Campos de coordenadas disponibles para mapeo
-const coordinateFields = ['x', 'y', 'z'];
-
 /**
  * Componente mejorado para procesamiento de archivos CSV
  * Analiza la estructura del CSV, permite configurar mapeo de columnas
@@ -63,6 +59,12 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
   
   // Column configuration
   const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([]);
+  const [selectRefreshKey, setSelectRefreshKey] = useState(0);
+  
+  // Coordinate selections (East, North, Elevation)
+  const [eastColumn, setEastColumn] = useState<string>('');
+  const [northColumn, setNorthColumn] = useState<string>('');
+  const [elevationColumn, setElevationColumn] = useState<string>('');
   
   // Processing results
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -85,19 +87,75 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
 
 
       if (response.success) {
+        console.log('🔍 [Frontend] Raw response from backend:', {
+          headers: response.headers,
+          suggested_types: response.suggested_types,
+          suggested_mappings: response.suggested_mappings
+        });
+        
         setHeaders(response.headers);
         setPreviewRows(response.preview_rows.map(row => row.values));
         setTotalRows(response.total_rows);
 
-        // Initialize column mappings with suggestions
-        const initialMappings: ColumnMapping[] = response.headers.map((header, index) => ({
-          column_name: header,
-          column_type: response.suggested_types[index] || ColumnType.NUMERIC,
-          mapped_field: response.suggested_mappings[header] || 'none',
-          is_coordinate: coordinateFields.includes(response.suggested_mappings[header] || '')
-        }));
+        // Initialize column mappings with backend-suggested types (read-only)
+        const initialMappings: ColumnMapping[] = response.headers.map((header, index) => {
+          let suggestedType = response.suggested_types[index];
+          
+          // Convert string enum to numeric value if needed
+          if (typeof suggestedType === 'string') {
+            if (suggestedType === 'COLUMN_TYPE_NUMERIC') {
+              suggestedType = ColumnType.NUMERIC;
+            } else if (suggestedType === 'COLUMN_TYPE_CATEGORICAL') {
+              suggestedType = ColumnType.CATEGORICAL;
+            } else if (suggestedType === 'COLUMN_TYPE_UNUSED') {
+              suggestedType = ColumnType.UNUSED;
+            }
+          }
+          
+          console.log(`  Column ${index} '${header}': suggested_type=${response.suggested_types[index]}, converted=${suggestedType}, using=${suggestedType || ColumnType.NUMERIC}`);
+          return {
+            column_name: header,
+            column_type: suggestedType || ColumnType.NUMERIC,
+            mapped_field: '',
+            is_coordinate: false
+          };
+        });
 
-        setColumnMappings(initialMappings);
+        // Auto-select coordinate columns from suggestions
+        const suggestedX = response.headers.find(h => response.suggested_mappings[h] === 'x') || '';
+        const suggestedY = response.headers.find(h => response.suggested_mappings[h] === 'y') || '';
+        const suggestedZ = response.headers.find(h => response.suggested_mappings[h] === 'z') || '';
+        
+        // Update mappings with coordinate flags
+        const mappingsWithCoordinates = initialMappings.map(mapping => {
+          const isEast = mapping.column_name === suggestedX;
+          const isNorth = mapping.column_name === suggestedY;
+          const isElevation = mapping.column_name === suggestedZ;
+          
+          return {
+            ...mapping,
+            mapped_field: isEast ? 'x' : isNorth ? 'y' : isElevation ? 'z' : '',
+            is_coordinate: isEast || isNorth || isElevation
+          };
+        });
+        
+        setColumnMappings(mappingsWithCoordinates);
+        setEastColumn(suggestedX);
+        setNorthColumn(suggestedY);
+        setElevationColumn(suggestedZ);
+        
+        console.log('🔍 Auto-detected coordinates:', { 
+          East: suggestedX || 'none', 
+          North: suggestedY || 'none', 
+          Elevation: suggestedZ || 'none' 
+        });
+        
+        console.log('📋 Column mappings with types:', mappingsWithCoordinates.map(m => ({
+          name: m.column_name,
+          type: m.column_type === ColumnType.NUMERIC ? 'Numeric' : m.column_type === ColumnType.CATEGORICAL ? 'Categorical' : 'Unused',
+          isCoordinate: m.is_coordinate
+        })));
+        
         setCurrentStep('configuring');
       } else {
         setError(response.error_message || 'Failed to analyze CSV file');
@@ -110,16 +168,68 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
     }
   };
 
-  const updateColumnMapping = (index: number, updates: Partial<ColumnMapping>) => {
+  // Update column type (Numeric, Categorical, Unused)
+  const updateColumnType = (index: number, columnType: ColumnType) => {
     const newMappings = [...columnMappings];
-    newMappings[index] = { ...newMappings[index], ...updates };
+    const oldType = newMappings[index].column_type;
+    newMappings[index] = { ...newMappings[index], column_type: columnType };
+    setColumnMappings(newMappings);
     
-    // Auto-set is_coordinate based on mapped_field
-    if (updates.mapped_field !== undefined) {
-      newMappings[index].is_coordinate = updates.mapped_field !== 'none' && coordinateFields.includes(updates.mapped_field);
+    // Force coordinate Select components to re-render when column types change
+    setSelectRefreshKey(prev => prev + 1);
+    
+    // If changing from NUMERIC to something else, clear coordinate selections for this column
+    const columnName = newMappings[index].column_name;
+    if (oldType === ColumnType.NUMERIC && columnType !== ColumnType.NUMERIC) {
+      if (eastColumn === columnName) {
+        setEastColumn('');
+        updateCoordinateMappings('', northColumn, elevationColumn);
+      }
+      if (northColumn === columnName) {
+        setNorthColumn('');
+        updateCoordinateMappings(eastColumn, '', elevationColumn);
+      }
+      if (elevationColumn === columnName) {
+        setElevationColumn('');
+        updateCoordinateMappings(eastColumn, northColumn, '');
+      }
     }
     
+    console.log(`Column ${columnName} type changed to ${columnType === ColumnType.NUMERIC ? 'Numeric' : columnType === ColumnType.CATEGORICAL ? 'Categorical' : 'Unused'}`);
+  };
+
+  // Update coordinate mappings when coordinate columns change
+  const updateCoordinateMappings = (east: string, north: string, elevation: string) => {
+    const newMappings = columnMappings.map(mapping => {
+      const isEast = mapping.column_name === east;
+      const isNorth = mapping.column_name === north;
+      const isElevation = mapping.column_name === elevation;
+      
+      return {
+        ...mapping,
+        mapped_field: isEast ? 'x' : isNorth ? 'y' : isElevation ? 'z' : '',
+        is_coordinate: isEast || isNorth || isElevation
+      };
+    });
+    
     setColumnMappings(newMappings);
+  };
+
+  // Handle coordinate column selection
+  const handleEastChange = (value: string) => {
+    setEastColumn(value);
+    updateCoordinateMappings(value, northColumn, elevationColumn);
+  };
+
+  const handleNorthChange = (value: string) => {
+    setNorthColumn(value);
+    updateCoordinateMappings(eastColumn, value, elevationColumn);
+  };
+
+  const handleElevationChange = (value: string) => {
+    const actualValue = value === 'none' ? '' : value;
+    setElevationColumn(actualValue);
+    updateCoordinateMappings(eastColumn, northColumn, actualValue);
   };
 
   const processDataset = async () => {
@@ -128,15 +238,20 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
       setError(null);
       setCurrentStep('processing');
 
-      // Convert 'none' values back to empty strings for the backend
-      const backendMappings = columnMappings.map(mapping => ({
-        ...mapping,
-        mapped_field: mapping.mapped_field === 'none' ? '' : mapping.mapped_field
-      }));
+      // Validate that at least East and North are selected
+      if (!eastColumn || !northColumn) {
+        setError('Por favor selecciona al menos las columnas East y North');
+        setCurrentStep('configuring');
+        setLoading(false);
+        return;
+      }
+
+      // Ensure coordinate mappings are up to date before processing
+      updateCoordinateMappings(eastColumn, northColumn, elevationColumn);
 
       const response = await window.autoGrpc.processDataset({
         file_id: fileId,
-        column_mappings: backendMappings
+        column_mappings: columnMappings
       }) as ProcessDatasetResponse;
 
       if (response.success) {
@@ -333,76 +448,117 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
             </CardContent>
           </Card>
 
+          {/* Coordinate Selection */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Coordinate Mapping</CardTitle>
+              <CardDescription>
+                Select which columns represent spatial coordinates
+              </CardDescription>
+            </CardHeader>
+            <CardContent key={selectRefreshKey}>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="east-column">East (X / Longitude)</Label>
+                  <Select 
+                    value={eastColumn || undefined} 
+                    onValueChange={handleEastChange}
+                  >
+                    <SelectTrigger id="east-column">
+                      <SelectValue placeholder="Select column" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {columnMappings
+                        .filter(m => m.column_type === ColumnType.NUMERIC || m.is_coordinate)
+                        .map(m => (
+                          <SelectItem key={m.column_name} value={m.column_name}>
+                            {m.column_name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="north-column">North (Y / Latitude)</Label>
+                  <Select 
+                    value={northColumn || undefined} 
+                    onValueChange={handleNorthChange}
+                  >
+                    <SelectTrigger id="north-column">
+                      <SelectValue placeholder="Select column" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {columnMappings
+                        .filter(m => m.column_type === ColumnType.NUMERIC || m.is_coordinate)
+                        .map(m => (
+                          <SelectItem key={m.column_name} value={m.column_name}>
+                            {m.column_name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="elevation-column">Elevation (Z / Depth)</Label>
+                  <Select 
+                    value={elevationColumn || 'none'} 
+                    onValueChange={handleElevationChange}
+                  >
+                    <SelectTrigger id="elevation-column">
+                      <SelectValue placeholder="Select column (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {columnMappings
+                        .filter(m => m.column_type === ColumnType.NUMERIC || m.is_coordinate)
+                        .map(m => (
+                          <SelectItem key={m.column_name} value={m.column_name}>
+                            {m.column_name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Column Configuration */}
           <Card>
             <CardHeader>
               <CardTitle>Column Configuration</CardTitle>
               <CardDescription>
-                Configure the data type and coordinate mapping for each column
+                Review and adjust column types (data types are auto-detected but can be changed)
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="space-y-2">
                 {columnMappings.map((mapping, index) => (
-                  <div key={mapping.column_name} className="grid grid-cols-4 gap-4 items-center p-3 border rounded-lg">
-                    <div>
-                      <Label className="text-sm font-medium">{mapping.column_name}</Label>
-                      <Badge className={`ml-2 ${columnTypeBadgeColors[mapping.column_type]}`}>
-                        {columnTypeLabels[mapping.column_type]}
-                      </Badge>
+                  <div key={mapping.column_name} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex items-center space-x-3 flex-1">
+                      <span className="font-medium min-w-[150px]">{mapping.column_name}</span>
+                      {mapping.is_coordinate && (
+                        <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">
+                          {mapping.mapped_field === 'x' ? 'East' : mapping.mapped_field === 'y' ? 'North' : 'Elevation'}
+                        </Badge>
+                      )}
                     </div>
-                    
-                    <div>
-                      <Label className="text-xs text-muted-foreground">Data Type</Label>
+                    <div className="w-[180px]">
                       <Select
-                        value={mapping.column_type.toString()}
-                        onValueChange={(value) => updateColumnMapping(index, { 
-                          column_type: parseInt(value) as ColumnType 
-                        })}
+                        value={mapping.column_type?.toString() || "1"}
+                        onValueChange={(value) => updateColumnType(index, parseInt(value) as ColumnType)}
                       >
-                        <SelectTrigger className="h-8">
-                          <SelectValue />
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Select type" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="1">
-                            Numeric
-                          </SelectItem>
-                          <SelectItem value="2">
-                            Categorical
-                          </SelectItem>
-                          <SelectItem value="3">
-                            Unused
-                          </SelectItem>
+                          <SelectItem value="1">Numeric</SelectItem>
+                          <SelectItem value="2">Categorical</SelectItem>
+                          <SelectItem value="3">Skip (Unused)</SelectItem>
                         </SelectContent>
                       </Select>
-                    </div>
-                    
-                    <div>
-                      <Label className="text-xs text-muted-foreground">Coordinate Field</Label>
-                      <Select
-                        value={mapping.mapped_field}
-                        onValueChange={(value) => updateColumnMapping(index, { mapped_field: value })}
-                        disabled={mapping.column_type === ColumnType.UNUSED}
-                      >
-                        <SelectTrigger className="h-8">
-                          <SelectValue placeholder="None" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          <SelectItem value="x">X (East/Longitude)</SelectItem>
-                          <SelectItem value="y">Y (North/Latitude)</SelectItem>
-                          <SelectItem value="z">Z (Elevation/Depth)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        checked={mapping.is_coordinate}
-                        onCheckedChange={(checked) => updateColumnMapping(index, { is_coordinate: checked })}
-                        disabled={mapping.mapped_field === 'none' || mapping.column_type === ColumnType.UNUSED}
-                      />
-                      <Label className="text-xs text-muted-foreground">Coordinate</Label>
                     </div>
                   </div>
                 ))}
@@ -414,7 +570,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
                 </Button>
                 <Button 
                   onClick={processDataset} 
-                  disabled={loading || !columnMappings.some(m => m.column_type !== ColumnType.UNUSED)}
+                  disabled={loading || !eastColumn || !northColumn}
                 >
                   Process Dataset
                 </Button>

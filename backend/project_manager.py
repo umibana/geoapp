@@ -732,26 +732,56 @@ class ProjectManager:
                 preview_row.values.extend([str(val) for val in row_data])
                 preview_rows.append(preview_row)
             
-            # Detección simple de tipos
+            # Get column types from DuckDB schema for accurate type detection
+            with self.db.engine.connect() as conn:
+                from sqlalchemy import text
+                schema_result = conn.execute(text(f"DESCRIBE {table_name}"))
+                schema_data = [(row[0], row[1]) for row in schema_result]  # (column_name, column_type)
+            
+            print(f"🔍 [AnalyzeCSV] DuckDB schema for {table_name}:")
+            for col_name, col_type in schema_data:
+                print(f"  - {col_name}: {col_type}")
+            
+            # Map DuckDB types to our column types
             suggested_types = []
             suggested_mappings = {}
             
             for header in headers:
-                # Heurísticas simples para detección de tipo de columna
-                if any(keyword in header.lower() for keyword in ['x', 'east', 'longitude', 'lon']):
+                # Find the DuckDB type for this column
+                duckdb_type = None
+                for col_name, col_type in schema_data:
+                    if col_name == header:
+                        duckdb_type = col_type.upper()
+                        break
+                
+                # Determine if numeric or categorical based on DuckDB type
+                is_numeric = False
+                if duckdb_type:
+                    # Numeric types in DuckDB
+                    numeric_keywords = ['INT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'NUMERIC', 'REAL', 'BIGINT', 'SMALLINT', 'TINYINT']
+                    is_numeric = any(keyword in duckdb_type for keyword in numeric_keywords)
+                
+                print(f"  📊 Column '{header}': DuckDB type='{duckdb_type}', is_numeric={is_numeric}")
+                
+                # Set column type
+                if is_numeric:
                     suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)
-                    suggested_mappings[header] = "x"
-                elif any(keyword in header.lower() for keyword in ['latitude', 'lat', 'north', 'y']):
-                    suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)
-                    suggested_mappings[header] = "y"
-                elif any(keyword in header.lower() for keyword in ['z', 'elevation', 'height', 'depth']):
-                    suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)
-                    suggested_mappings[header] = "z"
-                elif any(keyword in header.lower() for keyword in ['id', 'name', 'type', 'category']):
-                    suggested_types.append(projects_pb2.COLUMN_TYPE_CATEGORICAL)
-                    suggested_mappings[header] = ""
+                    print(f"    ✅ Set as NUMERIC (value={projects_pb2.COLUMN_TYPE_NUMERIC})")
                 else:
-                    suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)  # Por defecto numérico
+                    suggested_types.append(projects_pb2.COLUMN_TYPE_CATEGORICAL)
+                    print(f"    ✅ Set as CATEGORICAL (value={projects_pb2.COLUMN_TYPE_CATEGORICAL})")
+                
+                # Suggest coordinate mappings based on column names (only for numeric columns)
+                if is_numeric:
+                    if any(keyword in header.lower() for keyword in ['x', 'east', 'longitude', 'lon']):
+                        suggested_mappings[header] = "x"
+                    elif any(keyword in header.lower() for keyword in ['latitude', 'lat', 'north', 'y']):
+                        suggested_mappings[header] = "y"
+                    elif any(keyword in header.lower() for keyword in ['z', 'elevation', 'height', 'depth']):
+                        suggested_mappings[header] = "z"
+                    else:
+                        suggested_mappings[header] = ""
+                else:
                     suggested_mappings[header] = ""
             
             response = projects_pb2.AnalyzeCsvForProjectResponse()

@@ -94,7 +94,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
   const [error, setError] = useState<string | null>(null);                  // Mensajes de error
   
   // Estados de navegación entre vistas
-  const [currentView, setCurrentView] = useState<'projects' | 'datasets' | 'dataset-info' | 'dataset-viewer'>('projects');
+  const [currentView, setCurrentView] = useState<'projects' | 'dataset-info' | 'dataset-viewer'>('projects');
   const [selectedDataset, setSelectedDataset] = useState<DatasetData | null>(null);  // Dataset para visualizar
   
   // Get Zustand store actions
@@ -122,6 +122,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
   useEffect(() => {
     if (selectedProject) {
       loadProjectFiles(selectedProject.id);
+      loadProjectDatasets(selectedProject.id);
     }
   }, [selectedProject]);
 
@@ -262,13 +263,6 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
   const handleBackToProjects = () => {
     setCurrentView('projects');
     setSelectedDataset(null);
-  };
-
-  const handleViewDatasets = () => {
-    if (selectedProject) {
-      loadProjectDatasets(selectedProject.id);
-      setCurrentView('datasets');
-    }
   };
 
   const createProject = async () => {
@@ -512,133 +506,6 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
     );
   }
 
-  if (currentView === 'datasets' && selectedProject) {
-    return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Button variant="outline" onClick={() => setCurrentView('projects')}>
-              <FolderOpen className="mr-2 h-4 w-4" />
-              Volver a Proyectos
-            </Button>
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight">
-                {selectedProject.name} - Datasets Procesados
-              </h2>
-              <p className="text-muted-foreground">
-                {projectDatasets.length} dataset(s) procesados
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-md p-4">
-            <p className="text-red-800">{error}</p>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => setError(null)}
-              className="mt-2"
-            >
-              Descartar
-            </Button>
-          </div>
-        )}
-
-        {/* Datasets List */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Database className="mr-2 h-5 w-5" />
-              Datasets Procesados
-            </CardTitle>
-            <CardDescription>
-              Haz click en un dataset para visualizar los datos
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <p className="text-muted-foreground">Cargando datasets...</p>
-            ) : projectDatasets.length === 0 ? (
-              <div className="text-center py-8">
-                <Database className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">No se encontraron datasets</p>
-                <p className="text-sm text-muted-foreground mt-1">Procesa algunos archivos CSV para crear datasets</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {projectDatasets.map((dataset) => (
-                  <div
-                    key={dataset.id}
-                    className="p-4 border rounded-lg cursor-pointer transition-colors hover:border-blue-300 hover:bg-blue-50"
-                    onClick={() => handleDatasetClick(dataset)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2">
-                          <h4 className="font-semibold">{dataset.file_name}</h4>
-                          <Badge className={datasetTypeBadgeColors[dataset.dataset_type as DatasetType]}>
-                            {datasetTypeLabels[dataset.dataset_type as DatasetType]}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {dataset.original_filename} • {dataset.total_rows.toLocaleString()} rows
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Procesado: {formatDate(dataset.created_at)}
-                        </p>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDatasetClick(dataset);
-                          }}
-                        >
-                          <Eye className="h-4 w-4 mr-2" />
-                          Ver
-                        </Button>
-
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="sm">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuLabel>Opciones del Dataset</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={(e) => handleUpdateDatasetStats(dataset.file_id, e as any)}>
-                              <RefreshCw className="mr-2 h-4 w-4" />
-                              Actualizar Estadísticas
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={(e) => handleDeleteDataset(dataset.id, e as any)}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Eliminar Dataset
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-
-                        <BarChart3 className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -778,21 +645,13 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
           </CardContent>
         </Card>
 
-        {/* Project Details & Files */}
+        {/* Project Details & Datasets */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
-              <span>{selectedProject ? `${selectedProject.name} Archivos` : 'Selecciona un Proyecto'}</span>
+              <span>{selectedProject ? `${selectedProject.name}` : 'Selecciona un Proyecto'}</span>
               {selectedProject && (
                 <div className="flex items-center space-x-2">
-                  <Button 
-                    size="sm" 
-                    variant="outline"
-                    onClick={handleViewDatasets}
-                  >
-                    <Database className="mr-2 h-4 w-4" />
-                    Ver Datasets
-                  </Button>
                   <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
                     <DialogTrigger asChild>
                       <Button size="sm">
@@ -865,50 +724,88 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
               )}
             </CardTitle>
             <CardDescription>
-              {selectedProject ? `${projectFiles.length} archivo(s)` : 'Selecciona un proyecto para ver sus archivos'}
+              {selectedProject ? `${projectDatasets.length} dataset(s) procesados` : 'Selecciona un proyecto para ver sus datasets'}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {!selectedProject ? (
               <div className="text-center py-8">
                 <FolderOpen className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">Selecciona un proyecto desde la izquierda para ver sus archivos</p>
+                <p className="text-muted-foreground">Selecciona un proyecto desde la izquierda</p>
               </div>
-            ) : projectFiles.length === 0 ? (
+            ) : loading ? (
               <div className="text-center py-8">
-                <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">No hay archivos cargados aún</p>
-                <p className="text-sm text-muted-foreground mt-1">Carga tu primer dataset para comenzar</p>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="text-muted-foreground mt-4">Cargando datasets...</p>
+              </div>
+            ) : projectDatasets.length === 0 ? (
+              <div className="text-center py-8">
+                <Database className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-muted-foreground">No hay datasets procesados</p>
+                <p className="text-sm text-muted-foreground mt-1">Carga y procesa archivos CSV para crear datasets</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {projectFiles.map((file) => (
+                {projectDatasets.map((dataset) => (
                   <div
-                    key={file.id}
-                    className="p-3 border rounded-lg"
+                    key={dataset.id}
+                    className="p-4 border rounded-lg cursor-pointer transition-colors hover:border-blue-300 hover:bg-blue-50"
+                    onClick={() => handleDatasetClick(dataset)}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <div className="flex items-center space-x-2">
-                          <h4 className="font-semibold">{file.name}</h4>
-                          <Badge className={datasetTypeBadgeColors[file.dataset_type]}>
-                            {datasetTypeLabels[file.dataset_type]}
+                          <h4 className="font-semibold">{dataset.file_name}</h4>
+                          <Badge className={datasetTypeBadgeColors[dataset.dataset_type as DatasetType]}>
+                            {datasetTypeLabels[dataset.dataset_type as DatasetType]}
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground mt-1">
-                          {file.original_filename} • {formatFileSize(file.file_size)}
+                          {dataset.original_filename} • {dataset.total_rows.toLocaleString()} rows
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          Cargado: {formatDate(file.created_at)}
+                          Procesado: {formatDate(dataset.created_at)}
                         </p>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteFile(file.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDatasetClick(dataset);
+                          }}
+                        >
+                          <Eye className="h-4 w-4 mr-2" />
+                          Ver
+                        </Button>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="sm">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuLabel>Opciones del Dataset</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={(e) => handleUpdateDatasetStats(dataset.file_id, e as any)}>
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Actualizar Estadísticas
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={(e) => handleDeleteDataset(dataset.id, e as any)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Eliminar Dataset
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+
+                        <BarChart3 className="h-5 w-5 text-muted-foreground" />
+                      </div>
                     </div>
                   </div>
                 ))}
