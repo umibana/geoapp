@@ -8,13 +8,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Trash2, Edit, Plus, FolderOpen, Upload, BarChart3, Database, Eye, MoreVertical, RefreshCw } from 'lucide-react';
-import DatasetViewer from './DatasetViewer';
+import { Trash2, Edit, Plus, Upload, Database, MoreVertical, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
 import DatasetInfoViewer from './DatasetInfoViewer';
 import { useBrushStore } from '@/stores/brushStore';
 
 // Importar tipos generados
-import { DatasetType, GetDatasetDataResponse } from '@/generated/projects';
+import { DatasetType, GetDatasetDataResponse, ColumnMapping, DataBoundaries } from '@/generated/projects';
 
 /**
  * Propiedades del gestor de proyectos
@@ -63,20 +62,23 @@ interface DatasetData {
   original_filename: string;
   total_rows: number;
   created_at: number;
+  column_mappings?: ColumnMapping[];
 }
 
-const datasetTypeLabels = {
-  [DatasetType.SAMPLE]: 'Sample',
-  [DatasetType.DRILL_HOLES]: 'Drill Holes',
-  [DatasetType.BLOCK]: 'Block',
-  [DatasetType.UNSPECIFIED]: 'Unknown'
+const datasetTypeLabels: Record<DatasetType, string> = {
+  [DatasetType.DATASET_TYPE_SAMPLE]: 'Sample',
+  [DatasetType.DATASET_TYPE_DRILL_HOLES]: 'Drill Holes',
+  [DatasetType.DATASET_TYPE_BLOCK]: 'Block',
+  [DatasetType.DATASET_TYPE_UNSPECIFIED]: 'Unknown',
+  [DatasetType.UNRECOGNIZED]: 'Unknown'
 };
 
-const datasetTypeBadgeColors = {
-  [DatasetType.SAMPLE]: 'bg-blue-100 text-blue-800',
-  [DatasetType.DRILL_HOLES]: 'bg-green-100 text-green-800',
-  [DatasetType.BLOCK]: 'bg-purple-100 text-purple-800',
-  [DatasetType.UNSPECIFIED]: 'bg-gray-100 text-gray-800'
+const datasetTypeBadgeColors: Record<DatasetType, string> = {
+  [DatasetType.DATASET_TYPE_SAMPLE]: 'bg-blue-100 text-blue-800',
+  [DatasetType.DATASET_TYPE_DRILL_HOLES]: 'bg-green-100 text-green-800',
+  [DatasetType.DATASET_TYPE_BLOCK]: 'bg-purple-100 text-purple-800',
+  [DatasetType.DATASET_TYPE_UNSPECIFIED]: 'bg-gray-100 text-gray-800',
+  [DatasetType.UNRECOGNIZED]: 'bg-gray-100 text-gray-800'
 };
 
 /**
@@ -88,13 +90,14 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
   // Estados principales del componente
   const [projects, setProjects] = useState<ProjectData[]>([]);               // Lista de proyectos
   const [selectedProject, setSelectedProject] = useState<ProjectData | null>(null);  // Proyecto seleccionado
-  const [projectFiles, setProjectFiles] = useState<FileData[]>([]);         // Archivos del proyecto
-  const [projectDatasets, setProjectDatasets] = useState<DatasetData[]>([]);  // Datasets del proyecto
+  const [_projectFiles, setProjectFiles] = useState<FileData[]>([]);         // Archivos del proyecto
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set()); // Proyectos expandidos
+  const [projectDatasetsMap, setProjectDatasetsMap] = useState<Map<string, DatasetData[]>>(new Map()); // Datasets por proyecto
   const [loading, setLoading] = useState(false);                            // Estado de carga
+  const [loadingDataset, setLoadingDataset] = useState(false);              // Estado de carga de dataset
   const [error, setError] = useState<string | null>(null);                  // Mensajes de error
   
-  // Estados de navegación entre vistas
-  const [currentView, setCurrentView] = useState<'projects' | 'dataset-info' | 'dataset-viewer'>('projects');
+  // Estado del dataset seleccionado (no hay cambio de vista, todo en la misma página)
   const [selectedDataset, setSelectedDataset] = useState<DatasetData | null>(null);  // Dataset para visualizar
   
   // Get Zustand store actions
@@ -112,19 +115,19 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
 
   // File upload states
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadDatasetType, setUploadDatasetType] = useState<DatasetType>(DatasetType.SAMPLE);
+  const [uploadDatasetType, setUploadDatasetType] = useState<DatasetType>(DatasetType.DATASET_TYPE_SAMPLE);
   const [uploadName, setUploadName] = useState('');
 
   useEffect(() => {
     loadProjects();
   }, []);
 
+  // Load datasets for all projects when projects change
   useEffect(() => {
-    if (selectedProject) {
-      loadProjectFiles(selectedProject.id);
-      loadProjectDatasets(selectedProject.id);
-    }
-  }, [selectedProject]);
+    projects.forEach(project => {
+      loadProjectDatasets(project.id);
+    });
+  }, [projects]);
 
   const loadProjects = async () => {
     try {
@@ -154,22 +157,38 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
   const loadProjectDatasets = async (projectId: string) => {
     try {
       const response = await window.autoGrpc.getProjectDatasets({ project_id: projectId });
-      setProjectDatasets(response.datasets || []);
+      setProjectDatasetsMap(prev => {
+        const newMap = new Map(prev);
+        newMap.set(projectId, response.datasets || []);
+        return newMap;
+      });
     } catch (err) {
       console.error('Error loading project datasets:', err);
       setError('Failed to load project datasets');
     }
   };
 
+  const toggleProjectExpansion = (projectId: string) => {
+    setExpandedProjects(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(projectId)) {
+        newSet.delete(projectId);
+      } else {
+        newSet.add(projectId);
+      }
+      return newSet;
+    });
+  };
+
   const handleDatasetClick = async (dataset: DatasetData) => {
     try {
-      setLoading(true);
+      setLoadingDataset(true);
       setError(null);
       
       // Find coordinate columns from dataset mappings
       const coordColumns = dataset.column_mappings
-        ?.filter(m => m.is_coordinate)
-        .reduce((acc, m) => {
+        ?.filter((m: ColumnMapping) => m.is_coordinate)
+        .reduce((acc: { x: string; y: string; z: string }, m: ColumnMapping) => {
           if (m.mapped_field === 'x') acc.x = m.column_name;
           if (m.mapped_field === 'y') acc.y = m.column_name;
           if (m.mapped_field === 'z') acc.z = m.column_name;
@@ -189,8 +208,13 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
         columns: [initialColumns.xAxis, initialColumns.yAxis, initialColumns.value]
       }) as GetDatasetDataResponse;
 
-      // Store in Zustand
-      setSelectedDatasetInStore(dataset, datasetResponse, initialColumns);
+      // Store in Zustand (ensure column_mappings is provided, even if empty)
+      const datasetWithMappings = {
+        ...dataset,
+        column_mappings: dataset.column_mappings || []
+      };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setSelectedDatasetInStore(datasetWithMappings as any, datasetResponse, initialColumns);
       
       // Create an initial "full dataset" brush selection so all charts have data immediately
       if (datasetResponse.binary_data && datasetResponse.data_length > 0) {
@@ -205,7 +229,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
         const yBoundary = datasetResponse.data_boundaries?.find(b => b.column_name === initialColumns.yAxis);
 
         // Convert data_boundaries array to Record
-        const boundariesMap: Record<string, any> = {};
+        const boundariesMap: Record<string, DataBoundaries> = {};
         if (datasetResponse.data_boundaries) {
           datasetResponse.data_boundaries.forEach(boundary => {
             boundariesMap[boundary.column_name] = boundary;
@@ -247,22 +271,16 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
         console.log('✅ Initial brush selection created with full dataset');
       }
       
-      // Update local state and navigate to info viewer
+      // Update local state (stay on same page, no navigation)
       setSelectedDataset(dataset);
-      setCurrentView('dataset-info');
       
       console.log('✅ Dataset loaded and stored in Zustand');
     } catch (err) {
       console.error('❌ Error loading dataset:', err);
       setError('Error al cargar el dataset');
     } finally {
-      setLoading(false);
+      setLoadingDataset(false);
     }
-  };
-
-  const handleBackToProjects = () => {
-    setCurrentView('projects');
-    setSelectedDataset(null);
   };
 
   const createProject = async () => {
@@ -387,9 +405,19 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
       const response = await window.autoGrpc.deleteDataset({ dataset_id: datasetId });
 
       if (response.success) {
-        // Reload datasets after deletion
+        // Clear selected dataset if it was deleted
+        if (selectedDataset?.id === datasetId) {
+          setSelectedDataset(null);
+        }
+        
+        // Reload datasets after deletion for all projects or just the selected one
         if (selectedProject) {
           await loadProjectDatasets(selectedProject.id);
+        } else {
+          // Reload all project datasets
+          projects.forEach(project => {
+            loadProjectDatasets(project.id);
+          });
         }
         console.log('✅ Dataset deleted successfully');
       } else {
@@ -425,8 +453,9 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
         setIsUploadDialogOpen(false);
         setUploadFile(null);
         setUploadName('');
-        setUploadDatasetType(DatasetType.SAMPLE);
+        setUploadDatasetType(DatasetType.DATASET_TYPE_SAMPLE);
         await loadProjectFiles(selectedProject.id);
+        await loadProjectDatasets(selectedProject.id); // Reload datasets for this project
         
         // Call the callback to trigger CSV processing workflow
         if (onFileUploadComplete) {
@@ -443,7 +472,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
     }
   };
 
-  const deleteFile = async (fileId: string) => {
+  const _deleteFile = async (fileId: string) => {
     if (!confirm('Are you sure you want to delete this file?')) {
       return;
     }
@@ -474,344 +503,326 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
     setIsEditDialogOpen(true);
   };
 
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleDateString();
-  };
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  // Conditional rendering based on current view
-  if (currentView === 'dataset-info') {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <DatasetInfoViewer />
-      </div>
-    );
-  }
-
-  if (currentView === 'dataset-viewer' && selectedDataset) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <DatasetViewer
-          DatasetInfo={selectedDataset}
-          onBack={handleBackToProjects}
-        />
-      </div>
-    );
-  }
-
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Administrador de Proyectos</h2>
-          <p className="text-muted-foreground">
-            Administra tus proyectos geoespaciales y datasets
-          </p>
-        </div>
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Nuevo Proyecto
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Crear Nuevo Proyecto</DialogTitle>
-              <DialogDescription>
-                Crea un nuevo proyecto para organizar tus datasets geoespaciales.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="name">Nombre del Proyecto</Label>
-                <Input
-                  id="name"
-                  value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
-                  placeholder="Ingresa el nombre del proyecto"
-                />
-              </div>
-              <div>
-                <Label htmlFor="description">Descripción</Label>
-                <Textarea
-                  id="description"
-                  value={projectDescription}
-                  onChange={(e) => setProjectDescription(e.target.value)}
-                  placeholder="Ingresa una descripción para el proyecto (opcional)"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                onClick={createProject}
-                disabled={loading || !projectName.trim()}
-              >
-                Crear Proyecto
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-
+    <div className="w-full h-full flex flex-col">
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-md p-4">
-          <p className="text-red-800">{error}</p>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => setError(null)}
-            className="mt-2"
-          >
-            Descartar
-          </Button>
+        <div className="bg-red-50 border-b border-red-200 p-3 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-red-800">{error}</p>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setError(null)}
+              className="h-6"
+            >
+              <span className="text-xs">Descartar</span>
+            </Button>
+          </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Projects List */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Proyectos</CardTitle>
-            <CardDescription>
-              {projects.length} proyecto(s)
-            </CardDescription>
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-0 overflow-hidden">
+        {/* Projects & Datasets List (Accordion Style) */}
+        <Card className="h-full flex flex-col rounded-none border-0 border-r bg-muted/20">
+          <CardHeader className="flex-shrink-0 pb-3 px-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Proyectos y Datasets</CardTitle>
+                <CardDescription className="text-sm mt-1">
+                  {projects.length} proyecto(s)
+                </CardDescription>
+              </div>
+              <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Plus className="mr-2 h-4 w-4" />
+                    <span className="text-sm">Nuevo</span>
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Crear Nuevo Proyecto</DialogTitle>
+                    <DialogDescription>
+                      Crea un nuevo proyecto para organizar tus datasets geoespaciales.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="name">Nombre del Proyecto</Label>
+                      <Input
+                        id="name"
+                        value={projectName}
+                        onChange={(e) => setProjectName(e.target.value)}
+                        placeholder="Ingresa el nombre del proyecto"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="description">Descripción</Label>
+                      <Textarea
+                        id="description"
+                        value={projectDescription}
+                        onChange={(e) => setProjectDescription(e.target.value)}
+                        placeholder="Ingresa una descripción para el proyecto (opcional)"
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      onClick={createProject}
+                      disabled={loading || !projectName.trim()}
+                    >
+                      Crear Proyecto
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1 overflow-auto p-0">
+            <div className="px-4 pb-4">
             {loading && projects.length === 0 ? (
               <p className="text-muted-foreground">Cargando proyectos...</p>
             ) : projects.length === 0 ? (
               <p className="text-muted-foreground">No se encontraron proyectos. Crea tu primer proyecto para comenzar</p>
             ) : (
-              <div className="space-y-3">
-                {projects.map((project) => (
-                  <div
-                    key={project.id}
-                    className={`p-3 border rounded-lg cursor-pointer transition-colors ${ 
-                      selectedProject?.id === project.id 
-                        ? 'border-blue-500 bg-blue-50' 
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                    onClick={() => setSelectedProject(project)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <h4 className="font-semibold">{project.name}</h4>
-                        {project.description && (
-                          <p className="text-sm text-muted-foreground mt-1">
-                            {project.description}
-                          </p>
-                        )}
-                        <p className="text-xs text-muted-foreground mt-2">
-                          Creado: {formatDate(project.created_at)}
-                        </p>
+              <div className="space-y-1">
+                {projects.map((project) => {
+                  const isExpanded = expandedProjects.has(project.id);
+                  const projectDatasets = projectDatasetsMap.get(project.id) || [];
+                  
+                  return (
+                    <div key={project.id} className="border rounded">
+                      {/* Project Header */}
+                      <div
+                        className={`p-2 cursor-pointer transition-colors ${
+                          selectedProject?.id === project.id
+                            ? 'bg-blue-50 border-b'
+                            : 'hover:bg-muted/50'
+                        }`}
+                        onClick={() => {
+                          setSelectedProject(project);
+                          toggleProjectExpansion(project.id);
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {isExpanded ? (
+                              <ChevronDown className="h-4 w-4 shrink-0" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-base font-semibold truncate">{project.name}</h4>
+                                <Badge variant="secondary" className="text-xs px-1.5 py-0.5">
+                                  {projectDatasets.length}
+                                </Badge>
+                              </div>
+                              {project.description && (
+                                <p className="text-sm text-muted-foreground mt-1 truncate">
+                                  {project.description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-0.5 shrink-0">
+                            <Dialog open={isUploadDialogOpen && selectedProject?.id === project.id} onOpenChange={(open) => {
+                              if (!open) setIsUploadDialogOpen(false);
+                            }}>
+                              <DialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedProject(project);
+                                    setIsUploadDialogOpen(true);
+                                  }}
+                                >
+                                  <Upload className="h-3 w-3" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Cargar Archivo</DialogTitle>
+                                  <DialogDescription>
+                                    Carga un archivo de dataset a {project.name}
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-4">
+                                  <div>
+                                    <Label htmlFor="file-upload">File</Label>
+                                    <Input
+                                      id="file-upload"
+                                      type="file"
+                                      accept=".csv,.txt"
+                                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label htmlFor="file-name">File Name</Label>
+                                    <Input
+                                      id="file-name"
+                                      value={uploadName}
+                                      onChange={(e) => setUploadName(e.target.value)}
+                                      placeholder="Ingresa un nombre para este archivo"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label htmlFor="dataset-type">Tipo de Dataset</Label>
+                                    <Select
+                                      value={uploadDatasetType.toString()}
+                                      onValueChange={(value) => setUploadDatasetType(parseInt(value) as DatasetType)}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select dataset type" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="1">Sample</SelectItem>
+                                        <SelectItem value="2">Drill Holes</SelectItem>
+                                        <SelectItem value="3">Block</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                                <DialogFooter>
+                                  <Button
+                                    onClick={handleUploadFile}
+                                    disabled={loading || !uploadFile || !uploadName.trim()}
+                                  >
+                                    Upload File
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditDialog(project);
+                              }}
+                            >
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteProject(project.id);
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditDialog(project);
-                          }}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteProject(project.id);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
-        {/* Project Details & Datasets */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>{selectedProject ? `${selectedProject.name}` : 'Selecciona un Proyecto'}</span>
-              {selectedProject && (
-                <div className="flex items-center space-x-2">
-                  <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button size="sm">
-                        <Upload className="mr-2 h-4 w-4" />
-                        Cargar Archivo
-                      </Button>
-                    </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Cargar Archivo</DialogTitle>
-                      <DialogDescription>
-                        Carga un archivo de dataset a {selectedProject.name}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div>
-                        <Label htmlFor="file-upload">File</Label>
-                        <Input
-                          id="file-upload"
-                          type="file"
-                          accept=".csv,.txt"
-                          onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="file-name">File Name</Label>
-                        <Input
-                          id="file-name"
-                          value={uploadName}
-                          onChange={(e) => setUploadName(e.target.value)}
-                          placeholder="Ingresa un nombre para este archivo"
-                        />
-                      </div>
-                      {uploadDatasetType && (
-                      <div>
-                        <Label htmlFor="dataset-type">Tipo de Dataset </Label>
-                        <Select
-                          value={uploadDatasetType.toString()}
-                          onValueChange={(value) => setUploadDatasetType(parseInt(value) as DatasetType)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select dataset type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="1">
-                              Sample
-                            </SelectItem>
-                            <SelectItem value="2">
-                              Drill Holes
-                            </SelectItem>
-                            <SelectItem value="3">
-                              Block
-                            </SelectItem>
-                            </SelectContent>
-                          </Select>
+                      {/* Datasets List (Collapsible) */}
+                      {isExpanded && (
+                        <div className="bg-muted/30">
+                          {projectDatasets.length === 0 ? (
+                            <div className="text-center py-4 px-3">
+                              <Database className="mx-auto h-6 w-6 text-muted-foreground mb-1" />
+                              <p className="text-xs text-muted-foreground">No hay datasets</p>
+                            </div>
+                          ) : (
+                            <div className="p-1 space-y-0.5">
+                              {projectDatasets.map((dataset) => (
+                                <div
+                                  key={dataset.id}
+                                  className={`p-2.5 rounded cursor-pointer transition-colors ${
+                                    selectedDataset?.id === dataset.id
+                                      ? 'bg-blue-100 border border-blue-300'
+                                      : 'bg-white hover:bg-blue-50 border border-transparent'
+                                  }`}
+                                  onClick={() => handleDatasetClick(dataset)}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                        <span className="font-medium text-sm truncate">{dataset.file_name}</span>
+                                        <Badge className={`text-xs px-1.5 py-0.5 ${datasetTypeBadgeColors[dataset.dataset_type as DatasetType]}`}>
+                                          {datasetTypeLabels[dataset.dataset_type as DatasetType]}
+                                        </Badge>
+                                      </div>
+                                      <p className="text-xs text-muted-foreground mt-1 ml-6">
+                                        {dataset.total_rows.toLocaleString()} filas
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center space-x-1 shrink-0">
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                                            <MoreVertical className="h-3 w-3" />
+                                          </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-48">
+                                          <DropdownMenuLabel>Opciones</DropdownMenuLabel>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem onClick={(e: React.MouseEvent) => handleUpdateDatasetStats(dataset.file_id, e)}>
+                                            <RefreshCw className="mr-2 h-4 w-4" />
+                                            Actualizar Stats
+                                          </DropdownMenuItem>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem
+                                            onClick={(e: React.MouseEvent) => handleDeleteDataset(dataset.id, e)}
+                                            className="text-destructive focus:text-destructive"
+                                          >
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Eliminar
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                    <DialogFooter>
-                      <Button
-                        onClick={handleUploadFile}
-                        disabled={loading || !uploadFile || !uploadName.trim()}
-                      >
-                        Upload File
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-                </div>
-              )}
-            </CardTitle>
-            <CardDescription>
-              {selectedProject ? `${projectDatasets.length} dataset(s) procesados` : 'Selecciona un proyecto para ver sus datasets'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!selectedProject ? (
-              <div className="text-center py-8">
-                <FolderOpen className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">Selecciona un proyecto desde la izquierda</p>
-              </div>
-            ) : loading ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                <p className="text-muted-foreground mt-4">Cargando datasets...</p>
-              </div>
-            ) : projectDatasets.length === 0 ? (
-              <div className="text-center py-8">
-                <Database className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">No hay datasets procesados</p>
-                <p className="text-sm text-muted-foreground mt-1">Carga y procesa archivos CSV para crear datasets</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {projectDatasets.map((dataset) => (
-                  <div
-                    key={dataset.id}
-                    className="p-4 border rounded-lg cursor-pointer transition-colors hover:border-blue-300 hover:bg-blue-50"
-                    onClick={() => handleDatasetClick(dataset)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2">
-                          <h4 className="font-semibold">{dataset.file_name}</h4>
-                          <Badge className={datasetTypeBadgeColors[dataset.dataset_type as DatasetType]}>
-                            {datasetTypeLabels[dataset.dataset_type as DatasetType]}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {dataset.original_filename} • {dataset.total_rows.toLocaleString()} rows
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Procesado: {formatDate(dataset.created_at)}
-                        </p>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDatasetClick(dataset);
-                          }}
-                        >
-                          <Eye className="h-4 w-4 mr-2" />
-                          Ver
-                        </Button>
-
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="sm">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuLabel>Opciones del Dataset</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={(e) => handleUpdateDatasetStats(dataset.file_id, e as any)}>
-                              <RefreshCw className="mr-2 h-4 w-4" />
-                              Actualizar Estadísticas
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={(e) => handleDeleteDataset(dataset.id, e as any)}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Eliminar Dataset
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-
-                        <BarChart3 className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
+            </div>
           </CardContent>
+        </Card>
+
+        {/* Dataset Info Viewer */}
+        <Card className="h-full flex flex-col overflow-hidden rounded-none border-0">
+          {loadingDataset ? (
+            <CardContent className="flex flex-col items-center justify-center h-full">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-sm font-medium">Cargando dataset...</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Esto puede tomar unos momentos para datasets grandes
+                </p>
+              </div>
+            </CardContent>
+          ) : selectedDataset ? (
+            <div className="h-full overflow-auto">
+              <DatasetInfoViewer />
+            </div>
+          ) : (
+            <CardContent className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <Database className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-base font-medium">No hay dataset seleccionado</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Selecciona un dataset para ver su información
+                </p>
+              </div>
+            </CardContent>
+          )}
         </Card>
       </div>
 

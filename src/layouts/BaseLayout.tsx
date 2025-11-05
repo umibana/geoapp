@@ -15,9 +15,9 @@ function BaseLayoutContent({
   return (
     <SidebarProvider>
       <AppSidebar />
-      <div className="flex flex-1 flex-col min-h-screen">
-        <main className="flex flex-1 flex-col relative overflow-y-auto">
-          <SidebarTrigger />
+      <div className="flex flex-1 flex-col h-screen overflow-hidden">
+        
+        <main className="flex flex-1 flex-col relative overflow-hidden">
           {children}
           
           {/* Render all open windows */}

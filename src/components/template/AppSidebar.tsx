@@ -33,9 +33,19 @@ const navigationItems = [
     icon: FolderOpen,
   },
   {
-    title: "Chart Mosaic Example",
+    title: "2D EDA",
     url: "/chart-mosaic-example",
     icon: LayoutGrid,
+  },
+  {
+    title: "3D EDA (WIP)",
+    url: "/dataset-info-viewer",
+    icon: Database,
+  },
+  {
+    title: "Procesamiento",
+    url: "/dataset-info-viewer",
+    icon: Database,
   }
 ]
 

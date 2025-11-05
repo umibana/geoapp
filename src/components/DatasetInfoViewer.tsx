@@ -69,11 +69,11 @@ const DatasetInfoViewer: React.FC = () => {
           setTotalRows(response.total_rows);
 
           // Convert response rows to DataRow format
-          const rows: DataRow[] = response.rows.map((row, index) => {
+          const rows: DataRow[] = response.rows.map((row: { values: Record<string, number> }, index: number) => {
             const dataRow: DataRow = { rowNumber: offset + index + 1 };
             // Add all column values from the row
             for (const [colName, value] of Object.entries(row.values)) {
-              dataRow[colName] = value;
+              dataRow[colName] = value as number;
             }
             return dataRow;
           });
@@ -139,7 +139,7 @@ const DatasetInfoViewer: React.FC = () => {
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => tableContainerRef.current,
-    estimateSize: () => 45, // Estimated row height in pixels
+    estimateSize: () => 48, // Estimated row height in pixels
     overscan: 5,
   });
 
@@ -168,113 +168,100 @@ const DatasetInfoViewer: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-3 p-4 h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">{selectedDataset.file_name}</h2>
-          <p className="text-muted-foreground mt-1">
-            Información y vista previa del dataset
-          </p>
+      <div className="space-y-1 flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold tracking-tight truncate">{selectedDataset.file_name}</h2>
+          <Badge variant="default" className="px-3 py-1 text-sm">
+            <Database className="mr-1.5 h-4 w-4" />
+            {selectedDataset.total_rows.toLocaleString()}
+          </Badge>
         </div>
-        <Badge variant="default" className="px-4 py-2 text-lg">
-          <Database className="mr-2 h-5 w-5" />
-          {selectedDataset.total_rows.toLocaleString()} filas
-        </Badge>
+        <p className="text-sm text-muted-foreground">
+          Información y vista previa del dataset
+        </p>
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-md p-4">
-          <p className="text-red-800">{error}</p>
+        <div className="bg-red-50 border border-red-200 rounded p-3 flex-shrink-0">
+          <p className="text-sm text-red-800">{error}</p>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Dataset Metadata */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Info className="mr-2 h-5 w-5" />
-              Metadatos del Dataset
-            </CardTitle>
-            <CardDescription>
-              Información general del dataset
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Nombre del archivo</p>
-              <p className="text-lg">{selectedDataset.file_name}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Archivo original</p>
-              <p className="text-lg">{selectedDataset.original_filename}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Total de filas</p>
-              <p className="text-lg">{selectedDataset.total_rows.toLocaleString()}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Fecha de creación</p>
-              <p className="text-lg flex items-center">
-                <Calendar className="mr-2 h-4 w-4" />
-                {formatDate(selectedDataset.created_at)}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">ID del Dataset</p>
-              <p className="text-sm font-mono bg-muted px-2 py-1 rounded">{selectedDataset.id}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Columns List */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Grid3x3 className="mr-2 h-5 w-5" />
-              Columnas Disponibles
-            </CardTitle>
-            <CardDescription>
-              {selectedDataset.column_mappings?.length || 0} columnas en el dataset
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[300px] pr-4">
-              <div className="space-y-2">
-                {selectedDataset.column_mappings?.map((mapping, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-2 border rounded-lg"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium">{mapping.column_name}</span>
-                      {mapping.is_coordinate && (
-                        <Badge variant="secondary" className="text-xs">
-                          {mapping.mapped_field?.toUpperCase()}
-                        </Badge>
-                      )}
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {mapping.column_type === 1 ? 'Numeric' : mapping.column_type === 2 ? 'Text' : 'Unused'}
-                    </Badge>
-                  </div>
-                ))}
+      {/* Metadata and Columns in a single row card */}
+      <Card className="flex-shrink-0">
+        <CardContent className="pt-4">
+          <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
+            {/* Dataset Metadata */}
+            <div className="space-y-2">
+                <h3 className="text-sm font-semibold flex items-center mb-3">
+                  <Info className="mr-1.5 h-4 w-4" />
+                  Metadatos
+                </h3>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Archivo original</p>
+                  <p className="text-sm truncate">{selectedDataset.original_filename}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Total de filas</p>
+                  <p className="text-sm">{selectedDataset.total_rows.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Fecha de creación</p>
+                  <p className="text-sm flex items-center">
+                    <Calendar className="mr-1.5 h-3.5 w-3.5" />
+                    {formatDate(selectedDataset.created_at)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">ID del Dataset</p>
+                  <p className="text-xs font-mono bg-muted px-2 py-1 rounded truncate">{selectedDataset.id}</p>
+                </div>
               </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-      </div>
+
+              {/* Columns List */}
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold flex items-center mb-3">
+                  <Grid3x3 className="mr-1.5 h-4 w-4" />
+                  Columnas ({selectedDataset.column_mappings?.length || 0})
+                </h3>
+                <ScrollArea className="h-[140px] pr-2">
+                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
+                    {selectedDataset.column_mappings?.map((mapping, index) => (
+                      <div
+                        key={index}
+                        className="flex flex-col p-2 border rounded space-y-1"
+                      >
+                        <div className="flex items-center space-x-1.5 flex-1 min-w-0">
+                          <span className="font-medium truncate text-sm">{mapping.column_name}</span>
+                          {mapping.is_coordinate && (
+                            <Badge variant="secondary" className="text-xs px-1.5 py-0.5 shrink-0">
+                              {mapping.mapped_field?.toUpperCase()}
+                            </Badge>
+                          )}
+                        </div>
+                        <Badge variant="outline" className="text-xs px-1.5 py-0.5 w-fit">
+                          {mapping.column_type === 1 ? 'Num' : mapping.column_type === 2 ? 'Text' : 'Unused'}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Data Preview */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Vista Previa de Datos</CardTitle>
-          <CardDescription>
-            Mostrando {pagination.pageIndex * pagination.pageSize + 1} - {Math.min((pagination.pageIndex + 1) * pagination.pageSize, totalRows)} de {totalRows.toLocaleString()} filas (columnas: {previewColumns.join(', ')})
+      <Card className="flex-shrink-0 mt-3">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Vista Previa</CardTitle>
+          <CardDescription className="text-xs">
+            {pagination.pageIndex * pagination.pageSize + 1} - {Math.min((pagination.pageIndex + 1) * pagination.pageSize, totalRows)} de {totalRows.toLocaleString()} filas
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3 pt-2">
           {previewData.length === 0 && !loading ? (
             <div className="text-center py-8 text-muted-foreground">
               No se pudo cargar la vista previa
@@ -282,19 +269,19 @@ const DatasetInfoViewer: React.FC = () => {
           ) : (
             <div
               ref={tableContainerRef}
-              className="h-[400px] overflow-auto border rounded-md"
+              className="h-[500px] overflow-auto border rounded"
             >
-              <table className="w-full" style={{ minWidth: '800px' }}>
+              <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-muted z-10">
                   {table.getHeaderGroups().map(headerGroup => (
                     <tr key={headerGroup.id}>
                       {headerGroup.headers.map((header, index) => (
                         <th
                           key={header.id}
-                          className="px-4 py-3 text-left text-sm font-medium text-muted-foreground border-b whitespace-nowrap"
+                          className="px-6 py-3 text-left text-sm font-medium text-muted-foreground border-b whitespace-nowrap"
                           style={{ 
-                            width: index === 0 ? '80px' : '150px',
-                            minWidth: index === 0 ? '80px' : '150px'
+                            width: index === 0 ? '100px' : 'auto',
+                            minWidth: index === 0 ? '100px' : '180px'
                           }}
                         >
                           {header.isPlaceholder
@@ -325,16 +312,16 @@ const DatasetInfoViewer: React.FC = () => {
                           top: 0,
                           left: 0,
                           width: '100%',
-                          height: '45px',
-                          transform: `translateY(${index * 45}px)`,
+                          height: '48px',
+                          transform: `translateY(${index * 48}px)`,
                         }}
                       >
-                        <td className="px-4 py-3" style={{ width: '80px', minWidth: '80px' }}>
-                          <Skeleton className="h-4 w-12" />
+                        <td className="px-6 py-3" style={{ width: '100px', minWidth: '100px' }}>
+                          <Skeleton className="h-4 w-14" />
                         </td>
                         {previewColumns.map((col, colIdx) => (
-                          <td key={`skeleton-col-${colIdx}`} className="px-4 py-3" style={{ width: '150px', minWidth: '150px' }}>
-                            <Skeleton className="h-4 w-24" />
+                          <td key={`skeleton-col-${colIdx}`} className="px-6 py-3" style={{ minWidth: '180px' }}>
+                            <Skeleton className="h-4 w-32" />
                           </td>
                         ))}
                       </tr>
@@ -359,10 +346,10 @@ const DatasetInfoViewer: React.FC = () => {
                           {row.getVisibleCells().map((cell, index) => (
                             <td 
                               key={cell.id} 
-                              className="px-4 py-3 text-sm"
+                              className="px-6 py-3"
                               style={{ 
-                                width: index === 0 ? '80px' : '150px',
-                                minWidth: index === 0 ? '80px' : '150px'
+                                width: index === 0 ? '100px' : 'auto',
+                                minWidth: index === 0 ? '100px' : '180px'
                               }}
                             >
                               {flexRender(
@@ -382,45 +369,47 @@ const DatasetInfoViewer: React.FC = () => {
 
           {/* Pagination Controls */}
           {(previewData.length > 0 || loading) && (
-            <div className="flex items-center justify-between px-2">
-              <div className="flex items-center gap-2">
-                <p className="text-sm text-muted-foreground">
-                  Página {pagination.pageIndex + 1} de {pageCount.toLocaleString()}
-                </p>
-              </div>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">
+                Pág. {pagination.pageIndex + 1} / {pageCount.toLocaleString()}
+              </p>
               
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <Button
                   variant="outline"
                   size="sm"
+                  className="h-8 w-8 p-0"
                   onClick={() => table.setPageIndex(0)}
                   disabled={loading || !table.getCanPreviousPage()}
                 >
-                  <ChevronsLeft className="h-4 w-4" />
+                  <ChevronsLeft className="h-3.5 w-3.5" />
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
+                  className="h-8 w-8 p-0"
                   onClick={() => table.previousPage()}
                   disabled={loading || !table.getCanPreviousPage()}
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <ChevronLeft className="h-3.5 w-3.5" />
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
+                  className="h-8 w-8 p-0"
                   onClick={() => table.nextPage()}
                   disabled={loading || !table.getCanNextPage()}
                 >
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight className="h-3.5 w-3.5" />
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
+                  className="h-8 w-8 p-0"
                   onClick={() => table.setPageIndex(pageCount - 1)}
                   disabled={loading || !table.getCanNextPage()}
                 >
-                  <ChevronsRight className="h-4 w-4" />
+                  <ChevronsRight className="h-3.5 w-3.5" />
                 </Button>
               </div>
             </div>

@@ -498,6 +498,29 @@ class DatabaseManager:
                 session.refresh(dataset)
             return dataset
 
+    def delete_dataset(self, dataset_id: str) -> bool:
+        """Delete a dataset and its associated statistics"""
+        with Session(self.engine) as session:
+            dataset = session.get(Dataset, dataset_id)
+            if not dataset:
+                return False
+            
+            # 1. Delete all statistics for this dataset
+            stats_to_delete = session.exec(
+                select(DatasetColumnStats)
+                .where(DatasetColumnStats.dataset_id == dataset_id)
+            ).all()
+            
+            for stat in stats_to_delete:
+                session.delete(stat)
+            
+            session.commit()
+            
+            # 2. Delete the dataset record
+            session.delete(dataset)
+            session.commit()
+            
+            return True
 
     def get_dataset_data_and_stats_combined(self, dataset_id: str, columns: List[str], bounding_box: List[float] = None,
                                             filter_columns: List[str] = None) -> Tuple[np.ndarray, Dict[str, Dict[str, float]]]:
