@@ -58,6 +58,7 @@ const ROWS_PER_PAGE = 1000;
 
 const DatasetInfoViewer: React.FC = () => {
   const selectedDataset = useBrushStore((state) => state.selectedDataset);
+  const setSelectedDataset = useBrushStore((state) => state.setSelectedDataset);
   const [previewData, setPreviewData] = useState<DataRow[]>([]);
   const [previewColumns, setPreviewColumns] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -146,6 +147,59 @@ const DatasetInfoViewer: React.FC = () => {
       console.error('Error loading statistics:', err);
     } finally {
       setLoadingStatistics(false);
+    }
+  };
+
+  // Helper function to refresh dataset metadata from backend
+  const refreshDatasetMetadata = async () => {
+    if (!selectedDataset) return;
+
+    try {
+      // Fetch fresh file statistics to get updated column list
+      const statsResponse = await window.autoGrpc.getFileStatistics({
+        file_id: selectedDataset.file_id,
+        columns: []
+      });
+
+      if (statsResponse.success && statsResponse.statistics) {
+        // Update statistics state
+        setStatistics(statsResponse.statistics);
+
+        // Rebuild column_mappings from the fresh statistics
+        const updatedColumnMappings = statsResponse.statistics.map((stat: {
+          column_name: string;
+          data_type: string;
+        }) => {
+          // Find if this column existed before to preserve its mapping
+          const existingMapping = selectedDataset.column_mappings?.find(
+            m => m.column_name === stat.column_name
+          );
+
+          return {
+            column_name: stat.column_name,
+            column_type: stat.data_type === 'numeric' ? 'COLUMN_TYPE_NUMERIC' : 'COLUMN_TYPE_CATEGORICAL',
+            mapped_field: existingMapping?.mapped_field || '',
+            is_coordinate: existingMapping?.is_coordinate || false
+          };
+        });
+
+        // Create updated dataset with fresh column_mappings
+        const updatedDataset = {
+          ...selectedDataset,
+          column_mappings: updatedColumnMappings
+        };
+
+        // Get current store state to maintain datasetData and globalColumns
+        const currentState = useBrushStore.getState();
+
+        // Force update the store
+        if (currentState.datasetData && currentState.globalColumns) {
+          console.log('🔄 Refreshing dataset - old columns:', selectedDataset.column_mappings?.length, 'new columns:', updatedColumnMappings.length);
+          setSelectedDataset(updatedDataset, currentState.datasetData, currentState.globalColumns);
+        }
+      }
+    } catch (err) {
+      console.error('Error refreshing dataset metadata:', err);
     }
   };
 
@@ -316,6 +370,7 @@ const DatasetInfoViewer: React.FC = () => {
       if (response.success) {
         showSuccess(`Columna renombrada: ${oldName} → ${newName}`);
         await refreshData();
+        await refreshDatasetMetadata(); // Refresh column list
       } else {
         setError(response.error_message || 'Error al renombrar columna');
       }
@@ -393,6 +448,7 @@ const DatasetInfoViewer: React.FC = () => {
       if (response.success) {
         showSuccess(`Columna eliminada: ${columnName}`);
         await refreshData();
+        await refreshDatasetMetadata(); // Refresh column list
       } else {
         setError(response.error_message || 'Error al eliminar columna');
       }
@@ -690,6 +746,7 @@ const DatasetInfoViewer: React.FC = () => {
       if (response.success) {
         showSuccess(`${response.duplicated_columns.length} columna(s) duplicada(s)`);
         await refreshData();
+        await refreshDatasetMetadata(); // Refresh column list
         setColumnsToDuplicate([]);
       } else {
         setError(response.error_message || 'Error al duplicar columnas');
@@ -728,6 +785,7 @@ const DatasetInfoViewer: React.FC = () => {
       if (response.success) {
         showSuccess(`${response.deleted_columns.length} columna(s) eliminada(s)`);
         await refreshData();
+        await refreshDatasetMetadata(); // Refresh column list
         setColumnsToDelete([]);
       } else {
         setError(response.error_message || 'Error al eliminar columnas');
