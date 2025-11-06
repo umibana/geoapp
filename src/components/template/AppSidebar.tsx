@@ -1,4 +1,4 @@
-import {  Home, TestTube, TestTube2, TestTubeDiagonal, Wifi, FolderOpen, Zap, Paintbrush, Database, LayoutGrid } from "lucide-react"
+import {  Home, FolderOpen, Paintbrush, Database, LayoutGrid } from "lucide-react"
 
 import {
   Sidebar,
@@ -14,7 +14,6 @@ import React from "react"
 import { Link } from "@tanstack/react-router"
 import { useWindows } from "@/contexts/WindowContext"
 import BrushedDataViewer from "@/components/chart-components/BrushedDataViewer"
-import DataManipulationTester from "@/components/DataManipulationTester"
 import BrushedBarChart from "../chart-components/BrushedBarChart"
 import BrushedBoxPlot from "../chart-components/BrushedBoxPlot"
 import BrushedHeatmap from "../chart-components/BrushedHeatmap"
@@ -51,12 +50,6 @@ const navigationItems = [
 
 // Window items that can be opened
 const windowItems = [
-  {
-    title: "Data Manipulation Tester",
-    icon: Database,
-    component: <DataManipulationTester />,
-    size: { width: 1000, height: 700 },
-  },
   {
     title: "Brushed Data Viewer",
     icon: Paintbrush,

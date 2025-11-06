@@ -327,13 +327,8 @@ class DatabaseManager:
         try:
             table_name = f"data_{file_id.replace('-', '_')}"
 
-            print(f"🔄 [BACKEND/Database] rename_file_columns called for file_id: {file_id}")
-            print(f"🔄 [BACKEND/Database] Table name: {table_name}")
-            print(f"🔄 [BACKEND/Database] Column renames: {column_renames}")
-
             # Check if table exists
             if not self.check_duckdb_table_exists(table_name):
-                print(f"❌ [BACKEND/Database] Table {table_name} does not exist")
                 return False, [], f"Table {table_name} does not exist"
 
             renamed_columns = []
@@ -344,34 +339,26 @@ class DatabaseManager:
                     # Get existing columns first
                     result = conn.execute(text(f"DESCRIBE {table_name}"))
                     existing_columns = {row[0] for row in result}
-                    print(f"🔍 [BACKEND/Database] Existing columns in DuckDB table: {existing_columns}")
 
                     # Rename each column
                     for old_name, new_name in column_renames.items():
                         if old_name not in existing_columns:
-                            print(f"⚠️ [BACKEND/Database] Column '{old_name}' not found in table, skipping")
                             continue  # Skip if column doesn't exist
 
                         # DuckDB syntax for renaming columns
-                        print(f"🔄 [BACKEND/Database] Executing: ALTER TABLE {table_name} RENAME COLUMN \"{old_name}\" TO \"{new_name}\"")
                         conn.execute(text(f"ALTER TABLE {table_name} RENAME COLUMN \"{old_name}\" TO \"{new_name}\""))
                         renamed_columns.append(new_name)
-                        print(f"✅ [BACKEND/Database] Successfully renamed column: {old_name} -> {new_name}")
-
-            print(f"✅ [BACKEND/Database] DuckDB columns renamed: {renamed_columns}")
 
             # 2. Update column_mappings in all datasets for this file
             with Session(self.engine) as session:
                 # Get all datasets for this file
                 datasets = session.exec(select(Dataset).where(Dataset.file_id == file_id)).all()
-                print(f"🔍 [BACKEND/Database] Found {len(datasets)} datasets for file_id: {file_id}")
 
                 for dataset in datasets:
                     if dataset.column_mappings:
                         # Parse JSON column mappings
                         import json
                         mappings = json.loads(dataset.column_mappings)
-                        print(f"🔍 [BACKEND/Database] Dataset {dataset.id} current mappings: {mappings}")
 
                         # Update column names in mappings
                         updated = False
@@ -381,29 +368,21 @@ class DatabaseManager:
                                 new_col_name = column_renames[old_col_name]
                                 mapping['column_name'] = new_col_name
                                 updated = True
-                                print(f"✅ [BACKEND/Database] Updated dataset {dataset.id} column mapping: {old_col_name} -> {new_col_name}")
 
                         if updated:
                             # Save updated mappings back to database
                             dataset.column_mappings = json.dumps(mappings)
                             session.add(dataset)
-                            print(f"💾 [BACKEND/Database] Saved updated mappings for dataset {dataset.id}")
 
                 # Commit all dataset updates
                 session.commit()
-                print(f"✅ [BACKEND/Database] Committed all dataset updates")
 
             # 3. Recalculate statistics to reflect renamed columns
-            print(f"🔄 [BACKEND/Database] Recalculating statistics for file_id: {file_id}")
             self.recalculate_file_statistics(file_id)
 
             return True, renamed_columns, ""
 
         except Exception as e:
-            print(f"❌ [BACKEND/Database] Exception in rename_file_columns: {str(e)}")
-            import traceback
-            print(f"❌ Error in rename_file_columns: {e}")
-            print(traceback.format_exc())
             return False, [], str(e)
 
     def check_duckdb_table_exists(self, table_name: str) -> bool:
@@ -538,33 +517,24 @@ class DatabaseManager:
             Tuple of (flat_numpy_array, boundaries_dict)
         """
         try:
-            print(f"🔍 get_dataset_data_and_stats_combined called - dataset_id={dataset_id}, columns={columns}")
-
             dataset = self.get_dataset_by_id(dataset_id)
             if not dataset:
-                print(f"❌ Dataset not found: {dataset_id}")
                 return np.array([], dtype=np.float32), {}
 
             table_name = dataset.duckdb_table_name
-            print(f"📊 Using DuckDB table: {table_name}")
 
             # Build query for all requested columns - quote column names to handle special characters
             quoted_columns = [f'"{col}"' for col in columns]
             data_query = f'SELECT {", ".join(quoted_columns)} FROM {table_name}'
-            print(f"🔍 Executing query: SELECT {len(columns)} columns FROM {table_name}")
 
             # obtengo los datos usando DuckDB's fetchnumpy para optimizar el rendimiento
             with self.engine.connect() as conn:
                 duckdb_conn = conn.connection.connection
                 rows_data = duckdb_conn.execute(data_query).fetchnumpy()
-                print(f"✅ Query executed, checking results...")
 
             # si no hay datos, devuelvo un array vacío
             if not rows_data or len(rows_data[columns[0]]) == 0:
-                print(f"⚠️ No data found - rows_data={rows_data}, column_keys={list(rows_data.keys()) if rows_data else 'None'}")
                 return np.array([], dtype=np.float32), {}
-
-            print(f"✅ Data found: {len(rows_data[columns[0]])} rows")
 
             # Apply bounding box filter if provided
             if bounding_box and len(bounding_box) in [4, 6]:
@@ -603,7 +573,6 @@ class DatabaseManager:
                     rows_data[col] = rows_data[col][mask]
 
                 num_filtered = np.sum(mask)
-                print(f"✅ Filtered to {num_filtered} points from bounding box")
 
             # Get number of points after filtering
             num_points = len(rows_data[columns[0]])
@@ -626,7 +595,6 @@ class DatabaseManager:
                     flat_numpy[i::num_cols] = col_data.astype(np.float32, copy=False)
                 except (ValueError, TypeError):
                     # If conversion fails, convert to float with error='coerce' (non-numeric -> NaN)
-                    print(f"⚠️ Column '{col}' has non-numeric values, converting to NaN")
                     # Use pandas to_numeric with errors='coerce' for safe conversion
                     import pandas as pd
                     numeric_data = pd.to_numeric(col_data, errors='coerce')
@@ -651,16 +619,7 @@ class DatabaseManager:
 
             return flat_numpy, boundaries
 
-        except KeyError as e:
-            print(f"❌ Column not found in query results: {e}")
-            print(f"❌ Available columns: {list(rows_data.keys()) if 'rows_data' in locals() else 'Query failed'}")
-            import traceback
-            print(f"❌ Traceback: {traceback.format_exc()}")
-            return np.array([], dtype=np.float32), {}
-        except Exception as e:
-            print(f"❌ Error in get_dataset_data_and_stats_combined: {e}")
-            import traceback
-            print(f"❌ Traceback: {traceback.format_exc()}")
+        except (KeyError, Exception):
             return np.array([], dtype=np.float32), {}
 
     def compute_histogram(self, data: np.ndarray, column_name: str, num_bins: int = 30) -> Dict:
@@ -1626,9 +1585,6 @@ class DatabaseManager:
         """
         try:
             table_name = f"data_{file_id.replace('-', '_')}"
-            
-            print(f"🔄 [BACKEND/Database] Duplicating columns for file_id: {file_id}")
-            print(f"🔄 [BACKEND/Database] Columns to duplicate: {columns_to_duplicate}")
 
             if not self.check_duckdb_table_exists(table_name):
                 return False, [], f"Table {table_name} does not exist"
@@ -1640,11 +1596,9 @@ class DatabaseManager:
                     # Get existing columns
                     result = conn.execute(text(f"DESCRIBE {table_name}"))
                     existing_columns = {row[0] for row in result}
-                    print(f"🔍 [BACKEND/Database] Existing columns: {existing_columns}")
 
                     for source_col, new_col_name in columns_to_duplicate:
                         if source_col not in existing_columns:
-                            print(f"⚠️ [BACKEND/Database] Source column '{source_col}' not found, skipping")
                             continue  # Skip if column doesn't exist
 
                         # If no custom name provided, auto-generate
@@ -1657,10 +1611,7 @@ class DatabaseManager:
                         
                         # Check if new name already exists
                         if new_col_name in existing_columns:
-                            print(f"❌ [BACKEND/Database] Column '{new_col_name}' already exists, skipping")
                             continue
-
-                        print(f"🔄 [BACKEND/Database] Duplicating: {source_col} -> {new_col_name}")
 
                         # Add new column and copy values
                         conn.execute(text(f'ALTER TABLE {table_name} ADD COLUMN "{new_col_name}" VARCHAR'))
@@ -1668,19 +1619,37 @@ class DatabaseManager:
 
                         duplicated_columns.append(new_col_name)
                         existing_columns.add(new_col_name)
-                        print(f"✅ [BACKEND/Database] Successfully duplicated: {source_col} -> {new_col_name}")
 
             # Recalculate statistics after adding columns
             if len(duplicated_columns) > 0:
-                print(f"🔄 [BACKEND/Database] Recalculating statistics after duplicating {len(duplicated_columns)} columns")
                 self.recalculate_file_statistics(file_id)
+
+                # Update column_mappings for all datasets associated with this file
+                with Session(self.engine) as session:
+                    datasets = session.exec(select(Dataset).where(Dataset.file_id == file_id)).all()
+
+                    for dataset in datasets:
+                        if dataset.column_mappings:
+                            import json
+                            mappings = json.loads(dataset.column_mappings)
+
+                            # Add each duplicated column to mappings as a regular (non-coordinate) column
+                            for new_col_name in duplicated_columns:
+                                mappings.append({
+                                    'column_name': new_col_name,
+                                    'column_type': 1,  # NUMERIC
+                                    'mapped_field': new_col_name,  # Use column name as mapped field
+                                    'is_coordinate': False
+                                })
+
+                            dataset.column_mappings = json.dumps(mappings)
+                            session.add(dataset)
+
+                    session.commit()
 
             return True, duplicated_columns, ""
 
         except Exception as e:
-            print(f"❌ [BACKEND/Database] Error duplicating columns: {str(e)}")
-            import traceback
-            traceback.print_exc()
             return False, [], str(e)
 
     # ========== Dataset Merging ==========
