@@ -472,30 +472,6 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
     }
   };
 
-  const _deleteFile = async (fileId: string) => {
-    if (!confirm('Are you sure you want to delete this file?')) {
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const response = await window.autoGrpc.deleteFile({ file_id: fileId });
-
-      if (response.success) {
-        if (selectedProject) {
-          await loadProjectFiles(selectedProject.id);
-        }
-      } else {
-        setError(response.error_message || 'Failed to delete file');
-      }
-    } catch (err) {
-      console.error('Error deleting file:', err);
-      setError('Failed to delete file');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const openEditDialog = (project: ProjectData) => {
     setEditingProject(project);
     setProjectName(project.name);
