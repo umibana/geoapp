@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Database, Info, Grid3x3, Calendar, Settings, Edit2, Copy, Trash2, RefreshCw, Filter, Plus, CheckCircle, Loader2 } from 'lucide-react';
+import { Database, Info, Grid3x3, Calendar, Settings, Edit2, Copy, Trash2, RefreshCw, Filter, Plus, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { useBrushStore } from '@/stores/brushStore';
 import {
   useReactTable,
@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 
 /**
  * DatasetInfoViewer Component
@@ -96,13 +97,57 @@ const DatasetInfoViewer: React.FC = () => {
   const [newFilterColumnName, setNewFilterColumnName] = useState('');
   const [newFilterFileName, setNewFilterFileName] = useState('');
   const [columnsToDuplicate, setColumnsToDuplicate] = useState<{sourceColumn: string, newName: string}[]>([]);
+  const [columnsToDelete, setColumnsToDelete] = useState<string[]>([]);
   
   // Column header editing state
   const [editingColumnHeader, setEditingColumnHeader] = useState<string | null>(null);
   const [editingColumnName, setEditingColumnName] = useState('');
-  
+
   // Row selection for deletion
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectionStart, setSelectionStart] = useState<number | null>(null);
+
+  // Statistics state
+  const [statistics, setStatistics] = useState<Array<{
+    column_name: string,
+    data_type: string,
+    count?: number,
+    null_count?: number,
+    unique_count?: number,
+    mean?: number,
+    std?: number,
+    min_value?: number,
+    q25?: number,
+    q50?: number,
+    q75?: number,
+    max_value?: number,
+    top_values?: string[],
+    top_counts?: number[]
+  }>>([]);
+  const [loadingStatistics, setLoadingStatistics] = useState(false);
+
+  // Helper function to load statistics
+  const loadStatistics = async () => {
+    if (!selectedDataset) return;
+
+    try {
+      setLoadingStatistics(true);
+
+      const response = await window.autoGrpc.getFileStatistics({
+        file_id: selectedDataset.file_id,
+        columns: []
+      });
+
+      if (response.success && response.statistics) {
+        setStatistics(response.statistics);
+      }
+    } catch (err) {
+      console.error('Error loading statistics:', err);
+    } finally {
+      setLoadingStatistics(false);
+    }
+  };
 
   // Helper function to refresh data
   const refreshData = async () => {
@@ -212,6 +257,7 @@ const DatasetInfoViewer: React.FC = () => {
       if (response.success) {
         showSuccess(`Actualizado: ${response.rows_affected} celdas`);
         await refreshData();
+        await loadStatistics(); // Reload statistics after data change
       } else {
         setError(response.error_message || 'Error al actualizar');
       }
@@ -324,6 +370,39 @@ const DatasetInfoViewer: React.FC = () => {
     }
   };
 
+  const handleDeleteColumn = async (columnName: string) => {
+    if (!selectedDataset) return;
+
+    const confirmed = window.confirm(
+      `¿Estás seguro de que deseas eliminar la columna "${columnName}"?\n\nEsta operación es permanente y no se puede deshacer.`
+    );
+    
+    if (!confirmed) return;
+
+    const fileId = selectedDataset.file_id;
+
+    try {
+      setOperationLoading(true);
+      setError(null);
+
+      const response = await window.autoGrpc.deleteFileColumns({
+        file_id: fileId,
+        column_names: [columnName]
+      });
+
+      if (response.success) {
+        showSuccess(`Columna eliminada: ${columnName}`);
+        await refreshData();
+      } else {
+        setError(response.error_message || 'Error al eliminar columna');
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error desconocido');
+    } finally {
+      setOperationLoading(false);
+    }
+  };
+
   // Replace all occurrences in a column
   const handleReplaceAllInColumn = async (columnName: string, oldValue: string) => {
     if (!selectedDataset) return;
@@ -367,6 +446,34 @@ const DatasetInfoViewer: React.FC = () => {
     setSelectedRows(newSelection);
   };
 
+  const startRangeSelection = (rowIndex: number) => {
+    setIsSelecting(true);
+    setSelectionStart(rowIndex);
+    // Toggle the clicked row
+    toggleRowSelection(rowIndex);
+  };
+
+  const continueRangeSelection = (rowIndex: number) => {
+    if (!isSelecting || selectionStart === null) return;
+
+    // Select all rows between start and current
+    const start = Math.min(selectionStart, rowIndex);
+    const end = Math.max(selectionStart, rowIndex);
+    
+    const newSelection = new Set(selectedRows);
+    for (let i = start; i <= end; i++) {
+      if (i < previewData.length) {
+        newSelection.add(i);
+      }
+    }
+    setSelectedRows(newSelection);
+  };
+
+  const endRangeSelection = () => {
+    setIsSelecting(false);
+    setSelectionStart(null);
+  };
+
   const clearRowSelection = () => {
     setSelectedRows(new Set());
   };
@@ -375,6 +482,18 @@ const DatasetInfoViewer: React.FC = () => {
     const allRowIndices = new Set(previewData.map((_, index) => index));
     setSelectedRows(allRowIndices);
   };
+
+  // Handle mouse up globally to end selection
+  useEffect(() => {
+    const handleMouseUp = () => {
+      if (isSelecting) {
+        endRangeSelection();
+      }
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => document.removeEventListener('mouseup', handleMouseUp);
+  }, [isSelecting]);
 
   // Delete selected rows
   const handleDeleteSelectedRows = async () => {
@@ -582,14 +701,52 @@ const DatasetInfoViewer: React.FC = () => {
     }
   };
 
+  // Advanced operations - Delete columns (bulk)
+  const handleDeleteColumns = async () => {
+    if (!selectedDataset || columnsToDelete.length === 0) {
+      setError('Selecciona columnas para eliminar');
+      return;
+    }
 
-  // Load paginated data
+    const confirmed = window.confirm(
+      `¿Estás seguro de que deseas eliminar ${columnsToDelete.length} columna(s)?\n\nColumnas a eliminar:\n${columnsToDelete.join(', ')}\n\nEsta operación es permanente y no se puede deshacer.`
+    );
+
+    if (!confirmed) return;
+
+    const fileId = selectedDataset.file_id;
+
+    try {
+      setOperationLoading(true);
+      setError(null);
+
+      const response = await window.autoGrpc.deleteFileColumns({
+        file_id: fileId,
+        column_names: columnsToDelete
+      });
+
+      if (response.success) {
+        showSuccess(`${response.deleted_columns.length} columna(s) eliminada(s)`);
+        await refreshData();
+        setColumnsToDelete([]);
+      } else {
+        setError(response.error_message || 'Error al eliminar columnas');
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error desconocido');
+    } finally {
+      setOperationLoading(false);
+    }
+  };
+
+
+  // Load paginated data and statistics
   useEffect(() => {
     if (!selectedDataset) return;
-    
+
     // Check if dataset changed
     const datasetChanged = lastFetchedDatasetRef.current !== selectedDataset.id;
-    
+
     if (datasetChanged) {
       // Reset pagination when dataset changes
       if (pagination.pageIndex !== 0) {
@@ -597,8 +754,10 @@ const DatasetInfoViewer: React.FC = () => {
         return; // Let the pagination change trigger the fetch
       }
       lastFetchedDatasetRef.current = selectedDataset.id;
+      // Load statistics on dataset change
+      loadStatistics();
     }
-    
+
     refreshData();
     clearRowSelection(); // Clear selection when changing pages
   }, [selectedDataset, pagination.pageIndex, pagination.pageSize]);
@@ -624,13 +783,18 @@ const DatasetInfoViewer: React.FC = () => {
           />
         ),
         cell: ({ row }) => (
-          <input
-            type="checkbox"
-            className="cursor-pointer"
-            checked={selectedRows.has(row.index)}
-            onChange={() => toggleRowSelection(row.index)}
-            onClick={(e) => e.stopPropagation()}
-          />
+          <div
+            onMouseDown={() => startRangeSelection(row.index)}
+            onMouseEnter={() => continueRangeSelection(row.index)}
+            className="flex items-center justify-center h-full"
+          >
+            <input
+              type="checkbox"
+              className="cursor-pointer pointer-events-none"
+              checked={selectedRows.has(row.index)}
+              readOnly
+            />
+          </div>
         ),
         size: 40,
       },
@@ -756,34 +920,131 @@ const DatasetInfoViewer: React.FC = () => {
                   <p className="text-xs font-medium text-muted-foreground">ID del Dataset</p>
                   <p className="text-xs font-mono bg-muted px-2 py-1 rounded truncate">{selectedDataset.id}</p>
                 </div>
+
               </div>
 
-              {/* Columns List */}
+              {/* Columns List with Statistics on Hover */}
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold flex items-center mb-3">
                   <Grid3x3 className="mr-1.5 h-4 w-4" />
                   Columnas ({selectedDataset.column_mappings?.length || 0})
+                  {loadingStatistics && (
+                    <Loader2 className="ml-2 h-3 w-3 animate-spin text-muted-foreground" />
+                  )}
                 </h3>
                 <ScrollArea className="h-[140px] pr-2">
                   <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
-                    {selectedDataset.column_mappings?.map((mapping, index) => (
-                      <div
-                        key={index}
-                        className="flex flex-col p-2 border rounded space-y-1"
-                      >
-                        <div className="flex items-center space-x-1.5 flex-1 min-w-0">
-                          <span className="font-medium truncate text-sm">{mapping.column_name}</span>
-                          {mapping.is_coordinate && (
-                            <Badge variant="secondary" className="text-xs px-1.5 py-0.5 shrink-0">
-                              {mapping.mapped_field?.toUpperCase()}
-                            </Badge>
-                          )}
-                        </div>
-                        <Badge variant="outline" className="text-xs px-1.5 py-0.5 w-fit">
-                          {String(mapping.column_type) === "COLUMN_TYPE_NUMERIC" ? 'Num' : String(mapping.column_type) === "COLUMN_TYPE_CATEGORICAL" ? 'Text' : 'Unused'}
-                        </Badge>
-                      </div>
-                    ))}
+                    {selectedDataset.column_mappings?.map((mapping, index) => {
+                      // Find statistics for this column
+                      const columnStat = statistics.find(s => s.column_name === mapping.column_name);
+
+                      return (
+                        <HoverCard key={index} openDelay={200}>
+                          <HoverCardTrigger asChild>
+                            <div className="flex flex-col p-2 border rounded space-y-1 cursor-help hover:bg-muted/50 transition-colors">
+                              <div className="flex items-center space-x-1.5 flex-1 min-w-0">
+                                <span className="font-medium truncate text-sm">{mapping.column_name}</span>
+                                {mapping.is_coordinate && (
+                                  <Badge variant="secondary" className="text-xs px-1.5 py-0.5 shrink-0">
+                                    {mapping.mapped_field?.toUpperCase()}
+                                  </Badge>
+                                )}
+                              </div>
+                              <Badge variant="outline" className="text-xs px-1.5 py-0.5 w-fit">
+                                {String(mapping.column_type) === "COLUMN_TYPE_NUMERIC" ? 'Num' : String(mapping.column_type) === "COLUMN_TYPE_CATEGORICAL" ? 'Text' : 'Unused'}
+                              </Badge>
+                            </div>
+                          </HoverCardTrigger>
+                          <HoverCardContent className="w-80" side="right" align="start">
+                            {columnStat ? (
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <h4 className="font-semibold text-sm">{columnStat.column_name}</h4>
+                                  <Badge variant={columnStat.data_type === 'numeric' ? 'default' : 'secondary'} className="text-xs">
+                                    {columnStat.data_type === 'numeric' ? 'Numérica' : 'Categórica'}
+                                  </Badge>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2 text-xs">
+                                  <div>
+                                    <p className="text-muted-foreground">Valores</p>
+                                    <p className="font-medium">{columnStat.count?.toLocaleString()}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground">Nulos</p>
+                                    <p className="font-medium">{columnStat.null_count?.toLocaleString()}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground">Únicos</p>
+                                    <p className="font-medium">{columnStat.unique_count?.toLocaleString()}</p>
+                                  </div>
+                                </div>
+
+                                {columnStat.data_type === 'numeric' && (
+                                  <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t">
+                                    <div>
+                                      <p className="text-muted-foreground">Media</p>
+                                      <p className="font-medium">{columnStat.mean?.toFixed(3)}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground">Desv. Est.</p>
+                                      <p className="font-medium">{columnStat.std?.toFixed(3)}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground">Mínimo</p>
+                                      <p className="font-medium">{columnStat.min_value?.toFixed(3)}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground">Q25</p>
+                                      <p className="font-medium">{columnStat.q25?.toFixed(3)}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground">Mediana (Q50)</p>
+                                      <p className="font-medium">{columnStat.q50?.toFixed(3)}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground">Q75</p>
+                                      <p className="font-medium">{columnStat.q75?.toFixed(3)}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground">Máximo</p>
+                                      <p className="font-medium">{columnStat.max_value?.toFixed(3)}</p>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {columnStat.data_type === 'categorical' && columnStat.top_values && columnStat.top_values.length > 0 && (
+                                  <div className="text-xs pt-2 border-t">
+                                    <p className="text-muted-foreground mb-1">Valores más frecuentes</p>
+                                    <div className="space-y-1">
+                                      {columnStat.top_values.slice(0, 5).map((value, i) => (
+                                        <div key={i} className="flex justify-between items-center">
+                                          <span className="truncate max-w-[200px]">{value}</span>
+                                          <Badge variant="outline" className="text-xs">
+                                            {columnStat.top_counts?.[i]?.toLocaleString()}
+                                          </Badge>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-muted-foreground text-center py-4">
+                                {loadingStatistics ? (
+                                  <div className="flex items-center justify-center">
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Cargando estadísticas...
+                                  </div>
+                                ) : (
+                                  'No hay estadísticas disponibles'
+                                )}
+                              </div>
+                            )}
+                          </HoverCardContent>
+                        </HoverCard>
+                      );
+                    })}
                   </div>
                 </ScrollArea>
             </div>
@@ -863,6 +1124,7 @@ const DatasetInfoViewer: React.FC = () => {
             <div
               ref={tableContainerRef}
               className="h-[500px] overflow-auto border rounded relative"
+              style={{ userSelect: isSelecting ? 'none' : 'auto' }}
             >
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-muted z-10">
@@ -1107,6 +1369,16 @@ const DatasetInfoViewer: React.FC = () => {
                 >
                   <Copy className="h-4 w-4" />
                   Duplicar columna
+                </button>
+                <button
+                  className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-destructive/10 text-destructive w-full text-left"
+                  onClick={() => {
+                    handleDeleteColumn(contextMenu.target.columnId!);
+                    closeContextMenu();
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Eliminar columna
                 </button>
               </>
             )}
@@ -1374,7 +1646,8 @@ const DatasetInfoViewer: React.FC = () => {
 
             {/* Tab 3: Column Operations */}
             <TabsContent value="columns" className="space-y-4">
-              <div className="space-y-4">
+              <div className="space-y-6">
+                {/* Duplicate Columns Section */}
                 <div>
                   <Label className="text-base">Duplicar columnas</Label>
                   <p className="text-sm text-muted-foreground mb-3">
@@ -1435,6 +1708,61 @@ const DatasetInfoViewer: React.FC = () => {
                 <Button onClick={handleDuplicateColumns} disabled={operationLoading || columnsToDuplicate.length === 0} className="w-full">
                   {operationLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
                   Duplicar Columnas
+                </Button>
+
+                <Separator />
+
+                {/* Delete Columns Section */}
+                <div>
+                  <Label className="text-base">Eliminar columnas</Label>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Selecciona columnas para eliminar
+                  </p>
+                  
+                  <div className="flex flex-wrap gap-2 mt-2 p-3 border rounded-md min-h-[60px]">
+                    {previewColumns.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No hay columnas disponibles</p>
+                    ) : (
+                      previewColumns.map((col: string) => (
+                        <Badge
+                          key={col}
+                          variant={columnsToDelete.includes(col) ? "destructive" : "outline"}
+                          className="cursor-pointer"
+                          onClick={() => {
+                            if (columnsToDelete.includes(col)) {
+                              setColumnsToDelete(columnsToDelete.filter(c => c !== col));
+                            } else {
+                              setColumnsToDelete([...columnsToDelete, col]);
+                            }
+                          }}
+                        >
+                          {col}
+                        </Badge>
+                      ))
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {columnsToDelete.length === 0
+                      ? "Sin columnas seleccionadas"
+                      : `${columnsToDelete.length} columna(s) seleccionada(s) para eliminar`}
+                  </p>
+                </div>
+
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    Esta operación es destructiva y no se puede deshacer. Las columnas serán eliminadas permanentemente.
+                  </AlertDescription>
+                </Alert>
+
+                <Button 
+                  onClick={handleDeleteColumns} 
+                  disabled={operationLoading || columnsToDelete.length === 0} 
+                  variant="destructive"
+                  className="w-full"
+                >
+                  {operationLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                  Eliminar Columnas Seleccionadas
                 </Button>
               </div>
             </TabsContent>

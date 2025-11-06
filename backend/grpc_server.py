@@ -217,6 +217,9 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
     def DuplicateFileColumns(self, request, context):
         return self.project_manager.duplicate_file_columns(request)
 
+    def DeleteFileColumns(self, request, context):
+        return self.project_manager.delete_file_columns(request)
+
     # ---------- Manejo de datasets ----------
 
     def AnalyzeCsvForProject(self, request, context):

@@ -875,17 +875,18 @@ class DatabaseManager:
                     session.add(stat_record)
                 
                 session.commit()
-                
+
+
         except Exception as e:
             raise e
 
-    def recalculate_file_statistics(self, file_id: str, sample_size: int = 10000) -> bool:
+    def recalculate_file_statistics(self, file_id: str) -> bool:
         """
-        Recalculate statistics for a file from its DuckDB table after data manipulation
+        Recalculate statistics for a file from its DuckDB table after data manipulation.
+        Uses full dataset for precise statistics (DuckDB is efficient enough for this).
 
         Args:
             file_id: The file ID
-            sample_size: Sample size for large datasets (default 10K rows)
 
         Returns:
             True if successful, False otherwise
@@ -903,23 +904,15 @@ class DatabaseManager:
             with self.engine.connect() as conn:
                 duckdb_conn = conn.connection.connection
 
-                # Get total row count first
-                count_result = duckdb_conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
-                total_rows = int(count_result[0])
-
-                # Sample if needed
-                if sample_size < total_rows and sample_size > 0:
-                    # Use DuckDB's SAMPLE for efficient sampling
-                    query = f"SELECT * FROM {table_name} USING SAMPLE {sample_size}"
-                else:
-                    query = f"SELECT * FROM {table_name}"
-
-                result = duckdb_conn.execute(query)
+                # Get all data for precise statistics
+                result = duckdb_conn.execute(f"SELECT * FROM {table_name}")
                 df = result.df()
 
             if df.empty:
                 print(f"⚠️ No data in table {table_name}, skipping statistics recalculation")
                 return False
+
+            total_rows = len(df)
 
             # Generate statistics using pandas describe()
             numeric_describe = df.select_dtypes(include=[np.number]).describe()
@@ -1648,6 +1641,65 @@ class DatabaseManager:
                     session.commit()
 
             return True, duplicated_columns, ""
+
+        except Exception as e:
+            return False, [], str(e)
+
+    def delete_file_columns(self, file_id: str, columns_to_delete: List[str]) -> Tuple[bool, List[str], str]:
+        """
+        Delete columns from file
+
+        Args:
+            file_id: The file ID
+            columns_to_delete: List of column names to delete
+
+        Returns:
+            Tuple of (success, deleted_columns, error_message)
+        """
+        try:
+            table_name = f"data_{file_id.replace('-', '_')}"
+
+            if not self.check_duckdb_table_exists(table_name):
+                return False, [], f"Table {table_name} does not exist"
+
+            deleted_columns = []
+
+            with self.engine.connect() as conn:
+                with conn.begin():
+                    # Get existing columns
+                    result = conn.execute(text(f"DESCRIBE {table_name}"))
+                    existing_columns = {row[0] for row in result}
+
+                    for col_name in columns_to_delete:
+                        if col_name not in existing_columns:
+                            continue  # Skip if column doesn't exist
+
+                        # Drop the column
+                        conn.execute(text(f'ALTER TABLE {table_name} DROP COLUMN "{col_name}"'))
+                        deleted_columns.append(col_name)
+
+            # Recalculate statistics after deleting columns
+            if len(deleted_columns) > 0:
+                self.recalculate_file_statistics(file_id)
+
+                # Update column_mappings for all datasets associated with this file
+                with Session(self.engine) as session:
+                    datasets = session.exec(select(Dataset).where(Dataset.file_id == file_id)).all()
+
+                    for dataset in datasets:
+                        if dataset.column_mappings:
+                            import json
+                            mappings = json.loads(dataset.column_mappings)
+
+                            # Remove deleted columns from mappings
+                            updated_mappings = [m for m in mappings if m['column_name'] not in deleted_columns]
+
+                            dataset.column_mappings = json.dumps(updated_mappings)
+                            session.add(dataset)
+
+                    session.commit()
+
+            return True, deleted_columns, ""
 
         except Exception as e:
             return False, [], str(e)

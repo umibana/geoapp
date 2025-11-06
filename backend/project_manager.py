@@ -409,6 +409,9 @@ class ProjectManager:
 
             if not success:
                 response.error_message = error_msg
+            else:
+                # Recalculate statistics after data modification
+                self._recalculate_and_store_statistics(request.file_id)
 
             return response
 
@@ -537,6 +540,8 @@ class ProjectManager:
                 response.error_message = error_msg
             else:
                 print(f"✅ [BACKEND/ProjectManager] Filtered column added: {rows_with_values} matches, {rows_with_null} NULL")
+                # Recalculate statistics after adding new column
+                self._recalculate_and_store_statistics(request.file_id)
 
             return response
 
@@ -567,6 +572,9 @@ class ProjectManager:
 
             if not success:
                 response.error_message = error_msg
+            else:
+                # Recalculate statistics after deleting rows
+                self._recalculate_and_store_statistics(request.file_id)
 
             return response
 
@@ -596,6 +604,9 @@ class ProjectManager:
 
             if not success:
                 response.error_message = error_msg
+            else:
+                # Recalculate statistics after adding new columns
+                self._recalculate_and_store_statistics(request.file_id)
 
             return response
 
@@ -631,6 +642,8 @@ class ProjectManager:
                 print(f"❌ [BACKEND/ProjectManager] Duplication failed: {error_msg}")
             else:
                 print(f"✅ [BACKEND/ProjectManager] Successfully duplicated {len(duplicated_columns)} columns")
+                # Recalculate statistics after duplicating columns
+                self._recalculate_and_store_statistics(request.file_id)
 
             return response
 
@@ -639,6 +652,32 @@ class ProjectManager:
             import traceback
             traceback.print_exc()
             response = projects_pb2.DuplicateFileColumnsResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+
+    def delete_file_columns(self, request: projects_pb2.DeleteFileColumnsRequest) -> projects_pb2.DeleteFileColumnsResponse:
+        """Eliminar columnas de un archivo"""
+        try:
+            success, deleted_columns, error_msg = self.db.delete_file_columns(
+                request.file_id,
+                list(request.column_names)
+            )
+
+            response = projects_pb2.DeleteFileColumnsResponse()
+            response.success = success
+            response.deleted_columns.extend(deleted_columns)
+
+            if not success:
+                response.error_message = error_msg
+            else:
+                # Recalculate statistics after deleting columns
+                self._recalculate_and_store_statistics(request.file_id)
+
+            return response
+
+        except Exception as e:
+            response = projects_pb2.DeleteFileColumnsResponse()
             response.success = False
             response.error_message = str(e)
             return response
@@ -800,17 +839,24 @@ class ProjectManager:
             response.error_message = str(e)
             return response
     
-    def _generate_statistics_from_duckdb(self, table_name: str) -> Dict[str, Dict[str, Any]]:
+    def _generate_statistics_from_duckdb(self, file_id: str) -> Dict[str, Dict[str, Any]]:
         """
         Generate statistics using DuckDB to_df() + pandas describe()
-        
+
         Args:
-            table_name: Name of the DuckDB table
-            
+            file_id: The file ID to generate statistics for
+
         Returns:
             Dictionary of column statistics compatible with store_column_statistics
         """
         try:
+            table_name = f"data_{file_id.replace('-', '_')}"
+
+            # Check if table exists
+            if not self.db.check_duckdb_table_exists(table_name):
+                print(f"⚠️ Table {table_name} does not exist, skipping statistics generation")
+                return {}
+
             # Use DuckDB's to_df() method for efficient DataFrame conversion
             with self.db.engine.connect() as conn:
                 duckdb_conn = conn.connection.connection
@@ -864,11 +910,24 @@ class ProjectManager:
                 }
             
             return column_statistics
-            
+
         except Exception as e:
             print(f"❌ Error generating statistics from DuckDB with pandas: {e}")
             return {}
-    
+
+    def _recalculate_and_store_statistics(self, file_id: str) -> bool:
+        """
+        Recalculate statistics for a file and update all associated datasets.
+        This is a convenience wrapper around db.recalculate_file_statistics.
+
+        Args:
+            file_id: The file ID to recalculate statistics for
+
+        Returns:
+            True if successful, False otherwise
+        """
+        return self.db.recalculate_file_statistics(file_id)
+
     def process_dataset(self, request: projects_pb2.ProcessDatasetRequest) -> projects_pb2.ProcessDatasetResponse:
         """Procesar dataset con mapeos de columnas - datos ya en DuckDB"""
         try:
@@ -905,10 +964,9 @@ class ProjectManager:
             
             # Generate and store column statistics for the dataset using pandas describe
             try:
-                # We need to get the original file content to run pandas describe
-                # For now, let's regenerate statistics directly from DuckDB using SQL queries
-                column_statistics = self._generate_statistics_from_duckdb(table_name)
-                
+                # Generate statistics directly from DuckDB using file_id
+                column_statistics = self._generate_statistics_from_duckdb(request.file_id)
+
                 if column_statistics:
                     self.db.store_column_statistics(dataset_id, column_statistics)
             except Exception as e:

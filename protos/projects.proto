@@ -331,6 +331,17 @@ message DuplicateFileColumnsResponse {
   string error_message = 3;
 }
 
+message DeleteFileColumnsRequest {
+  string file_id = 1;
+  repeated string column_names = 2;
+}
+
+message DeleteFileColumnsResponse {
+  repeated string deleted_columns = 1;  // Column names that were deleted
+  bool success = 2;
+  string error_message = 3;
+}
+
 // ========== Dataset Merging ==========
 
 enum MergeMode {

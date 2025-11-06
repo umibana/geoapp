@@ -46,6 +46,7 @@ service GeospatialService {
   // Operaciones avanzadas de columnas
   rpc AddFileColumns(AddFileColumnsRequest) returns (AddFileColumnsResponse);
   rpc DuplicateFileColumns(DuplicateFileColumnsRequest) returns (DuplicateFileColumnsResponse);
+  rpc DeleteFileColumns(DeleteFileColumnsRequest) returns (DeleteFileColumnsResponse);
 
   // Gestión de datasets
   rpc GetProjectDatasets(GetProjectDatasetsRequest) returns (GetProjectDatasetsResponse);
