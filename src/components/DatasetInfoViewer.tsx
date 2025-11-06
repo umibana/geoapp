@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Database, Info, Grid3x3, Calendar, Settings, Edit2, Copy, Trash2, RefreshCw, Filter, Plus, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { Database, Info, Grid3x3, Calendar, Settings, Edit2, Copy, Trash2, RefreshCw, Filter, Plus, CheckCircle, Loader2 } from 'lucide-react';
 import { useBrushStore } from '@/stores/brushStore';
 import {
   useReactTable,
@@ -96,7 +96,6 @@ const DatasetInfoViewer: React.FC = () => {
   const [newFilterColumnName, setNewFilterColumnName] = useState('');
   const [newFilterFileName, setNewFilterFileName] = useState('');
   const [columnsToDuplicate, setColumnsToDuplicate] = useState<{sourceColumn: string, newName: string}[]>([]);
-  const [rowIndicesToDelete, setRowIndicesToDelete] = useState('');
   
   // Column header editing state
   const [editingColumnHeader, setEditingColumnHeader] = useState<string | null>(null);
@@ -583,46 +582,6 @@ const DatasetInfoViewer: React.FC = () => {
     }
   };
 
-  // Advanced operations - Delete rows
-  const handleDeletePoints = async () => {
-    if (!selectedDataset || !rowIndicesToDelete) {
-      setError('Ingresa índices de filas a eliminar');
-      return;
-    }
-
-    const fileId = selectedDataset.file_id;
-    const indices = rowIndicesToDelete.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
-
-    if (indices.length === 0) {
-      setError('Índices inválidos');
-      return;
-    }
-
-    const confirmed = window.confirm(`¿Eliminar ${indices.length} fila(s)?`);
-    if (!confirmed) return;
-
-    try {
-      setOperationLoading(true);
-      setError(null);
-
-      const response = await window.autoGrpc.deleteFilePoints({
-        file_id: fileId,
-        row_indices: indices
-      });
-
-      if (response.success) {
-        showSuccess(`${response.rows_deleted} fila(s) eliminada(s)`);
-        await refreshData();
-        setRowIndicesToDelete('');
-      } else {
-        setError(response.error_message || 'Error al eliminar filas');
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
-    } finally {
-      setOperationLoading(false);
-    }
-  };
 
   // Load paginated data
   useEffect(() => {
@@ -1204,11 +1163,10 @@ const DatasetInfoViewer: React.FC = () => {
           </DialogHeader>
           
           <Tabs defaultValue="replace" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="replace">Reemplazar</TabsTrigger>
               <TabsTrigger value="filter">Filtrar</TabsTrigger>
               <TabsTrigger value="columns">Columnas</TabsTrigger>
-              <TabsTrigger value="delete">Eliminar</TabsTrigger>
             </TabsList>
 
             {/* Tab 1: Replace Values */}
@@ -1481,40 +1439,6 @@ const DatasetInfoViewer: React.FC = () => {
               </div>
             </TabsContent>
 
-            {/* Tab 4: Delete Rows */}
-            <TabsContent value="delete" className="space-y-4">
-              <div className="space-y-4">
-                <div>
-                  <Label>Índices de filas a eliminar</Label>
-                  <Input
-                    value={rowIndicesToDelete}
-                    onChange={(e) => setRowIndicesToDelete(e.target.value)}
-                    placeholder="Ej: 0,5,10,15 (separados por comas, base 0)"
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Los índices son base 0 (la primera fila es 0)
-                  </p>
-                </div>
-
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Esta operación es destructiva y no se puede deshacer. Las filas serán eliminadas permanentemente.
-                  </AlertDescription>
-                </Alert>
-
-                <Button 
-                  onClick={handleDeletePoints} 
-                  disabled={operationLoading || !rowIndicesToDelete} 
-                  variant="destructive"
-                  className="w-full"
-                >
-                  {operationLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                  Eliminar Filas
-                </Button>
-              </div>
-            </TabsContent>
           </Tabs>
         </DialogContent>
       </Dialog>
