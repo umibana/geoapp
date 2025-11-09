@@ -7,36 +7,49 @@ import sys
 import time
 from pathlib import Path
 from concurrent import futures
-
-# Añadir el directorio actual al path de Python para encontrar archivos generados
-script_dir = Path(__file__).parent.absolute()
-sys.path.insert(0, str(script_dir))
-sys.path.insert(0, str(script_dir / 'generated'))
-
 import grpc
 
 from grpc_reflection.v1alpha import reflection
 
-# Importar los archivos protobuf generados
-import geospatial_pb2
-import files_pb2
-import projects_pb2
-import main_service_pb2_grpc
-import main_service_pb2
+script_dir = Path(__file__).parent.absolute()
+generated_dir = script_dir / 'generated'
 
-from database import DatabaseManager
-from data_generation import DataGenerator
-from project_manager import ProjectManager
+# Add backend/ to path (for modules.* imports)
+if str(script_dir) not in sys.path:
+    sys.path.insert(0, str(script_dir))
 
+# Add backend/generated/ to path (for protobuf imports)
+if str(generated_dir) not in sys.path:
+    sys.path.insert(0, str(generated_dir))
+
+# Importamos los archivos protobuf generados
+import geospatial_pb2  # pyright: ignore[reportMissingImports]
+import files_pb2  # pyright: ignore[reportMissingImports]
+import projects_pb2  # pyright: ignore[reportMissingImports]
+import main_service_pb2_grpc  # pyright: ignore[reportMissingImports]
+import main_service_pb2  # pyright: ignore[reportMissingImports]
+
+from modules.others import db_connection, models
+from modules.others.data_generation import DataGenerator
+from modules.project_explorer.project_manager import ProjectManager
+from modules.data_manipulation.data_operations import DataManipulationManager
+from modules.exploratory_data_analysis.eda_manager import EDAManager
 
 class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
 
     # Importamos las clases necesarias (Distintos modulos del backend)
     def __init__(self):
         self.version = "1.0.0"
-        self.db = DatabaseManager()
+        
+        # Initialize shared database engine
+        engine = db_connection.get_db_engine()
+        db_connection.initialize_database(engine)
+        
+        # Initialize managers with shared engine
         self.data_generator = DataGenerator()
-        self.project_manager = ProjectManager(self.db)
+        self.eda_manager = EDAManager(engine)
+        self.data_manipulation = DataManipulationManager(engine, self.eda_manager)
+        self.project_manager = ProjectManager(engine, self.eda_manager)
     
     """
     -------- Definición de métodos para probar conexión de gRPC -------- 
@@ -190,35 +203,35 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
         return self.project_manager.rename_file_column(request)
 
     def GetFileStatistics(self, request, context):
-        return self.project_manager.get_file_statistics(request)
+        return self.eda_manager.get_file_statistics(request)
 
     # ---------- Manipulación de datos de archivos ----------
 
     def ReplaceFileData(self, request, context):
-        return self.project_manager.replace_file_data(request)
+        return self.data_manipulation.replace_file_data(request)
 
     def SearchFileData(self, request, context):
-        return self.project_manager.search_file_data(request)
+        return self.data_manipulation.search_file_data(request)
 
     def FilterFileData(self, request, context):
-        return self.project_manager.filter_file_data(request)
+        return self.data_manipulation.filter_file_data(request)
 
     def DeleteFilePoints(self, request, context):
-        return self.project_manager.delete_file_points(request)
+        return self.data_manipulation.delete_file_points(request)
 
     def AddFilteredColumn(self, request, context):
-        return self.project_manager.add_filtered_column(request)
+        return self.data_manipulation.add_filtered_column(request)
 
     # ---------- Operaciones avanzadas de columnas ----------
 
     def AddFileColumns(self, request, context):
-        return self.project_manager.add_file_columns(request)
+        return self.data_manipulation.add_file_columns(request)
 
     def DuplicateFileColumns(self, request, context):
-        return self.project_manager.duplicate_file_columns(request)
+        return self.data_manipulation.duplicate_file_columns(request)
 
     def DeleteFileColumns(self, request, context):
-        return self.project_manager.delete_file_columns(request)
+        return self.data_manipulation.delete_file_columns(request)
 
     # ---------- Manejo de datasets ----------
 
@@ -229,16 +242,16 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
         return self.project_manager.process_dataset(request)
     
     def GetDatasetData(self, request, context):
-        return self.project_manager.get_dataset_data(request)
+        return self.eda_manager.get_dataset_data(request)
     
     def GetDatasetTableData(self, request, context):
-        return self.project_manager.get_dataset_table_data(request)
+        return self.eda_manager.get_dataset_table_data(request)
     
     def DeleteDataset(self, request, context):
         return self.project_manager.delete_dataset(request)
 
     def MergeDatasets(self, request, context):
-        return self.project_manager.merge_datasets(request)
+        return self.data_manipulation.merge_datasets(request)
 
 
 # Servidor gRPC

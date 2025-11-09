@@ -100,22 +100,35 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
         // Initialize column mappings with backend-suggested types (read-only)
         const initialMappings: ColumnMapping[] = response.headers.map((header, index) => {
           let suggestedType = response.suggested_types[index];
-          
+
           // Convert string enum to numeric value if needed
+          // Handle both string names (from protobuf serialization) and numeric values
           if (typeof suggestedType === 'string') {
-            if (suggestedType === 'COLUMN_TYPE_NUMERIC') {
-              suggestedType = ColumnType.NUMERIC;
-            } else if (suggestedType === 'COLUMN_TYPE_CATEGORICAL') {
-              suggestedType = ColumnType.CATEGORICAL;
-            } else if (suggestedType === 'COLUMN_TYPE_UNUSED') {
-              suggestedType = ColumnType.UNUSED;
+            const typeStr = suggestedType.toUpperCase();
+            if (typeStr === 'COLUMN_TYPE_NUMERIC' || typeStr === 'NUMERIC') {
+              suggestedType = ColumnType.COLUMN_TYPE_NUMERIC; // 1
+            } else if (typeStr === 'COLUMN_TYPE_CATEGORICAL' || typeStr === 'CATEGORICAL') {
+              suggestedType = ColumnType.COLUMN_TYPE_CATEGORICAL; // 2
+            } else if (typeStr === 'COLUMN_TYPE_UNUSED' || typeStr === 'UNUSED') {
+              suggestedType = ColumnType.COLUMN_TYPE_UNUSED; // 3
+            } else {
+              // Default to NUMERIC if unknown string
+              suggestedType = ColumnType.COLUMN_TYPE_NUMERIC; // 1
             }
+          } else if (typeof suggestedType === 'number') {
+            // Already a number, use as-is (but validate)
+            if (suggestedType < 1 || suggestedType > 3) {
+              suggestedType = ColumnType.COLUMN_TYPE_NUMERIC; // Default to 1
+            }
+          } else {
+            // Unknown type, default to NUMERIC
+            suggestedType = ColumnType.COLUMN_TYPE_NUMERIC; // 1
           }
-          
-          console.log(`  Column ${index} '${header}': suggested_type=${response.suggested_types[index]}, converted=${suggestedType}, using=${suggestedType || ColumnType.NUMERIC}`);
+
+          console.log(`  Column ${index} '${header}': suggested_type=${response.suggested_types[index]}, converted=${suggestedType}, using=${suggestedType}`);
           return {
             column_name: header,
-            column_type: suggestedType || ColumnType.NUMERIC,
+            column_type: suggestedType,
             mapped_field: '',
             is_coordinate: false
           };
@@ -248,6 +261,9 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
 
       // Ensure coordinate mappings are up to date before processing
       updateCoordinateMappings(eastColumn, northColumn, elevationColumn);
+
+      console.log('🚀 [ProcessDataset] Sending column_mappings:', columnMappings);
+      console.log('🚀 [ProcessDataset] Sample mapping:', columnMappings[0]);
 
       const response = await window.autoGrpc.processDataset({
         file_id: fileId,

@@ -213,13 +213,16 @@ const DatasetInfoViewer: React.FC = () => {
 
       const offset = pagination.pageIndex * pagination.pageSize;
 
+      console.log('📊 [DatasetInfoViewer] Requesting table data for dataset:', selectedDataset.id);
+      console.log('📊 [DatasetInfoViewer] Dataset column_mappings:', selectedDataset.column_mappings);
+
       const response = await window.autoGrpc.getDatasetTableData({
         dataset_id: selectedDataset.id,
         limit: pagination.pageSize,
         offset: offset,
         columns: []
       });
-      console.log(response);
+      console.log('📊 [DatasetInfoViewer] Response:', response);
 
       if (response.success && response.rows) {
         setPreviewColumns(response.column_names);
