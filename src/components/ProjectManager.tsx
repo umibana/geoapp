@@ -74,11 +74,11 @@ const datasetTypeLabels: Record<DatasetType, string> = {
 };
 
 const datasetTypeBadgeColors: Record<DatasetType, string> = {
-  [DatasetType.DATASET_TYPE_SAMPLE]: 'bg-blue-100 text-blue-800',
-  [DatasetType.DATASET_TYPE_DRILL_HOLES]: 'bg-green-100 text-green-800',
-  [DatasetType.DATASET_TYPE_BLOCK]: 'bg-purple-100 text-purple-800',
-  [DatasetType.DATASET_TYPE_UNSPECIFIED]: 'bg-gray-100 text-gray-800',
-  [DatasetType.UNRECOGNIZED]: 'bg-gray-100 text-gray-800'
+  [DatasetType.DATASET_TYPE_SAMPLE]: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  [DatasetType.DATASET_TYPE_DRILL_HOLES]: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  [DatasetType.DATASET_TYPE_BLOCK]: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+  [DatasetType.DATASET_TYPE_UNSPECIFIED]: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
+  [DatasetType.UNRECOGNIZED]: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
 };
 
 /**
@@ -572,7 +572,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
                       <div
                         className={`p-2 cursor-pointer transition-colors ${
                           selectedProject?.id === project.id
-                            ? 'bg-blue-50 border-b'
+                            ? 'bg-accent dark:bg-accent/50 border-b'
                             : 'hover:bg-muted/50'
                         }`}
                         onClick={() => {
@@ -713,8 +713,8 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
                                   key={dataset.id}
                                   className={`p-2.5 rounded cursor-pointer transition-colors ${
                                     selectedDataset?.id === dataset.id
-                                      ? 'bg-blue-100 border border-blue-300'
-                                      : 'bg-white hover:bg-blue-50 border border-transparent'
+                                      ? 'bg-accent dark:bg-accent/50 border border-primary/20 dark:border-primary/30'
+                                      : 'bg-card hover:bg-accent/50 dark:hover:bg-accent/30 border border-transparent'
                                   }`}
                                   onClick={() => handleDatasetClick(dataset)}
                                 >

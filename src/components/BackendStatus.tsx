@@ -79,7 +79,12 @@ function BackendStatusContent(){
   useEffect(() => {
     checkBackendStatus();
     // Check status every 30 seconds
-    const interval = setInterval(checkBackendStatus, 30000);
+    let interval: NodeJS.Timeout;
+    if (healthStatus?.healthy === true) {
+    interval = setInterval(checkBackendStatus, 30000);
+    } else {
+      interval = setInterval(checkBackendStatus, 1000);
+    }
     return () => clearInterval(interval);
   }, []);
 

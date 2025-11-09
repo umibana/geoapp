@@ -1,6 +1,5 @@
 import { createRoute } from "@tanstack/react-router";
 import { RootRoute } from "./__root";
-import HomePage from "../pages/HomePage";
 import SecondPage from "@/pages/SecondPage";
 import ProjectWorkflow from "@/components/ProjectWorkflow";
 import { ChartMosaicExample } from "@/components/mosaic";
@@ -27,7 +26,7 @@ import { ChartMosaicExample } from "@/components/mosaic";
 export const HomeRoute = createRoute({
   getParentRoute: () => RootRoute,
   path: "/",
-  component: HomePage,
+  component:ProjectWorkflow, 
 });
 
 export const SecondPageRoute = createRoute({

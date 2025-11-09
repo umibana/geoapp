@@ -1,7 +1,6 @@
 import React from "react";
 import ToggleTheme from "@/components/ToggleTheme";
 import { useTranslation } from "react-i18next";
-import LangToggle from "@/components/LangToggle";
 
 export default function HomePage() {
   const { t } = useTranslation();
@@ -15,8 +14,6 @@ export default function HomePage() {
             {t("titleHomePage")}
           </p>
         </span>
-        <LangToggle />
-        <ToggleTheme />
       </div>
     </div>
   );
