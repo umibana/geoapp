@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, Suspense } from 'react';
 import {
   Mosaic,
   MosaicWindow,
@@ -109,6 +109,18 @@ export const MosaicLayout: React.FC<MosaicLayoutProps> = ({
   );
 
   /**
+   * Default loading fallback for Suspense boundaries
+   */
+  const defaultLoadingFallback = (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      </div>
+    </div>
+  );
+
+  /**
    * Render function for each tile in the mosaic
    */
   const renderTile = useCallback(
@@ -141,7 +153,9 @@ export const MosaicLayout: React.FC<MosaicLayoutProps> = ({
           draggable={true}
         >
           <div className="mosaic-window-content">
-            <Component {...(config.props || {})} />
+            <Suspense fallback={defaultLoadingFallback}>
+              <Component {...(config.props || {})} />
+            </Suspense>
           </div>
         </MosaicWindow>
       );

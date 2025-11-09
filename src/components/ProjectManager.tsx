@@ -11,6 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Trash2, Edit, Plus, Upload, Database, MoreVertical, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
 import DatasetInfoViewer from './DatasetInfoViewer';
 import { useBrushStore } from '@/stores/brushStore';
+import { useProjectStore } from '@/stores/projectStore';
 
 // Importar tipos generados
 import { DatasetType, GetDatasetDataResponse, ColumnMapping, DataBoundaries } from '@/generated/projects';
@@ -102,6 +103,9 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
   
   // Get Zustand store actions
   const setSelectedDatasetInStore = useBrushStore((state) => state.setSelectedDataset);
+  const syncProjects = useProjectStore((state) => state.syncProjects);
+  const syncProjectDatasets = useProjectStore((state) => state.syncProjectDatasets);
+  const setSelectedProjectInStore = useProjectStore((state) => state.setSelectedProject);
 
   // Dialog states
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -135,7 +139,9 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
       setError(null);
       
       const response = await window.autoGrpc.getProjects({ limit: 100, offset: 0 });
-      setProjects(response.projects || []);
+      const projectsList = response.projects || [];
+      setProjects(projectsList);
+      syncProjects(projectsList); // Sync to project store
     } catch (err) {
       console.error('Error loading projects:', err);
       setError('Failed to load projects');
@@ -157,11 +163,13 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
   const loadProjectDatasets = async (projectId: string) => {
     try {
       const response = await window.autoGrpc.getProjectDatasets({ project_id: projectId });
+      const datasetsList = response.datasets || [];
       setProjectDatasetsMap(prev => {
         const newMap = new Map(prev);
-        newMap.set(projectId, response.datasets || []);
+        newMap.set(projectId, datasetsList);
         return newMap;
       });
+      syncProjectDatasets(projectId, datasetsList); // Sync to project store
     } catch (err) {
       console.error('Error loading project datasets:', err);
       setError('Failed to load project datasets');
@@ -349,6 +357,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
       if (response.success) {
         if (selectedProject?.id === projectId) {
           setSelectedProject(null);
+          setSelectedProjectInStore(null); // Sync to project store
           setProjectFiles([]);
         }
         await loadProjects();
@@ -577,6 +586,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
                         }`}
                         onClick={() => {
                           setSelectedProject(project);
+                          setSelectedProjectInStore(project); // Sync to project store
                           toggleProjectExpansion(project.id);
                         }}
                       >
@@ -613,6 +623,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setSelectedProject(project);
+                                    setSelectedProjectInStore(project); // Sync to project store
                                     setIsUploadDialogOpen(true);
                                   }}
                                 >
