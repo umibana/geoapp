@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package geospatial;
+
+import "geospatial.proto";
+import "files.proto";
+import "projects.proto";
+
+// Servicio que combina todos los servicios de los diferentes .protos
+// Para pruebas de comunicación entre frontend y backend
+
+service GeospatialService {
+  // Servicios de prueba
+  rpc HelloWorld(HelloWorldRequest) returns (HelloWorldResponse);
+  rpc EchoParameter(EchoParameterRequest) returns (EchoParameterResponse);
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  
+  // Formato columnar para datos grandes
+  rpc GetColumnarData(getColumnarDataRequest) returns (GetColumnarDataResponse);
+  
+  // Procesamiento de archivos CSV
+  rpc SendFile(SendFileRequest) returns (SendFileResponse);
+  
+  // Gestión de proyectos
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+  rpc GetProjects(GetProjectsRequest) returns (GetProjectsResponse);
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse);
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
+  
+  // Gestión de archivos
+  rpc CreateFile(CreateFileRequest) returns (CreateFileResponse);
+  rpc GetProjectFiles(GetProjectFilesRequest) returns (GetProjectFilesResponse);
+  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
+  rpc UpdateFile(UpdateFileRequest) returns (UpdateFileResponse);
+  rpc RenameFileColumn(RenameFileColumnRequest) returns (RenameFileColumnResponse);
+  rpc GetFileStatistics(GetFileStatisticsRequest) returns (GetFileStatisticsResponse);
+
+  // Manipulación de datos de archivos
+  rpc ReplaceFileData(ReplaceFileDataRequest) returns (ReplaceFileDataResponse);
+  rpc SearchFileData(SearchFileDataRequest) returns (SearchFileDataResponse);
+  rpc FilterFileData(FilterFileDataRequest) returns (FilterFileDataResponse);
+  rpc AddFilteredColumn(AddFilteredColumnRequest) returns (AddFilteredColumnResponse);
+  rpc DeleteFilePoints(DeleteFilePointsRequest) returns (DeleteFilePointsResponse);
+
+  // Operaciones avanzadas de columnas
+  rpc AddFileColumns(AddFileColumnsRequest) returns (AddFileColumnsResponse);
+  rpc DuplicateFileColumns(DuplicateFileColumnsRequest) returns (DuplicateFileColumnsResponse);
+  rpc DeleteFileColumns(DeleteFileColumnsRequest) returns (DeleteFileColumnsResponse);
+
+  // Gestión de datasets
+  rpc GetProjectDatasets(GetProjectDatasetsRequest) returns (GetProjectDatasetsResponse);
+  rpc DeleteDataset(DeleteDatasetRequest) returns (DeleteDatasetResponse);
+  rpc MergeDatasets(MergeDatasetsRequest) returns (MergeDatasetsResponse);
+
+  // Procesamiento de archivos CSV para proyectos
+  rpc AnalyzeCsvForProject(AnalyzeCsvForProjectRequest) returns (AnalyzeCsvForProjectResponse);
+  rpc ProcessDataset(ProcessDatasetRequest) returns (ProcessDatasetResponse);
+  rpc GetDatasetData(GetDatasetDataRequest) returns (GetDatasetDataResponse);
+  rpc GetDatasetTableData(GetDatasetTableDataRequest) returns (GetDatasetTableDataResponse);
+}
