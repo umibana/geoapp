@@ -136,7 +136,7 @@
     "react-mosaic-component": "^6.1.1",
     "react-rnd": "^10.5.2",
     "sonner": "^2.0.7",
-    "tailwind-merge": "^3.3.1",
+    "tailwind-merge": "^3.4.0",
     "tailwindcss-animate": "^1.0.7",
     "three": "^0.181.1",
     "ts-proto": "^2.7.7",
