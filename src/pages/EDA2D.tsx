@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import { MosaicLayout } from './MosaicLayout';
-import { useMosaicManager, ChartTypeDefinition } from './useMosaicManager';
+import { MosaicLayout } from '@/components/mosaic/MosaicLayout';
+import { useMosaicManager, ChartTypeDefinition } from '@/components/mosaic/useMosaicManager';
 import BrushedBarChart from '@/components/chart-components/BrushedBarChart';
 import BrushedHeatmap from '@/components/chart-components/BrushedHeatmap';
 import BrushedBoxPlot from '@/components/chart-components/BrushedBoxPlot';
@@ -8,7 +8,7 @@ import DatasetViewer from '@/components/chart-components/DatasetViewer';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { BarChart3, LineChart, Grid3x3, Box, Database, Plus, RefreshCw, Settings2, X } from 'lucide-react';
+import { BarChart3,  Grid3x3, Box, Database, Plus, RefreshCw, Settings2, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { useBrushStore } from '@/stores/brushStore';
@@ -56,7 +56,7 @@ const CHART_TYPES = {
  * This component now uses the useMosaicManager hook which abstracts away all the
  * complexity of UUID generation, state management, and instance tracking.
  */
-const ChartMosaicExample: React.FC = () => {
+export default function EDA2D() {
   // We use the mosaic hook to handle re-open of closed panes
   const {
     components,
@@ -346,4 +346,3 @@ const ChartMosaicExample: React.FC = () => {
   );
 };
 
-export default ChartMosaicExample;
