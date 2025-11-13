@@ -101,10 +101,12 @@ out/
 /playwright/.cache/
 
 #Python
+venv/
 backend/build/
 backend/dist/
 backend/generated/
 backend/__pycache__/
+*.spec
 
 src/generated/
 src/grpc-auto/
