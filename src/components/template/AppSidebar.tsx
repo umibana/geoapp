@@ -38,7 +38,7 @@ const navigationItems = [
   },
   {
     title: "3D EDA (WIP)",
-    url: "/dataset-info-viewer",
+    url: "/3d-eda",
     icon: Database,
   },
   {

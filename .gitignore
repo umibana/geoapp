@@ -118,4 +118,4 @@ grpc_error.txt
 bun.lockb
 Kreya/*
 **/__pycache__/
-
+**/geo-viz/

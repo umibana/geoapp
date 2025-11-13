@@ -2,10 +2,9 @@ import React, { useMemo } from 'react';
 import { MosaicLayout } from './MosaicLayout';
 import { useMosaicManager, ChartTypeDefinition } from './useMosaicManager';
 import BrushedBarChart from '@/components/chart-components/BrushedBarChart';
-import BrushedLineChart from '@/components/chart-components/BrushedLineChart';
 import BrushedHeatmap from '@/components/chart-components/BrushedHeatmap';
 import BrushedBoxPlot from '@/components/chart-components/BrushedBoxPlot';
-import DatasetViewer from '@/components/DatasetViewer';
+import DatasetViewer from '@/components/chart-components/DatasetViewer';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
@@ -25,12 +24,12 @@ const CHART_TYPES = {
     component: BrushedBarChart,
     icon: <BarChart3 className="h-4 w-4" />,
   },
-  'line-chart': {
-    type: 'line-chart',
-    title: 'Linea',
-    component: BrushedLineChart,
-    icon: <LineChart className="h-4 w-4" />,
-  },
+  // 'line-chart': {
+  //   type: 'line-chart',
+  //   title: 'Linea',
+  //   component: BrushedLineChart,
+  //   icon: <LineChart className="h-4 w-4" />,
+  // },
   'heatmap': {
     type: 'heatmap',
     title: 'Mapa de Calor',

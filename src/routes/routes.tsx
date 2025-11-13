@@ -3,6 +3,7 @@ import { RootRoute } from "./__root";
 import SecondPage from "@/pages/SecondPage";
 import ProjectWorkflow from "@/components/ProjectWorkflow";
 import { ChartMosaicExample } from "@/components/mosaic";
+import { GeoVizViewer } from "@/components/geo-viz/GeovizView";
 
 // TODO: Steps to add a new route:
 // 1. Create a new page component in the '../pages/' directory (e.g., NewPage.tsx)
@@ -47,4 +48,9 @@ export const ChartMosaicExampleRoute = createRoute({
   component: ChartMosaicExample,
 });
 
-export const rootTree = RootRoute.addChildren([HomeRoute, SecondPageRoute, ProjectsRoute, ChartMosaicExampleRoute]);
+export const EDA3DRoute = createRoute({
+  getParentRoute: () => RootRoute,
+  path: "/3d-eda",
+  component: GeoVizViewer,
+});
+export const rootTree = RootRoute.addChildren([HomeRoute, SecondPageRoute, ProjectsRoute, ChartMosaicExampleRoute, EDA3DRoute]);

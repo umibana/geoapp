@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Activity, Brush, Database, X } from 'lucide-react';
+import { ArrowLeft, Activity, Brush, Database, X, Camera, TrendingUp, Split, Type } from 'lucide-react';
 import { GetDatasetDataResponse, DatasetInfo, DataBoundaries } from '@/generated/projects';
 import { useBrushStore, BrushSelection } from '@/stores/brushStore';
 
@@ -84,6 +84,9 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
   const [brushAppliedTimestamp, setBrushAppliedTimestamp] = useState(0); // Track when brush is applied to trigger re-render
   const [isApplyingSelection, setIsApplyingSelection] = useState(false); // Separate state for backend filtering
   const [isBrushMode, setIsBrushMode] = useState(false); // Track if brush mode is active
+  const [showRegressionLine, setShowRegressionLine] = useState(false); // Toggle for OLS regression line
+  const [showRMALine, setShowRMALine] = useState(false); // Toggle for RMA regression line
+  const [showEquations, setShowEquations] = useState(false); // Toggle for showing equations
   const chartRef = useRef<ReactECharts>(null);
 
   // Flag to prevent infinite loop when applying brush programmatically
@@ -129,6 +132,66 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       selection: selection
     };
   }, [datasetInfo, selectedXAxis, selectedYAxis, selectedValueColumn]);
+
+  // Calculate OLS linear regression (ordinary least squares method)
+  const calculateLinearRegression = useCallback((data: Float32Array) => {
+    if (!data || data.length === 0) return null;
+
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    const n = data.length / 3; // data is [x, y, value] triplets
+
+    for (let i = 0; i < n; i++) {
+      const x = data[i * 3] as number;     // X coordinate
+      const y = data[i * 3 + 1] as number; // Y coordinate
+      sumX += x;
+      sumY += y;
+      sumXY += x * y;
+      sumX2 += x * x;
+    }
+
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+
+    return { slope, intercept, type: 'OLS' as const };
+  }, []);
+
+  // Calculate RMA regression (Reduced Major Axis)
+  const calculateRMARegression = useCallback((data: Float32Array) => {
+    if (!data || data.length === 0) return null;
+
+    let sumX = 0, sumY = 0, sumX2 = 0, sumY2 = 0, sumXY = 0;
+    const n = data.length / 3; // data is [x, y, value] triplets
+
+    // Calculate sums
+    for (let i = 0; i < n; i++) {
+      const x = data[i * 3] as number;
+      const y = data[i * 3 + 1] as number;
+      sumX += x;
+      sumY += y;
+      sumX2 += x * x;
+      sumY2 += y * y;
+      sumXY += x * y;
+    }
+
+    const meanX = sumX / n;
+    const meanY = sumY / n;
+
+    // Calculate standard deviations
+    const varX = (sumX2 / n) - (meanX * meanX);
+    const varY = (sumY2 / n) - (meanY * meanY);
+    const stdX = Math.sqrt(varX);
+    const stdY = Math.sqrt(varY);
+
+    // Calculate correlation coefficient
+    const covarXY = (sumXY / n) - (meanX * meanY);
+    const r = covarXY / (stdX * stdY);
+
+    // RMA slope: sign(r) * (stdY / stdX)
+    const slope = Math.sign(r) * (stdY / stdX);
+    const intercept = meanY - slope * meanX;
+
+    return { slope, intercept, type: 'RMA' as const };
+  }, []);
 
   // Update brush info ref on mount and when columns change
   useEffect(() => {
@@ -234,6 +297,52 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
     return fullData;
   }, [fullData, selectedXAxis, selectedYAxis, selectedValueColumn, brushAppliedTimestamp]); // Re-compute when brush is applied
+
+  // Calculate OLS regression results
+  const olsRegression = useMemo(() => {
+    if (!chartData) return null;
+    return calculateLinearRegression(chartData);
+  }, [chartData, calculateLinearRegression]);
+
+  // Calculate RMA regression results
+  const rmaRegression = useMemo(() => {
+    if (!chartData) return null;
+    return calculateRMARegression(chartData);
+  }, [chartData, calculateRMARegression]);
+
+  // Calculate OLS regression line data points
+  const regressionLineData = useMemo(() => {
+    if (!showRegressionLine || !olsRegression) return null;
+
+    // Get X axis boundaries to draw line across the full range
+    const xBoundary = dataset?.data_boundaries?.find(b => b.column_name === selectedXAxis);
+    if (!xBoundary) return null;
+
+    const { slope, intercept } = olsRegression;
+    const x1 = xBoundary.min_value;
+    const x2 = xBoundary.max_value;
+    const y1 = slope * x1 + intercept;
+    const y2 = slope * x2 + intercept;
+
+    return [[x1, y1], [x2, y2]];
+  }, [showRegressionLine, olsRegression, dataset, selectedXAxis]);
+
+  // Calculate RMA regression line data points
+  const rmaLineData = useMemo(() => {
+    if (!showRMALine || !rmaRegression) return null;
+
+    // Get X axis boundaries to draw line across the full range
+    const xBoundary = dataset?.data_boundaries?.find(b => b.column_name === selectedXAxis);
+    if (!xBoundary) return null;
+
+    const { slope, intercept } = rmaRegression;
+    const x1 = xBoundary.min_value;
+    const x2 = xBoundary.max_value;
+    const y1 = slope * x1 + intercept;
+    const y2 = slope * x2 + intercept;
+
+    return [[x1, y1], [x2, y2]];
+  }, [showRMALine, rmaRegression, dataset, selectedXAxis]);
 
   // Update global columns in store when local columns change (only in mosaic mode)
   useEffect(() => {
@@ -494,12 +603,15 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       }) as GetDatasetDataResponse;
 
       if (response.binary_data && response.data_length > 0) {
-        // Convert binary data to Float32Array
-        const filteredData = new Float32Array(
-          response.binary_data.buffer,
-          response.binary_data.byteOffset,
-          response.data_length
-        );
+
+        // Consigo la data filtrada como Float32Array
+        const filteredData = response.binary_data_f32;
+        
+        // Ensure filteredData exists
+        if (!filteredData) {
+          console.error('❌ Error: No filtered data returned from backend');
+          return;
+        }
 
         // Convert data_boundaries array to Record<string, DataBoundaries>
         const boundariesMap: Record<string, DataBoundaries> = {};
@@ -567,7 +679,59 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     }
   };
 
-  // Generate chart options - memoized for performance
+  // Save chart as image using ECharts built-in method
+  const handleSaveAsImage = () => {
+    if (!chartRef.current) return;
+    
+    try {
+      const chartInstance = chartRef.current.getEchartsInstance();
+      
+      // Get current theme from document
+      const isDarkMode = document.documentElement.classList.contains('dark');
+     
+      const backgroundColor = isDarkMode ? 'hsl(222.2, 84%, 4.9%)' : 'hsl(0, 0%, 100%)';
+      
+      // Get image data URL with high pixel ratio for better quality
+      const imageDataURL = chartInstance.getDataURL({
+        type: 'png',
+        pixelRatio:2,
+        backgroundColor: backgroundColor
+      });
+      
+      // Create download link
+      const link = document.createElement('a');
+      const fileName = `${datasetInfo?.file_name || 'chart'}_${selectedXAxis}_${selectedYAxis}_${selectedValueColumn}.png`;
+      link.href = imageDataURL;
+      link.download = fileName;
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      console.log('✅ Chart saved as image:', fileName);
+    } catch (error) {
+      console.error('❌ Error saving chart as image:', error);
+      setError('Error al guardar la imagen');
+    }
+  };
+
+  // Toggle OLS regression line visibility
+  const toggleRegressionLine = () => {
+    setShowRegressionLine(prev => !prev);
+  };
+
+  // Toggle RMA regression line visibility
+  const toggleRMALine = () => {
+    setShowRMALine(prev => !prev);
+  };
+
+  // Toggle equations visibility
+  const toggleEquations = () => {
+    setShowEquations(prev => !prev);
+  };
+
+  // Opciones de chart de echarts.
   const chartOptions = useMemo(() => {
     if (!chartData || chartData.length === 0 || !datasetInfo) return null;
 
@@ -642,20 +806,21 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         {
           type: 'inside',
           xAxisIndex: 0,
-          filterMode: 'empty',
+          filterMode: 'none',  // Changed to 'none' so regression line stays visible
           throttle: 30,
         },
         {
           type: 'inside',
           yAxisIndex: 0,
-          filterMode: 'empty',
+          filterMode: 'none',  // Changed to 'none' so regression line stays visible
           throttle: 30,
         }
       ],
       // Toolbox disabled - using custom controls instead
       toolbox: {
-        show: false
+        show: false,
       },
+      // Opciones de brush de echarts.
       brush: {
         toolbox: ['rect', 'clear'],
         xAxisIndex: 0,
@@ -680,39 +845,103 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         transformable: true,
         removeOnClick: false
       },
-      series: [{
-        name: `${selectedValueColumn} values`,
-        type: 'scatter',
-        data: chartData,
-        animation: false,
-        selectedMode: false,      // CRITICAL: Disable selection interaction in large mode
-        select: {                 // Disable visual selection changes
-          disabled: true
-        },
-        itemStyle: {
-          opacity: 0.8,
-          borderWidth: 0,
-          animation: false
-        },
-        emphasis: {
-          disabled: true,         // Disable hover/emphasis in large mode (performance)
+      series: [
+        {
+          name: `${selectedValueColumn} values`,
+          type: 'scatter',
+          data: chartData,
           animation: false,
+          selectedMode: false,
+          select: {
+            disabled: true
+          },
           itemStyle: {
+            opacity: 0.8,
+            borderWidth: 0,
+            animation: false
+          },
+          emphasis: {
+            disabled: true,
             animation: false,
-            borderColor: '#000',
-            borderWidth: 1,
-            opacity: 1.0
-          }
+            itemStyle: {
+              animation: false,
+              borderColor: '#000',
+              borderWidth: 1,
+              opacity: 1.0
+            }
+          },
+          large: true,
+          largeThreshold: 20000,
+          progressive: 20000,
+          progressiveThreshold: 20000,
+          symbolSize: 4,
+          dimensions: [selectedXAxis, selectedYAxis, selectedValueColumn],
         },
-        large: true,
-        largeThreshold: 20000,
-        progressive: 20000,
-        progressiveThreshold: 20000,
-        symbolSize: 4,
-        dimensions: [selectedXAxis, selectedYAxis, selectedValueColumn],
-      }]
+        // Add OLS regression line series conditionally
+        ...(showRegressionLine && regressionLineData ? [{
+          name: 'OLS Regression',
+          type: 'line',
+          data: regressionLineData,
+          animation: false,
+          symbol: 'none',
+          lineStyle: {
+            color: '#ef4444',
+            width: 3,
+            type: 'solid'
+          },
+          tooltip: {
+            show: false
+          },
+          z: 100 // Ensure line is drawn on top
+        }] : []),
+        // Add RMA regression line series conditionally
+        ...(showRMALine && rmaLineData ? [{
+          name: 'RMA Regression',
+          type: 'line',
+          data: rmaLineData,
+          animation: false,
+          symbol: 'none',
+          lineStyle: {
+            color: '#8b5cf6',
+            width: 3,
+            type: 'dashed'
+          },
+          tooltip: {
+            show: false
+          },
+          z: 100 // Ensure line is drawn on top
+        }] : [])
+      ],
+      // Add regression equations as graphic elements
+      graphic: showEquations ? [
+        // Build equations text
+        ...(olsRegression ? [{
+          type: 'text',
+          left: 20,
+          top: 50,
+          style: {
+            text: `OLS: y = ${olsRegression.slope.toFixed(4)}x + ${olsRegression.intercept.toFixed(4)}`,
+            fontSize: 14,
+            fontWeight: 'bold',
+            fill: '#ef4444',
+          },
+          z: 1000
+        }] : []),
+        ...(rmaRegression && showRMALine ? [{
+          type: 'text',
+          left: 20,
+          top: 70,
+          style: {
+            text: `RMA: y = ${rmaRegression.slope.toFixed(4)}x + ${rmaRegression.intercept.toFixed(4)}`,
+            fontSize: 14,
+            fontWeight: 'bold',
+            fill: '#8b5cf6',
+          },
+          z: 1000
+        }] : [])
+      ] : []
     };
-  }, [chartData, selectedXAxis, selectedYAxis, selectedValueColumn, dataset, datasetInfo]);
+  }, [chartData, selectedXAxis, selectedYAxis, selectedValueColumn, dataset, datasetInfo, showRegressionLine, regressionLineData, showRMALine, rmaLineData, showEquations, olsRegression, rmaRegression]);
 
   // Memoized chart component that only re-renders when chart props actually change
   const MemoizedChart = useMemo(() => {
@@ -897,6 +1126,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
             {/* Chart Controls */}
             <div className="absolute top-2 right-2 z-10 flex flex-col gap-2">
+              {/* Brush Mode Toggle */}
               <Button
                 variant={isBrushMode ? "default" : "outline"}
                 size="sm"
@@ -905,6 +1135,50 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
                 className="shadow-lg h-8"
               >
                 {isBrushMode ? <Brush className="h-3 w-3" /> : <Activity className="h-3 w-3" />}
+              </Button>
+
+              {/* Save as Image Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSaveAsImage}
+                title="Guardar como imagen"
+                className="shadow-lg h-8"
+              >
+                <Camera className="h-3 w-3" />
+              </Button>
+
+              {/* OLS Regression Line Toggle */}
+              <Button
+                variant={showRegressionLine ? "default" : "outline"}
+                size="sm"
+                onClick={toggleRegressionLine}
+                title={showRegressionLine ? "Ocultar regresión OLS" : "Mostrar regresión OLS"}
+                className="shadow-lg h-8"
+              >
+                <TrendingUp className="h-3 w-3" />
+              </Button>
+
+              {/* RMA Regression Line Toggle */}
+              <Button
+                variant={showRMALine ? "default" : "outline"}
+                size="sm"
+                onClick={toggleRMALine}
+                title={showRMALine ? "Ocultar regresión RMA" : "Mostrar regresión RMA"}
+                className="shadow-lg h-8"
+              >
+                <Split className="h-3 w-3" />
+              </Button>
+
+              {/* Show Equations Toggle */}
+              <Button
+                variant={showEquations ? "default" : "outline"}
+                size="sm"
+                onClick={toggleEquations}
+                title={showEquations ? "Ocultar ecuaciones" : "Mostrar ecuaciones"}
+                className="shadow-lg h-8"
+              >
+                <Type className="h-3 w-3" />
               </Button>
 
               {currentBrushRectRef.current && (

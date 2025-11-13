@@ -67,6 +67,7 @@
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
     "@types/react-rnd": "^8.0.0",
+    "@types/three": "^0.181.0",
     "@types/uuid": "^10.0.0",
     "concurrently": "^8.2.2",
     "electron": "^38.2.0",
@@ -135,6 +136,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
+    "three": "^0.181.1",
     "ts-proto": "^2.7.7",
     "zod": "^3.24.3",
     "zustand": "^5.0.8"
