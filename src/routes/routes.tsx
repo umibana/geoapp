@@ -2,7 +2,7 @@ import { createRoute } from "@tanstack/react-router";
 import { RootRoute } from "./__root";
 import { GeoVizViewer } from "@/components/geo-viz/GeovizView";
 import Procesamiento from "@/pages/Procesamiento";
-import Projectos from "@/pages/Projectos";
+import Proyectos from "@/pages/Proyectos";
 import EDA2D from "@/pages/EDA2D";
 
 // TODO: Steps to add a new route:
@@ -25,10 +25,10 @@ import EDA2D from "@/pages/EDA2D";
 // 5. Add Link: <Link to="/new">New Page</Link>
 
 
-export const ProjectsRoute = createRoute({
+export const ProyectosRoute = createRoute({
   getParentRoute: () => RootRoute,
   path: "/",
-  component: Projectos,
+  component: Proyectos,
 });
 
 export const EDA2DRoute= createRoute({
@@ -49,4 +49,4 @@ export const ProcesamientoRoute = createRoute({
   component: Procesamiento,
 });
 
-export const rootTree = RootRoute.addChildren([ ProjectsRoute, EDA2DRoute, EDA3DRoute, ProcesamientoRoute]);
+export const rootTree = RootRoute.addChildren([ ProyectosRoute, EDA2DRoute, EDA3DRoute, ProcesamientoRoute]);

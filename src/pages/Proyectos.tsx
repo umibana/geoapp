@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import ProjectManager from '@/components/ProjectManager';
-import EnhancedCsvProcessor from '@/components/EnhancedCsvProcessor';
+import ProjectManager from '@/components/proyectos/ProjectManager';
+import EnhancedCsvProcessor from '@/components/proyectos/EnhancedCsvProcessor';
 
 /**
  * Estado del flujo de trabajo de proyectos
@@ -17,7 +17,7 @@ interface ProjectWorkflowState {
  * Orquesta la navegación entre la gestión de proyectos y el procesamiento de archivos CSV
  * Maneja el flujo: Proyectos → Carga de archivo → Configuración → Procesamiento → Vuelta a proyectos
  */
-export default function Projectos() {
+export default function Proyectos() {
   const [workflowState, setWorkflowState] = useState<ProjectWorkflowState>({
     view: 'projects'
   });
