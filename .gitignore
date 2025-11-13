@@ -119,3 +119,4 @@ bun.lockb
 Kreya/*
 **/__pycache__/
 **/geo-viz/
+node_modules
