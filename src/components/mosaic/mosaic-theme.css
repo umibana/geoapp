@@ -1,10 +1,10 @@
 /* Custom Mosaic Theme - Integrated with Tailwind/shadcn styling */
+/* IMPORTANT: Only override visual styles, NOT layout/positioning rules */
 
 /* Container */
 .mosaic-layout-container {
   width: 100%;
   height: 100%;
-  position: relative;
   background: hsl(var(--background));
 }
 
@@ -13,23 +13,18 @@
   height: 100%;
 }
 
-/* Mosaic Root */
+/* Mosaic Root - only override background */
 .mosaic-custom-theme .mosaic {
   background: hsl(var(--background));
 }
 
 
-/* Window Container */
+/* Window Container - only style appearance, don't change layout */
 .mosaic-custom-theme .mosaic-window {
-  display: flex;
-  flex-direction: column;
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: 0.5rem;
-  overflow: hidden;
   box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-  position: relative;
-  z-index: 10; /* Ensure windows appear above split dividers */
 }
 
 /* Window Toolbar */
@@ -110,64 +105,16 @@
   border-color: hsl(var(--primary) / 0.6);
 }
 
-/* Split Lines (Resizable Dividers) */
+/* Split Lines (Resizable Dividers) - keep minimal to not break functionality */
 .mosaic-custom-theme .mosaic-split {
-  background: transparent; /* Make background transparent by default */
-  position: relative;
-  z-index: 1; /* Lower z-index so windows appear above */
-  transition: background 0.15s ease;
-  pointer-events: auto;
-}
-
-/* Only show visual feedback when hovering directly over the split area */
-.mosaic-custom-theme .mosaic-split:hover {
-  background: hsl(var(--primary) / 0.5);
-}
-
-.mosaic-custom-theme .mosaic-split.-row {
-  width: 3px;
-  cursor: col-resize;
-  margin: 0 3px;
-  max-width: 9px;
-}
-
-.mosaic-custom-theme .mosaic-split.-column {
-  height: 3px;
-  cursor: row-resize;
-  margin: 3px 0;
-  max-height: 9px;
-}
-
-/* Add a subtle visible line only in the center of the split */
-.mosaic-custom-theme .mosaic-split::after {
-  content: '';
-  position: absolute;
   background: hsl(var(--border));
-  transition: background 0.15s ease;
+  transition: background 0.2s ease;
 }
 
-.mosaic-custom-theme .mosaic-split.-row::after {
-  width: 1px;
-  height: 100%;
-  left: 50%;
-  transform: translateX(-50%);
+.mosaic-custom-theme .mosaic-split:hover {
+  background: hsl(var(--primary) / 0.4);
 }
 
-.mosaic-custom-theme .mosaic-split.-column::after {
-  height: 1px;
-  width: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.mosaic-custom-theme .mosaic-split:hover::after {
-  background: hsl(var(--primary));
-}
-
-/* Split Hover State - remove the ::before pseudo-element that extends beyond bounds */
-.mosaic-custom-theme .mosaic-split:hover::before {
-  display: none; /* Disable the extending hover effect */
-}
 
 /* Zero State (Empty) */
 .mosaic-empty-state {
@@ -183,16 +130,6 @@
 /* Dragging States */
 .mosaic-custom-theme .mosaic-window.mosaic-dragging {
   opacity: 0.5;
-}
-
-.mosaic-custom-theme .mosaic-tile {
-  background: transparent;
-  pointer-events: none; /* Disable pointer events on tile container */
-}
-
-/* Re-enable pointer events for actual content */
-.mosaic-custom-theme .mosaic-tile > * {
-  pointer-events: auto;
 }
 
 /* Additional Controls Drawer (if used) */
