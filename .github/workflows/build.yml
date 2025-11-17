@@ -153,6 +153,15 @@ jobs:
           npm run generate:full-stack
         shell: powershell
 
+      - name: Verify generated files (Windows)
+        run: |
+          if (-Not (Test-Path "backend\generated")) {
+            Write-Error "backend\generated directory not found!"
+            exit 1
+          }
+          Get-ChildItem -Path "backend\generated" -Recurse
+        shell: powershell
+
       - name: Build Python backend (Windows)
         run: |
           $env:PATH = "${{ github.workspace }}\venv\Scripts;$env:PATH"
@@ -211,6 +220,15 @@ jobs:
         run: |
           export PATH="${{ github.workspace }}/venv/bin:$PATH"
           npm run generate:full-stack
+        shell: bash
+
+      - name: Verify generated files (Linux)
+        run: |
+          if [ ! -d "backend/generated" ]; then
+            echo "ERROR: backend/generated directory not found!"
+            exit 1
+          fi
+          ls -la backend/generated/
         shell: bash
 
       - name: Build Python backend (Linux)
