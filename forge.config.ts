@@ -25,8 +25,16 @@ const config: ForgeConfig = {
     new MakerZIP({}, ["darwin"]),
 
     // Linux: DEB and RPM packages
-    new MakerDeb({}, ["linux"]),
-    new MakerRpm({}, ["linux"]),
+    new MakerDeb({
+      options: {
+        bin: "geoapp",
+      },
+    }, ["linux"]),
+    new MakerRpm({
+      options: {
+        bin: "geoapp",
+      },
+    }, ["linux"]),
   ],
   plugins: [
     new VitePlugin({

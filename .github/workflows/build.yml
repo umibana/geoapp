@@ -150,15 +150,28 @@ jobs:
       - name: Generate Protocol Buffers
         run: |
           $env:PATH = "${{ github.workspace }}\venv\Scripts;$env:PATH"
+          Write-Host "Current PATH: $env:PATH"
+          Write-Host "Python version:"
+          python --version
+          Write-Host "Checking grpc_tools.protoc:"
+          python -m grpc_tools.protoc --version
+          Write-Host "Running proto generation..."
           npm run generate:full-stack
         shell: powershell
 
       - name: Verify generated files (Windows)
         run: |
+          Write-Host "Checking for backend\generated directory..."
           if (-Not (Test-Path "backend\generated")) {
-            Write-Error "backend\generated directory not found!"
+            Write-Host "ERROR: backend\generated directory not found!"
+            Write-Host "Listing backend directory contents:"
+            Get-ChildItem -Path "backend" -Recurse
+            Write-Host "Listing src\generated directory contents:"
+            Get-ChildItem -Path "src\generated" -ErrorAction SilentlyContinue
             exit 1
           }
+          Write-Host "SUCCESS: backend\generated directory found!"
+          Write-Host "Contents of backend\generated:"
           Get-ChildItem -Path "backend\generated" -Recurse
         shell: powershell
 
