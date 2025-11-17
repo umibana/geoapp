@@ -834,8 +834,24 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
+// Cross-platform entry point check
+// On Windows, paths might use backslashes and need normalization
+const isMainModule = () => {
+  try {
+    const scriptPath = fileURLToPath(import.meta.url);
+    const argPath = path.resolve(process.argv[1]);
+    return scriptPath === argPath;
+  } catch {
+    // Fallback: just run it
+    return true;
+  }
+};
+
+if (isMainModule()) {
+  main().catch(err => {
+    console.error('Fatal error during proto generation:', err);
+    process.exit(1);
+  });
 }
 
 export { main };
