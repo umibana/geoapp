@@ -150,13 +150,26 @@ jobs:
       - name: Generate Protocol Buffers
         run: |
           $env:PATH = "${{ github.workspace }}\venv\Scripts;$env:PATH"
+          Write-Host "==================== Environment Check ===================="
           Write-Host "Current PATH: $env:PATH"
+          Write-Host "Python location:"
+          Get-Command python | Select-Object -ExpandProperty Source
           Write-Host "Python version:"
           python --version
+          Write-Host "Pip list:"
+          python -m pip list | Select-String grpc
           Write-Host "Checking grpc_tools.protoc:"
           python -m grpc_tools.protoc --version
-          Write-Host "Running proto generation..."
+          Write-Host "Current directory:"
+          Get-Location
+          Write-Host "Proto files:"
+          Get-ChildItem -Path "protos" -Filter "*.proto"
+          Write-Host "==================== Running Generation ===================="
           npm run generate:full-stack
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: Proto generation failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
         shell: powershell
 
       - name: Verify generated files (Windows)

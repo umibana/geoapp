@@ -614,7 +614,7 @@ class ProjectManager:
                     headers = [row[0] for row in schema_result]
                     
                     # Obtener primeras 5 filas para vista previa
-                    preview_result = conn.execute(text(f"SELECT * FROM {table_name} LIMIT 5"))
+                    preview_result = conn.execute(text(f"SELECT * FROM {table_name} LIMIT 20"))
                     preview_data = [list(row) for row in preview_result]
                     
                     # Obtener conteo total de filas

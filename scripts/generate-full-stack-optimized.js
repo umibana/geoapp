@@ -39,11 +39,14 @@ function success(message) { console.log(`✅ ${message}`); }
 function runCommand(command, description) {
   try {
     log(description);
-    execSync(command, { stdio: 'inherit' });
+    console.log(`Running: ${command}`);
+    execSync(command, { stdio: 'inherit', shell: true });
     return true;
   } catch (err) {
     error(`Failed: ${description}`);
-    console.error(err.message);
+    console.error('Error details:', err.message);
+    if (err.stderr) console.error('stderr:', err.stderr.toString());
+    if (err.stdout) console.error('stdout:', err.stdout.toString());
     return false;
   }
 }
@@ -755,17 +758,31 @@ async function generateOriginalProtos() {
   const frontendSuccess = runCommand(frontendCommand, 'Generating TypeScript protobuf files with ts-proto');
 
   // Python via grpc_tools.protoc with type stubs
-  // Use forward slashes for protoc (it expects Unix-style paths even on Windows)
-  const backendOutUnix = BACKEND_OUT_DIR.replace(/\\/g, '/');
-  const protoDirUnix = PROTO_DIR.replace(/\\/g, '/');
-  const protoListUnix = protoFiles.map(f => `${protoDirUnix}/${f}`).join(' ');
+  // protoc expects forward slashes even on Windows
+  const isWindows = process.platform === 'win32';
+  const pythonCmd = isWindows ? 'python' : 'python3';
+  
+  // Normalize paths for protoc (always use forward slashes)
+  const backendOutNormalized = path.resolve(BACKEND_OUT_DIR).replace(/\\/g, '/');
+  const protoDirNormalized = path.resolve(PROTO_DIR).replace(/\\/g, '/');
+  
+  // Build proto file list with full paths
+  const protoFilesNormalized = protoFiles.map(f => 
+    path.resolve(PROTO_DIR, f).replace(/\\/g, '/')
+  );
+  
+  log(`Backend output dir: ${backendOutNormalized}`);
+  log(`Proto dir: ${protoDirNormalized}`);
+  log(`Proto files: ${protoFilesNormalized.join(', ')}`);
   
   const backendCommand =
-    `python -m grpc_tools.protoc ` +
-    `--python_out=${backendOutUnix} --grpc_python_out=${backendOutUnix} --pyi_out=${backendOutUnix} ` +
-    `--proto_path=${protoDirUnix} ${protoListUnix}`;
+    `${pythonCmd} -m grpc_tools.protoc ` +
+    `--python_out="${backendOutNormalized}" ` +
+    `--grpc_python_out="${backendOutNormalized}" ` +
+    `--pyi_out="${backendOutNormalized}" ` +
+    `--proto_path="${protoDirNormalized}" ` +
+    protoFilesNormalized.map(f => `"${f}"`).join(' ');
   
-  log(`Backend command: ${backendCommand}`);
   const backendSuccess = runCommand(backendCommand, 'Generating Python protobuf files with type stubs (.pyi)');
 
   // Verify backend directory was created
@@ -774,8 +791,12 @@ async function generateOriginalProtos() {
     log(`Backend generated ${generatedFiles.length} files`);
     if (generatedFiles.length === 0) {
       error('Backend directory exists but contains no files!');
+      error(`Expected directory: ${path.resolve(BACKEND_OUT_DIR)}`);
       return false;
     }
+  } else {
+    error('Backend proto generation failed!');
+    return false;
   }
 
   return frontendSuccess && backendSuccess;
