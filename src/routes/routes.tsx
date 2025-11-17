@@ -1,6 +1,6 @@
 import { createRoute } from "@tanstack/react-router";
 import { RootRoute } from "./__root";
-import { GeoVizViewer, GeoVizViewWithMosaic } from "@/components/geo-viz/GeovizView";
+// import { GeoVizViewer, GeoVizViewWithMosaic } from "@/components/geo-viz/GeovizView";
 import Procesamiento from "@/pages/Procesamiento";
 import Proyectos from "@/pages/Proyectos";
 import EDA2D from "@/pages/EDA2D";
@@ -40,7 +40,9 @@ export const EDA2DRoute= createRoute({
 export const EDA3DRoute = createRoute({
   getParentRoute: () => RootRoute,
   path: "/eda-3d",
-  component: GeoVizViewWithMosaic,
+  // Comentado para probar en diferente os
+  // component: GeoVizViewWithMosaic,
+  component: EDA2D,
 });
 
 export const ProcesamientoRoute = createRoute({
