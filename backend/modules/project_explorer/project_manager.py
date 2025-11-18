@@ -36,30 +36,163 @@ class ProjectManager:
     
     # ========== Private helper methods for CSV import ==========
     
-    def _import_csv_to_duckdb(self, file_content: bytes, table_name: str) -> bool:
+    def _parse_gslib_to_dataframe(self, file_content: bytes) -> pd.DataFrame:
         """
-        Import CSV content directly into DuckDB table
+        Parse GSLIB format file (.out) and convert to pandas DataFrame
+        
+        GSLIB format:
+        - Line 1: Title/description
+        - Line 2: Number of variables
+        - Lines 3 to 2+n_vars: Variable names (one per line)
+        - Remaining lines: Data values (space/tab separated)
+        
+        Args:
+            file_content: Raw GSLIB file bytes
+            
+        Returns:
+            pandas DataFrame with parsed data
+        """
+        try:
+            # Decode content to string
+            content = file_content.decode('utf-8')
+            lines = content.strip().split('\n')
+            
+            if len(lines) < 3:
+                raise ValueError("Invalid GSLIB format: file too short")
+            
+            # Line 1: Title (skip)
+            # Line 2: Number of variables
+            try:
+                n_vars = int(lines[1].strip())
+            except ValueError:
+                raise ValueError(f"Invalid GSLIB format: cannot parse number of variables from line 2: '{lines[1]}'")
+            
+            # Lines 3 to 2+n_vars: Variable names
+            if len(lines) < 2 + n_vars:
+                raise ValueError(f"Invalid GSLIB format: file has {len(lines)} lines but needs at least {2 + n_vars}")
+            
+            variable_names = []
+            for i in range(2, 2 + n_vars):
+                var_name = lines[i].strip()
+                if not var_name:
+                    var_name = f"var_{i-2}"  # Default name if empty
+                variable_names.append(var_name)
+            
+            # Remaining lines: Data
+            data_lines = lines[2 + n_vars:]
+            
+            # Parse data rows (space/tab separated)
+            data_rows = []
+            for line_num, line in enumerate(data_lines, start=2+n_vars+1):
+                line = line.strip()
+                if not line:  # Skip empty lines
+                    continue
+                
+                # Split by whitespace
+                values = line.split()
+                
+                if len(values) != n_vars:
+                    print(f"Warning: Line {line_num} has {len(values)} values, expected {n_vars}. Skipping or padding.")
+                    # Pad with None if too few values
+                    while len(values) < n_vars:
+                        values.append(None)
+                    # Truncate if too many values
+                    values = values[:n_vars]
+                
+                data_rows.append(values)
+            
+            # Create DataFrame
+            df = pd.DataFrame(data_rows, columns=variable_names)
+            
+            # Convert numeric columns
+            for col in df.columns:
+                try:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                except:
+                    pass  # Keep as string if conversion fails
+            
+            return df
+            
+        except Exception as e:
+            raise ValueError(f"Error parsing GSLIB file: {str(e)}")
+    
+    def _import_csv_to_duckdb(
+        self, 
+        file_content: bytes, 
+        table_name: str,
+        skip_rows: int = 0,
+        skip_columns: List[str] = None,
+        replace_data: List[Dict[str, str]] = None
+    ) -> bool:
+        """
+        Import CSV content directly into DuckDB table with preprocessing
         
         Args:
             file_content: Raw CSV bytes
             table_name: Name for the DuckDB table
+            skip_rows: Number of rows to skip from the beginning (default 0)
+            skip_columns: List of column names to skip/drop (default None)
+            replace_data: List of replacement rules [{'from': old_value, 'to': new_value}] (default None)
             
         Returns:
             True if successful
         """
         try:
-            # Write CSV content to temporary file for DuckDB to read
-            with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as temp_file:
-                temp_file.write(file_content)
+            # Read CSV into pandas for preprocessing
+            # Use low_memory=False to handle mixed types, and treat various null-like values as NaN
+            df = pd.read_csv(
+                io.BytesIO(file_content), 
+                skiprows=skip_rows,
+                low_memory=False,
+                na_values=['', ' ', 'NA', 'N/A', 'null', 'NULL', 'None', '-'],
+                keep_default_na=True
+            )
+            
+            # Drop specified columns
+            if skip_columns:
+                columns_to_drop = [col for col in skip_columns if col in df.columns]
+                if columns_to_drop:
+                    df = df.drop(columns=columns_to_drop)
+            
+            # Apply data replacements
+            if replace_data:
+                for replacement in replace_data:
+                    from_value = replacement.get('from', '')
+                    to_value = replacement.get('to', '')
+                    
+                    # Handle special case: converting string "null" to actual None
+                    if to_value.lower() == 'null':
+                        to_value = None
+                    
+                    # Replace in all columns
+                    df = df.replace(from_value, to_value)
+            
+            # Clean up any remaining whitespace-only strings to NULL
+            # Use map for pandas 2.1+ compatibility (applymap is deprecated)
+            try:
+                df = df.map(lambda x: None if isinstance(x, str) and x.strip() == '' else x)
+            except AttributeError:
+                # Fallback for older pandas versions
+                df = df.applymap(lambda x: None if isinstance(x, str) and x.strip() == '' else x)
+            
+            # Write preprocessed CSV to temporary file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, newline='') as temp_file:
+                df.to_csv(temp_file, index=False)
                 temp_csv_path = temp_file.name
             
             try:
                 # Use SQLAlchemy connection to execute DuckDB query
+                # Use all_varchar=1 to import everything as strings first, then let DuckDB handle conversion
                 with self.engine.connect() as conn:
                     with conn.begin():
                         conn.execute(text(f"""
                             CREATE OR REPLACE TABLE {table_name} AS 
-                            SELECT * FROM read_csv_auto('{temp_csv_path}')
+                            SELECT * FROM read_csv_auto(
+                                '{temp_csv_path}',
+                                nullstr = '',
+                                sample_size = -1,
+                                ignore_errors = false
+                            )
                         """))
                 return True
                 
@@ -295,20 +428,64 @@ class ProjectManager:
     # ========== Métodos de gestión de archivos ==========
     
     def create_file(self, request: projects_pb2.CreateFileRequest) -> projects_pb2.CreateFileResponse:
-        """Crear un nuevo archivo con importación directa a DuckDB"""
+        """Crear un nuevo archivo con importación directa a DuckDB - branches by dataset type"""
+        try:
+            # Extract preprocessing options from request
+            skip_rows = request.skip_rows if request.HasField('skip_rows') else 0
+            skip_columns = list(request.skip_columns) if request.skip_columns else []
+            replace_data = [{'from': r.from_value, 'to': r.to_value} 
+                           for r in request.replace_data] if request.replace_data else []
+            
+            # Branch by dataset_type
+            if request.dataset_type == projects_pb2.DATASET_TYPE_SAMPLE:
+                return self._create_sample_file(request, skip_rows, skip_columns, replace_data)
+            elif request.dataset_type == projects_pb2.DATASET_TYPE_BLOCK:
+                return self._create_block_file(request, skip_rows, skip_columns, replace_data)
+            elif request.dataset_type == projects_pb2.DATASET_TYPE_DRILL_HOLES:
+                # Single file upload is not sufficient for drill holes - must use CreateMultiFileRequest
+                response = projects_pb2.CreateFileResponse()
+                response.success = False
+                response.error_message = "DRILL_HOLES dataset requires CreateMultiFileRequest with multiple files (assay, collar, survey)"
+                return response
+            else:
+                response = projects_pb2.CreateFileResponse()
+                response.success = False
+                response.error_message = f"Unknown dataset type: {request.dataset_type}"
+                return response
+            
+        except Exception as e:
+            response = projects_pb2.CreateFileResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+    
+    def _create_sample_file(
+        self, 
+        request: projects_pb2.CreateFileRequest,
+        skip_rows: int,
+        skip_columns: List[str],
+        replace_data: List[Dict[str, str]]
+    ) -> projects_pb2.CreateFileResponse:
+        """Create a SAMPLE type file with preprocessing"""
         try:
             # Generate file ID first
             file_id = db_connection.generate_id()
             table_name = f"data_{file_id.replace('-', '_')}"
             
-            # 1. Import CSV to DuckDB first (this is the source of truth)
-            self._import_csv_to_duckdb(request.file_content, table_name)
+            # 1. Import CSV to DuckDB with preprocessing
+            self._import_csv_to_duckdb(
+                request.file_content, 
+                table_name,
+                skip_rows=skip_rows,
+                skip_columns=skip_columns,
+                replace_data=replace_data
+            )
             
             # Verify table was created
             if not db_connection.check_duckdb_table_exists(self.engine, table_name):
                 raise Exception(f"DuckDB table '{table_name}' was not created properly")
             
-            # 2. Create File metadata record (no file_content stored)
+            # 2. Create File metadata record
             file = models.File(
                 id=file_id,
                 project_id=request.project_id,
@@ -317,6 +494,7 @@ class ProjectManager:
                 original_filename=request.original_filename,
                 file_size=len(request.file_content),
                 created_at=db_connection.get_timestamp(),
+                extra_metadata=None  # No special metadata for SAMPLE files
             )
             
             with Session(self.engine) as session:
@@ -324,18 +502,10 @@ class ProjectManager:
                 session.commit()
                 session.refresh(file)
             
-            # 3. Generate statistics using pandas describe() on the original CSV
-            try:
-                column_statistics, numeric_columns, categorical_columns = self._analyze_csv_and_store(
-                    request.file_content
-                )
-            except Exception as e:
-                column_statistics = {}
-            
             response = projects_pb2.CreateFileResponse()
             response.success = True
             
-            # Asignación directa de campos
+            # Populate response
             response.file.id = file.id
             response.file.project_id = file.project_id
             response.file.name = file.name
@@ -348,6 +518,195 @@ class ProjectManager:
             
         except Exception as e:
             response = projects_pb2.CreateFileResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+    
+    def _create_block_file(
+        self, 
+        request: projects_pb2.CreateFileRequest,
+        skip_rows: int,
+        skip_columns: List[str],
+        replace_data: List[Dict[str, str]]
+    ) -> projects_pb2.CreateFileResponse:
+        """Create a BLOCK_MODEL type file with preprocessing"""
+        try:
+            # Generate file ID first
+            file_id = db_connection.generate_id()
+            table_name = f"data_{file_id.replace('-', '_')}"
+            
+            # Check if file is GSLIB format (.out extension)
+            file_content = request.file_content
+            is_gslib = request.original_filename.lower().endswith('.out')
+            
+            if is_gslib:
+                # Parse GSLIB format and convert to CSV bytes
+                print(f"📊 Detected GSLIB format file: {request.original_filename}")
+                df = self._parse_gslib_to_dataframe(file_content)
+                
+                # Convert DataFrame to CSV bytes
+                csv_buffer = io.BytesIO()
+                df.to_csv(csv_buffer, index=False)
+                file_content = csv_buffer.getvalue()
+                print(f"✓ Converted GSLIB to CSV: {len(df)} rows, {len(df.columns)} columns")
+            
+            # 1. Import CSV to DuckDB with preprocessing
+            self._import_csv_to_duckdb(
+                file_content, 
+                table_name,
+                skip_rows=skip_rows,
+                skip_columns=skip_columns,
+                replace_data=replace_data
+            )
+            
+            # Verify table was created
+            if not db_connection.check_duckdb_table_exists(self.engine, table_name):
+                raise Exception(f"DuckDB table '{table_name}' was not created properly")
+            
+            # 2. Store block_settings in metadata if provided
+            metadata = None
+            if request.HasField('block_settings'):
+                metadata = json.dumps({
+                    'block_settings': {
+                        'x': request.block_settings.x,
+                        'y': request.block_settings.y,
+                        'z': request.block_settings.z
+                    }
+                })
+            
+            # 3. Create File metadata record
+            file = models.File(
+                id=file_id,
+                project_id=request.project_id,
+                name=request.name,
+                dataset_type=int(request.dataset_type),
+                original_filename=request.original_filename,
+                file_size=len(request.file_content),
+                created_at=db_connection.get_timestamp(),
+                extra_metadata=metadata
+            )
+            
+            with Session(self.engine) as session:
+                session.add(file)
+                session.commit()
+                session.refresh(file)
+            
+            response = projects_pb2.CreateFileResponse()
+            response.success = True
+            
+            # Populate response
+            response.file.id = file.id
+            response.file.project_id = file.project_id
+            response.file.name = file.name
+            response.file.dataset_type = file.dataset_type
+            response.file.original_filename = file.original_filename
+            response.file.file_size = file.file_size
+            response.file.created_at = file.created_at
+            
+            return response
+            
+        except Exception as e:
+            response = projects_pb2.CreateFileResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+    
+    def create_multi_file(self, request: projects_pb2.CreateMultiFileRequest) -> projects_pb2.CreateMultiFileResponse:
+        """Create multiple files for DRILL_HOLES dataset type"""
+        try:
+            # Validate this is for DRILL_HOLES
+            if request.dataset_type != projects_pb2.DATASET_TYPE_DRILL_HOLES:
+                response = projects_pb2.CreateMultiFileResponse()
+                response.success = False
+                response.error_message = "CreateMultiFileRequest is only for DRILL_HOLES dataset type. Use CreateFileRequest for SAMPLE or BLOCK types."
+                return response
+            
+            # Extract preprocessing options from request
+            skip_rows = request.skip_rows if request.HasField('skip_rows') else 0
+            skip_columns = list(request.skip_columns) if request.skip_columns else []
+            replace_data = [{'from': r.from_value, 'to': r.to_value} 
+                           for r in request.replace_data] if request.replace_data else []
+            
+            # Generate a group ID to link all files together
+            group_id = db_connection.generate_id()
+            
+            # Store drill hole configuration metadata
+            drill_hole_metadata = {
+                'group_id': group_id,
+                'x_variable': request.x_variable if request.HasField('x_variable') else None,
+                'y_variable': request.y_variable if request.HasField('y_variable') else None,
+                'z_variable': request.z_variable if request.HasField('z_variable') else None,
+                'id_variable': request.id_variable if request.HasField('id_variable') else None,
+                'depth_variable': request.depth_variable if request.HasField('depth_variable') else None,
+                'composite_data': request.composite_data if request.HasField('composite_data') else False,
+                'composite_distance': request.composite_distance if request.HasField('composite_distance') else None
+            }
+            
+            created_files = []
+            
+            # Process each uploaded file
+            for file_upload in request.files:
+                file_id = db_connection.generate_id()
+                table_name = f"data_{file_id.replace('-', '_')}"
+                
+                # Import CSV to DuckDB with preprocessing
+                self._import_csv_to_duckdb(
+                    file_upload.file_content,
+                    table_name,
+                    skip_rows=skip_rows,
+                    skip_columns=skip_columns,
+                    replace_data=replace_data
+                )
+                
+                # Verify table was created
+                if not db_connection.check_duckdb_table_exists(self.engine, table_name):
+                    raise Exception(f"DuckDB table '{table_name}' was not created properly for {file_upload.file_role}")
+                
+                # Create metadata specific to this file
+                file_metadata = {
+                    **drill_hole_metadata,
+                    'file_role': file_upload.file_role  # "assay", "collar", or "survey"
+                }
+                
+                # Create File record
+                file = models.File(
+                    id=file_id,
+                    project_id=request.project_id,
+                    name=file_upload.name,
+                    dataset_type=int(request.dataset_type),
+                    original_filename=file_upload.original_filename,
+                    file_size=len(file_upload.file_content),
+                    created_at=db_connection.get_timestamp(),
+                    extra_metadata=json.dumps(file_metadata)
+                )
+                
+                with Session(self.engine) as session:
+                    session.add(file)
+                    session.commit()
+                    session.refresh(file)
+                
+                created_files.append(file)
+            
+            # Build response
+            response = projects_pb2.CreateMultiFileResponse()
+            response.success = True
+            
+            for file in created_files:
+                file_resp = response.files.add()
+                file_resp.id = file.id
+                file_resp.project_id = file.project_id
+                file_resp.name = file.name
+                file_resp.dataset_type = file.dataset_type
+                file_resp.original_filename = file.original_filename
+                file_resp.file_size = file.file_size
+                file_resp.created_at = file.created_at
+            
+            return response
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            response = projects_pb2.CreateMultiFileResponse()
             response.success = False
             response.error_message = str(e)
             return response
@@ -603,6 +962,32 @@ class ProjectManager:
                 response.error_message = "file_id no puede estar vacío"
                 return response
             
+            # Get file metadata to check if it's part of a drill hole group
+            with Session(self.engine) as session:
+                file = session.get(models.File, request.file_id)
+                if not file:
+                    response = projects_pb2.AnalyzeCsvForProjectResponse()
+                    response.success = False
+                    response.error_message = "Archivo no encontrado"
+                    return response
+                
+                # Check if this is a drill hole file group
+                if file.dataset_type == projects_pb2.DATASET_TYPE_DRILL_HOLES and file.extra_metadata:
+                    metadata = json.loads(file.extra_metadata)
+                    group_id = metadata.get('group_id')
+                    file_role = metadata.get('file_role')
+                    
+                    # For drill holes, we analyze the assay file(s) only
+                    if file_role == 'assay':
+                        # This is an assay file - proceed with normal analysis
+                        pass
+                    else:
+                        # This is a collar or survey file
+                        response = projects_pb2.AnalyzeCsvForProjectResponse()
+                        response.success = False
+                        response.error_message = f"Cannot analyze {file_role} file directly. Please analyze the assay file from this drill hole group."
+                        return response
+            
             # Obtener datos de la tabla DuckDB (datos ya importados)
             table_name = f"data_{request.file_id.replace('-', '_')}"
             
@@ -702,11 +1087,46 @@ class ProjectManager:
             return response
 
     def process_dataset(self, request: projects_pb2.ProcessDatasetRequest) -> projects_pb2.ProcessDatasetResponse:
-        """Procesar dataset con mapeos de columnas - datos ya en DuckDB"""
+        """Procesar dataset con mapeos de columnas - branches by dataset type"""
         try:
-            print(f"🔍 [ProcessDataset] Received {len(request.column_mappings)} column mappings")
+            # Get file to determine dataset_type
+            with Session(self.engine) as session:
+                file = session.get(models.File, request.file_id)
+                if not file:
+                    response = projects_pb2.ProcessDatasetResponse()
+                    response.success = False
+                    response.error_message = "Archivo no encontrado"
+                    return response
+            
+            # Branch by dataset_type
+            if file.dataset_type == projects_pb2.DATASET_TYPE_SAMPLE:
+                return self._process_sample_dataset(request, file)
+            elif file.dataset_type == projects_pb2.DATASET_TYPE_BLOCK:
+                return self._process_block_dataset(request, file)
+            elif file.dataset_type == projects_pb2.DATASET_TYPE_DRILL_HOLES:
+                return self._process_drill_hole_dataset(request, file)
+            else:
+                response = projects_pb2.ProcessDatasetResponse()
+                response.success = False
+                response.error_message = f"Unknown dataset type: {file.dataset_type}"
+                return response
+            
+        except Exception as e:
+            response = projects_pb2.ProcessDatasetResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+    
+    def _process_sample_dataset(
+        self, 
+        request: projects_pb2.ProcessDatasetRequest,
+        file: models.File
+    ) -> projects_pb2.ProcessDatasetResponse:
+        """Process a SAMPLE type dataset"""
+        try:
+            print(f"🔍 [ProcessSampleDataset] Received {len(request.column_mappings)} column mappings")
             if len(request.column_mappings) > 0:
-                print(f"🔍 [ProcessDataset] First mapping: column_name={request.column_mappings[0].column_name}, column_type={request.column_mappings[0].column_type} (type: {type(request.column_mappings[0].column_type)})")
+                print(f"🔍 [ProcessSampleDataset] First mapping: column_name={request.column_mappings[0].column_name}, column_type={request.column_mappings[0].column_type}")
 
             # Obtener el nombre de la tabla DuckDB para este archivo
             table_name = f"data_{request.file_id.replace('-', '_')}"
@@ -733,9 +1153,9 @@ class ProjectManager:
                 }
                 column_mappings_list.append(mapping_dict)
 
-            print(f"🔍 [ProcessDataset] Storing {len(column_mappings_list)} mappings to database")
+            print(f"🔍 [ProcessSampleDataset] Storing {len(column_mappings_list)} mappings to database")
             if len(column_mappings_list) > 0:
-                print(f"🔍 [ProcessDataset] First stored mapping: {column_mappings_list[0]}")
+                print(f"🔍 [ProcessSampleDataset] First stored mapping: {column_mappings_list[0]}")
             
             # Crear registro de dataset que apunte a la tabla DuckDB
             dataset = models.Dataset(
@@ -745,6 +1165,7 @@ class ProjectManager:
                 total_rows=total_rows,
                 column_mappings=json.dumps(column_mappings_list),
                 created_at=db_connection.get_timestamp(),
+                extra_metadata=None  # No special metadata for SAMPLE datasets
             )
             
             with Session(self.engine) as session:
@@ -754,12 +1175,10 @@ class ProjectManager:
             
             dataset_id = dataset.id
             
-            # Generate and store column statistics for the dataset using pandas describe
+            # Generate and store column statistics for the dataset
             if self.eda_manager:
                 try:
-                    # Generate statistics directly from DuckDB using file_id
                     column_statistics = self.eda_manager._generate_statistics_from_duckdb(request.file_id)
-
                     if column_statistics:
                         self.eda_manager.store_column_statistics(dataset_id, column_statistics)
                 except Exception as e:
@@ -789,6 +1208,231 @@ class ProjectManager:
             return response
             
         except Exception as e:
+            response = projects_pb2.ProcessDatasetResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+    
+    def _process_block_dataset(
+        self, 
+        request: projects_pb2.ProcessDatasetRequest,
+        file: models.File
+    ) -> projects_pb2.ProcessDatasetResponse:
+        """Process a BLOCK_MODEL type dataset"""
+        try:
+            print(f"🔍 [ProcessBlockDataset] Processing BLOCK_MODEL dataset")
+            
+            # Get the table name
+            table_name = f"data_{request.file_id.replace('-', '_')}"
+            
+            # Verify table exists and get row count
+            try:
+                with self.engine.connect() as conn:
+                    count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
+                    total_rows = int(count_result[0])
+            except Exception as e:
+                response = projects_pb2.ProcessDatasetResponse()
+                response.success = False
+                response.error_message = f"Tabla DuckDB no encontrada: {e}"
+                return response
+            
+            # Create column mappings
+            column_mappings_list = []
+            for mapping in request.column_mappings:
+                mapping_dict = {
+                    'column_name': mapping.column_name,
+                    'column_type': int(mapping.column_type),
+                    'mapped_field': mapping.mapped_field,
+                    'is_coordinate': mapping.is_coordinate
+                }
+                column_mappings_list.append(mapping_dict)
+            
+            # Get block_settings from file metadata
+            dataset_metadata = None
+            if file.extra_metadata:
+                file_metadata = json.loads(file.extra_metadata)
+                if 'block_settings' in file_metadata:
+                    dataset_metadata = json.dumps({
+                        'block_settings': file_metadata['block_settings']
+                    })
+            
+            # Create dataset record
+            dataset = models.Dataset(
+                id=db_connection.generate_id(),
+                file_id=request.file_id,
+                duckdb_table_name=table_name,
+                total_rows=total_rows,
+                column_mappings=json.dumps(column_mappings_list),
+                created_at=db_connection.get_timestamp(),
+                extra_metadata=dataset_metadata
+            )
+            
+            with Session(self.engine) as session:
+                session.add(dataset)
+                session.commit()
+                session.refresh(dataset)
+            
+            dataset_id = dataset.id
+            
+            # Generate and store column statistics
+            if self.eda_manager:
+                try:
+                    column_statistics = self.eda_manager._generate_statistics_from_duckdb(request.file_id)
+                    if column_statistics:
+                        self.eda_manager.store_column_statistics(dataset_id, column_statistics)
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+            
+            response = projects_pb2.ProcessDatasetResponse()
+            response.success = True
+            response.processed_rows = total_rows
+            
+            # Populate dataset response
+            dataset_resp = response.dataset
+            dataset_resp.id = dataset_id
+            dataset_resp.file_id = dataset.file_id
+            dataset_resp.total_rows = dataset.total_rows
+            dataset_resp.created_at = dataset.created_at
+            
+            # Add column mappings
+            column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
+            for mapping_dict in column_mappings:
+                mapping = dataset_resp.column_mappings.add()
+                mapping.column_name = mapping_dict['column_name']
+                mapping.column_type = mapping_dict['column_type']
+                mapping.mapped_field = mapping_dict['mapped_field']
+                mapping.is_coordinate = mapping_dict['is_coordinate']
+            
+            return response
+            
+        except Exception as e:
+            response = projects_pb2.ProcessDatasetResponse()
+            response.success = False
+            response.error_message = str(e)
+            return response
+    
+    def _process_drill_hole_dataset(
+        self, 
+        request: projects_pb2.ProcessDatasetRequest,
+        file: models.File
+    ) -> projects_pb2.ProcessDatasetResponse:
+        """Process a DRILL_HOLES type dataset"""
+        try:
+            print(f"🔍 [ProcessDrillHoleDataset] Processing DRILL_HOLES dataset")
+            
+            # Get file metadata to find group_id and validate it's an assay file
+            if not file.extra_metadata:
+                response = projects_pb2.ProcessDatasetResponse()
+                response.success = False
+                response.error_message = "Drill hole file missing metadata"
+                return response
+            
+            file_metadata = json.loads(file.extra_metadata)
+            file_role = file_metadata.get('file_role')
+            group_id = file_metadata.get('group_id')
+            
+            if file_role != 'assay':
+                response = projects_pb2.ProcessDatasetResponse()
+                response.success = False
+                response.error_message = f"Can only process assay files. This is a {file_role} file."
+                return response
+            
+            # Get the table name for assay data
+            table_name = f"data_{request.file_id.replace('-', '_')}"
+            
+            # Verify table exists and get row count
+            try:
+                with self.engine.connect() as conn:
+                    count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
+                    total_rows = int(count_result[0])
+            except Exception as e:
+                response = projects_pb2.ProcessDatasetResponse()
+                response.success = False
+                response.error_message = f"Tabla DuckDB no encontrada: {e}"
+                return response
+            
+            # Create column mappings
+            column_mappings_list = []
+            for mapping in request.column_mappings:
+                mapping_dict = {
+                    'column_name': mapping.column_name,
+                    'column_type': int(mapping.column_type),
+                    'mapped_field': mapping.mapped_field,
+                    'is_coordinate': mapping.is_coordinate
+                }
+                column_mappings_list.append(mapping_dict)
+            
+            # Store drill hole configuration in dataset metadata
+            dataset_metadata = json.dumps({
+                'group_id': group_id,
+                'drill_hole_config': file_metadata
+            })
+            
+            # Create dataset record
+            dataset = models.Dataset(
+                id=db_connection.generate_id(),
+                file_id=request.file_id,
+                duckdb_table_name=table_name,
+                total_rows=total_rows,
+                column_mappings=json.dumps(column_mappings_list),
+                created_at=db_connection.get_timestamp(),
+                extra_metadata=dataset_metadata
+            )
+            
+            with Session(self.engine) as session:
+                session.add(dataset)
+                session.commit()
+                session.refresh(dataset)
+            
+            dataset_id = dataset.id
+            
+            # TODO: PLACEHOLDER - Composite calculation for drill holes
+            # This will be implemented in the future when composite_data is needed
+            # The composite_distance parameter is stored in metadata for future use
+            if file_metadata.get('composite_data', False):
+                print(f"⚠️  [ProcessDrillHoleDataset] Composite data calculation not yet implemented")
+                print(f"    Composite distance: {file_metadata.get('composite_distance')} meters")
+                # Future implementation will:
+                # 1. Read assay, collar, and survey data
+                # 2. Calculate composite intervals based on composite_distance
+                # 3. Store composited data in a new DuckDB table
+            
+            # Generate and store column statistics
+            if self.eda_manager:
+                try:
+                    column_statistics = self.eda_manager._generate_statistics_from_duckdb(request.file_id)
+                    if column_statistics:
+                        self.eda_manager.store_column_statistics(dataset_id, column_statistics)
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+            
+            response = projects_pb2.ProcessDatasetResponse()
+            response.success = True
+            response.processed_rows = total_rows
+            
+            # Populate dataset response
+            dataset_resp = response.dataset
+            dataset_resp.id = dataset_id
+            dataset_resp.file_id = dataset.file_id
+            dataset_resp.total_rows = dataset.total_rows
+            dataset_resp.created_at = dataset.created_at
+            
+            # Add column mappings
+            column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
+            for mapping_dict in column_mappings:
+                mapping = dataset_resp.column_mappings.add()
+                mapping.column_name = mapping_dict['column_name']
+                mapping.column_type = mapping_dict['column_type']
+                mapping.mapped_field = mapping_dict['mapped_field']
+                mapping.is_coordinate = mapping_dict['is_coordinate']
+            
+            return response
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
             response = projects_pb2.ProcessDatasetResponse()
             response.success = False
             response.error_message = str(e)

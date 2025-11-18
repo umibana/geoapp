@@ -747,19 +747,29 @@ async function generateOriginalProtos() {
   ensureDirectory(BACKEND_OUT_DIR);
 
   const protoFiles = fs.readdirSync(PROTO_DIR).filter(f => f.endsWith('.proto'));
-  const protoList = protoFiles.map(f => path.join(PROTO_DIR, f)).join(' ');
-
+  
   // TypeScript via ts-proto (using npm protoc for cross-platform compatibility)
+  const isWindows = process.platform === 'win32';
+  
+  // On Windows, use .cmd extension for the plugin
+  const tsProtoPlugin = isWindows 
+    ? path.resolve('node_modules/.bin/protoc-gen-ts_proto.cmd')
+    : path.resolve('node_modules/.bin/protoc-gen-ts_proto');
+  
+  // Build proto list (use native paths for protoc, it handles both)
+  const protoList = protoFiles.map(f => path.join(PROTO_DIR, f)).join(' ');
+  
   const frontendCommand =
-    `${PROTOC_PATH} --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto ` +
+    `${PROTOC_PATH} --plugin=protoc-gen-ts_proto="${tsProtoPlugin}" ` +
     `--ts_proto_out=${FRONTEND_OUT_DIR} ` +
     `--ts_proto_opt=lowerCaseServiceMethods=true,snakeToCamel=false ` +
     `--proto_path=${PROTO_DIR} ${protoList}`;
+  
+  log(`Frontend command: ${frontendCommand}`);
   const frontendSuccess = runCommand(frontendCommand, 'Generating TypeScript protobuf files with ts-proto');
 
   // Python via grpc_tools.protoc with type stubs
   // protoc expects forward slashes even on Windows
-  const isWindows = process.platform === 'win32';
   const pythonCmd = isWindows ? 'python' : 'python3';
   
   // Normalize paths for protoc (always use forward slashes)

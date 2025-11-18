@@ -187,6 +187,9 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
     def CreateFile(self, request, context):
         return self.project_manager.create_file(request)
     
+    def CreateMultiFile(self, request, context):
+        return self.project_manager.create_multi_file(request)
+    
     def GetProjectFiles(self, request, context):
         return self.project_manager.get_project_files(request)
 

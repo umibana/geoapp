@@ -129,6 +129,26 @@ message CreateFileRequest {
   DatasetType dataset_type = 3;
   string original_filename = 4;
   bytes file_content = 5;
+  
+  // Preprocessing options
+  optional int32 skip_rows = 6;
+  repeated string skip_columns = 7;
+  map<string, int32> column_types = 8;  // column_name -> ColumnType enum value
+  repeated DataReplacement replace_data = 9;
+  
+  // Coordinate/field mappings
+  optional string x_variable = 10;
+  optional string y_variable = 11;
+  optional string z_variable = 12;
+  optional string id_variable = 13;
+  optional string depth_variable = 14;
+  
+  // Type-specific options
+  optional BlockSettings block_settings = 15;
+  optional bool composite_data = 16;
+  optional double composite_distance = 17;
+  repeated CollarData collar = 18;
+  repeated SurveyData survey = 19;
 }
 
 message CreateFileResponse {
@@ -152,6 +172,40 @@ message DeleteFileRequest {
 message DeleteFileResponse {
   bool success = 1;
   string error_message = 2;
+}
+
+// Multi-file upload for drill holes
+message FileUpload {
+  string name = 1;
+  string original_filename = 2;
+  bytes file_content = 3;
+  string file_role = 4;  // "assay", "collar", "survey"
+}
+
+message CreateMultiFileRequest {
+  string project_id = 1;
+  DatasetType dataset_type = 2;
+  repeated FileUpload files = 3;
+  
+  // All other options from CreateFileRequest
+  optional int32 skip_rows = 4;
+  repeated string skip_columns = 5;
+  map<string, int32> column_types = 6;  // column_name -> ColumnType enum value
+  repeated DataReplacement replace_data = 7;
+  optional string x_variable = 8;
+  optional string y_variable = 9;
+  optional string z_variable = 10;
+  optional string id_variable = 11;
+  optional string depth_variable = 12;
+  optional BlockSettings block_settings = 13;
+  optional bool composite_data = 14;
+  optional double composite_distance = 15;
+}
+
+message CreateMultiFileResponse {
+  repeated File files = 1;
+  bool success = 2;
+  string error_message = 3;
 }
 
 // Update file metadata
@@ -397,6 +451,30 @@ message ProcessDatasetResponse {
   bool success = 2;
   string error_message = 3;
   int32 processed_rows = 4;
+}
+
+// Block model settings
+message BlockSettings {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+}
+
+// Drill hole collar data
+message CollarData {
+  string id = 1;
+  double x = 2;
+  double y = 3;
+  double z = 4;
+  double depth = 5;
+}
+
+// Drill hole survey data
+message SurveyData {
+  string id = 1;
+  double at = 2;
+  double az = 3;
+  double dip = 4;
 }
 
 // Data boundaries for visualization scaling

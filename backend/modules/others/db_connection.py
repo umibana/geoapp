@@ -31,6 +31,10 @@ def initialize_database(engine: Engine) -> None:
         engine: SQLAlchemy Engine instance
     """
     SQLModel.metadata.create_all(engine)
+    
+    # Run migrations
+    migrate_add_extra_metadata(engine)
+
 
 
 def generate_id() -> str:
@@ -60,5 +64,35 @@ def check_duckdb_table_exists(engine: Engine, table_name: str) -> bool:
             return True
     except Exception as e:
         return False
+
+
+def migrate_add_extra_metadata(engine: Engine) -> None:
+    """
+    Migration: Add extra_metadata column to file and dataset tables
+    """
+    try:
+        with engine.connect() as conn:
+            # Check if extra_metadata column exists in file table
+            try:
+                result = conn.execute(text("SELECT extra_metadata FROM file LIMIT 1"))
+                print("✓ Migration: extra_metadata column already exists in file table")
+            except Exception:
+                # Column doesn't exist, add it
+                conn.execute(text("ALTER TABLE file ADD COLUMN extra_metadata VARCHAR"))
+                conn.commit()
+                print("✓ Migration: Added extra_metadata column to file table")
+            
+            # Check if extra_metadata column exists in dataset table
+            try:
+                result = conn.execute(text("SELECT extra_metadata FROM dataset LIMIT 1"))
+                print("✓ Migration: extra_metadata column already exists in dataset table")
+            except Exception:
+                # Column doesn't exist, add it
+                conn.execute(text("ALTER TABLE dataset ADD COLUMN extra_metadata VARCHAR"))
+                conn.commit()
+                print("✓ Migration: Added extra_metadata column to dataset table")
+                
+    except Exception as e:
+        print(f"⚠️  Migration warning: {e}")
 
 

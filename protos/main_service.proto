@@ -30,6 +30,7 @@ service GeospatialService {
   
   // Gestión de archivos
   rpc CreateFile(CreateFileRequest) returns (CreateFileResponse);
+  rpc CreateMultiFile(CreateMultiFileRequest) returns (CreateMultiFileResponse);
   rpc GetProjectFiles(GetProjectFilesRequest) returns (GetProjectFilesResponse);
   rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
   rpc UpdateFile(UpdateFileRequest) returns (UpdateFileResponse);

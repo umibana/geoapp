@@ -18,11 +18,11 @@ import { DatasetType, GetDatasetDataResponse, ColumnMapping, DataBoundaries } fr
 
 /**
  * Propiedades del gestor de proyectos
- * Define callbacks opcionales para selección de proyectos y carga de archivos
+ * Define callbacks opcionales para selección de proyectos y navegación a carga de archivos
  */
 interface ProjectManagerProps {
   onSelectProject?: (projectId: string) => void;          // Callback al seleccionar un proyecto
-  onFileUploadComplete?: (fileId: string, fileName: string) => void;  // Callback al completar carga de archivo
+  onNavigateToUpload?: (projectId: string, projectName: string) => void;  // Callback para navegar a vista de carga
 }
 
 /**
@@ -87,7 +87,7 @@ const datasetTypeBadgeColors: Record<DatasetType, string> = {
  * Maneja la creación, edición y visualización de proyectos, archivos y datasets
  * Incluye funcionalidades de carga de CSV y visualización de datos
  */
-const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete }) => {
+const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) => {
   // Estados principales del componente
   const [projects, setProjects] = useState<ProjectData[]>([]);               // Lista de proyectos
   const [selectedProject, setSelectedProject] = useState<ProjectData | null>(null);  // Proyecto seleccionado
@@ -110,17 +110,11 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
   // Dialog states
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
 
   // Form states
   const [projectName, setProjectName] = useState('');
   const [projectDescription, setProjectDescription] = useState('');
   const [editingProject, setEditingProject] = useState<ProjectData | null>(null);
-
-  // File upload states
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadDatasetType, setUploadDatasetType] = useState<DatasetType>(DatasetType.DATASET_TYPE_SAMPLE);
-  const [uploadName, setUploadName] = useState('');
 
   useEffect(() => {
     loadProjects();
@@ -440,47 +434,6 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
     }
   };
 
-  const handleUploadFile = async () => {
-    if (!selectedProject || !uploadFile || !uploadName.trim()) return;
-
-    try {
-      setLoading(true);
-      
-      // Read file content as bytes
-      const fileContent = await uploadFile.arrayBuffer();
-      const uint8Array = new Uint8Array(fileContent);
-
-      const response = await window.autoGrpc.createFile({
-        project_id: selectedProject.id,
-        name: uploadName,
-        dataset_type: uploadDatasetType,
-        original_filename: uploadFile.name,
-        file_content: uint8Array
-      });
-
-      if (response.success) {
-        setIsUploadDialogOpen(false);
-        setUploadFile(null);
-        setUploadName('');
-        setUploadDatasetType(DatasetType.DATASET_TYPE_SAMPLE);
-        await loadProjectFiles(selectedProject.id);
-        await loadProjectDatasets(selectedProject.id); // Reload datasets for this project
-        
-        // Call the callback to trigger CSV processing workflow
-        if (onFileUploadComplete) {
-          onFileUploadComplete(response.file.id, response.file.name);
-        }
-      } else {
-        setError(response.error_message || 'Failed to upload file');
-      }
-    } catch (err) {
-      console.error('Error uploading file:', err);
-      setError('Failed to upload file');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const openEditDialog = (project: ProjectData) => {
     setEditingProject(project);
     setProjectName(project.name);
@@ -612,77 +565,20 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onFileUploadComplete })
                             </div>
                           </div>
                           <div className="flex items-center space-x-0.5 shrink-0">
-                            <Dialog open={isUploadDialogOpen && selectedProject?.id === project.id} onOpenChange={(open) => {
-                              if (!open) setIsUploadDialogOpen(false);
-                            }}>
-                              <DialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedProject(project);
-                                    setSelectedProjectInStore(project); // Sync to project store
-                                    setIsUploadDialogOpen(true);
-                                  }}
-                                >
-                                  <Upload className="h-3 w-3" />
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Cargar Archivo</DialogTitle>
-                                  <DialogDescription>
-                                    Carga un archivo de dataset a {project.name}
-                                  </DialogDescription>
-                                </DialogHeader>
-                                <div className="space-y-4">
-                                  <div>
-                                    <Label htmlFor="file-upload">File</Label>
-                                    <Input
-                                      id="file-upload"
-                                      type="file"
-                                      accept=".csv,.txt"
-                                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                                    />
-                                  </div>
-                                  <div>
-                                    <Label htmlFor="file-name">File Name</Label>
-                                    <Input
-                                      id="file-name"
-                                      value={uploadName}
-                                      onChange={(e) => setUploadName(e.target.value)}
-                                      placeholder="Ingresa un nombre para este archivo"
-                                    />
-                                  </div>
-                                  <div>
-                                    <Label htmlFor="dataset-type">Tipo de Dataset</Label>
-                                    <Select
-                                      value={uploadDatasetType.toString()}
-                                      onValueChange={(value) => setUploadDatasetType(parseInt(value) as DatasetType)}
-                                    >
-                                      <SelectTrigger>
-                                        <SelectValue placeholder="Select dataset type" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="1">Sample</SelectItem>
-                                        <SelectItem value="2">Drill Holes</SelectItem>
-                                        <SelectItem value="3">Block</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </div>
-                                <DialogFooter>
-                                  <Button
-                                    onClick={handleUploadFile}
-                                    disabled={loading || !uploadFile || !uploadName.trim()}
-                                  >
-                                    Upload File
-                                  </Button>
-                                </DialogFooter>
-                              </DialogContent>
-                            </Dialog>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onNavigateToUpload) {
+                                  onNavigateToUpload(project.id, project.name);
+                                }
+                              }}
+                              title="Cargar archivo"
+                            >
+                              <Upload className="h-3 w-3" />
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"

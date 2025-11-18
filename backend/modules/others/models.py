@@ -20,6 +20,7 @@ class File(SQLModel, table=True):
     original_filename: str
     file_size: int
     created_at: int
+    extra_metadata: Optional[str] = None  # JSON for type-specific metadata (block_settings, group_id, file_role, etc.)
     project: Optional[Project] = Relationship(back_populates="files")
     datasets: List["Dataset"] = Relationship(back_populates="file", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
@@ -31,6 +32,7 @@ class Dataset(SQLModel, table=True):
     total_rows: int
     column_mappings: Optional[str] = None  # JSON string for column mappings
     created_at: int
+    extra_metadata: Optional[str] = None  # JSON for type-specific settings (block_settings, drill_hole_config, etc.)
     file: Optional[File] = Relationship(back_populates="datasets")
 
 
