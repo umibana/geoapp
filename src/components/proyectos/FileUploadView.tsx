@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ArrowLeft, Upload, ChevronDown, ChevronRight, Plus, Trash2, AlertCircle, Loader2, Settings } from 'lucide-react';
+import { ArrowLeft, Upload, ChevronDown, ChevronRight, Plus, Trash2, AlertCircle, Loader2, Settings, CheckCircle2 } from 'lucide-react';
 import { DatasetType } from '@/generated/projects';
 
 /**
@@ -20,13 +20,15 @@ interface FileUploadViewProps {
   projectName: string;
   onCancel: () => void;
   onUploadComplete: (fileId: string, fileName: string) => void;
+  compact?: boolean; // Add this prop
 }
 
 const FileUploadView: React.FC<FileUploadViewProps> = ({
   projectId,
   projectName,
   onCancel,
-  onUploadComplete
+  onUploadComplete,
+  compact = false // Default to false
 }) => {
   // Upload state
   const [uploadDatasetType, setUploadDatasetType] = useState<DatasetType>(DatasetType.DATASET_TYPE_SAMPLE);
@@ -52,6 +54,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
   // Upload state
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Handle file upload
   const handleUploadFile = async () => {
@@ -61,6 +64,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
     }
 
     setError(null);
+    setSuccessMessage(null);
     setUploading(true);
 
     try {
@@ -127,7 +131,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
         if (result.success && result.files.length > 0) {
           // Use the first assay file as the primary file
           const primaryFile = result.files.find((f: { name: string }) => f.name.includes('assay')) || result.files[0];
-          // Go directly to processing
+          setSuccessMessage('Archivos cargados correctamente.');
           onUploadComplete(primaryFile.id, primaryFile.name);
         } else {
           throw new Error(result.error_message || 'Error al cargar archivos');
@@ -172,7 +176,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
         const result = await window.autoGrpc.createFile(requestData);
 
         if (result.success && result.file) {
-          // Go directly to processing
+          setSuccessMessage('Archivo cargado correctamente.');
           onUploadComplete(result.file.id, result.file.name);
         } else {
           throw new Error(result.error_message || 'Error al cargar archivo');
@@ -182,6 +186,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
       const error = err as Error;
       console.error('Error uploading file:', error);
       setError(error.message || 'Error al cargar archivo');
+    } finally {
       setUploading(false);
     }
   };
@@ -213,6 +218,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
               value={uploadDatasetName}
               onChange={(e) => setUploadDatasetName(e.target.value)}
               placeholder="Ej: Muestras Enero 2024"
+              disabled={uploading}
             />
           </div>
 
@@ -221,6 +227,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
             <Select
               value={uploadDatasetType.toString()}
               onValueChange={(value) => setUploadDatasetType(parseInt(value) as DatasetType)}
+              disabled={uploading}
             >
               <SelectTrigger id="dataset-type">
                 <SelectValue />
@@ -255,7 +262,11 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
                   type="file"
                   accept=".csv"
                   multiple
-                  onChange={(e) => setAssayFiles(e.target.files ? Array.from(e.target.files) : [])}
+                  onChange={(e) => {
+                    setSuccessMessage(null);
+                    setAssayFiles(e.target.files ? Array.from(e.target.files) : []);
+                  }}
+                  disabled={uploading}
                 />
                 {assayFiles.length > 0 && (
                   <p className="text-sm text-muted-foreground">
@@ -270,7 +281,11 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
                   id="collar-file"
                   type="file"
                   accept=".csv"
-                  onChange={(e) => setCollarFile(e.target.files?.[0] || null)}
+                  onChange={(e) => {
+                    setSuccessMessage(null);
+                    setCollarFile(e.target.files?.[0] || null);
+                  }}
+                  disabled={uploading}
                 />
               </div>
 
@@ -280,7 +295,11 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
                   id="survey-file"
                   type="file"
                   accept=".csv"
-                  onChange={(e) => setSurveyFile(e.target.files?.[0] || null)}
+                  onChange={(e) => {
+                    setSuccessMessage(null);
+                    setSurveyFile(e.target.files?.[0] || null);
+                  }}
+                  disabled={uploading}
                 />
               </div>
             </>
@@ -295,7 +314,11 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
                 id="upload-file"
                 type="file"
                 accept={uploadDatasetType === DatasetType.DATASET_TYPE_BLOCK ? ".csv,.out" : ".csv"}
-                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  setSuccessMessage(null);
+                  setUploadFile(e.target.files?.[0] || null);
+                }}
+                disabled={uploading}
               />
               {uploadFile && (
                 <p className="text-sm text-muted-foreground">
@@ -329,6 +352,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
                   value={blockSettingsX}
                   onChange={(e) => setBlockSettingsX(parseFloat(e.target.value) || 10)}
                   step="0.1"
+                  disabled={uploading}
                 />
               </div>
               <div className="space-y-2">
@@ -339,6 +363,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
                   value={blockSettingsY}
                   onChange={(e) => setBlockSettingsY(parseFloat(e.target.value) || 10)}
                   step="0.1"
+                  disabled={uploading}
                 />
               </div>
               <div className="space-y-2">
@@ -349,6 +374,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
                   value={blockSettingsZ}
                   onChange={(e) => setBlockSettingsZ(parseFloat(e.target.value) || 5)}
                   step="0.1"
+                  disabled={uploading}
                 />
               </div>
             </div>
@@ -359,7 +385,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
       {/* Preprocessing Options */}
       <Card>
         <Collapsible open={preprocessingExpanded} onOpenChange={setPreprocessingExpanded}>
-          <CardHeader className="cursor-pointer" onClick={() => setPreprocessingExpanded(!preprocessingExpanded)}>
+          <CardHeader className="cursor-pointer" onClick={() => !uploading && setPreprocessingExpanded(!preprocessingExpanded)}>
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2">
@@ -369,7 +395,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
                 <CardDescription>Configuración opcional para limpieza de datos</CardDescription>
               </div>
               <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" disabled={uploading}>
                   {preprocessingExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                 </Button>
               </CollapsibleTrigger>
@@ -386,6 +412,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
                   value={skipRows}
                   onChange={(e) => setSkipRows(parseInt(e.target.value) || 0)}
                   placeholder="0"
+                  disabled={uploading}
                 />
                 <p className="text-xs text-muted-foreground">
                   Número de filas a ignorar al inicio del archivo
@@ -399,6 +426,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
                   value={skipColumns}
                   onChange={(e) => setSkipColumns(e.target.value)}
                   placeholder="columna1, columna2"
+                  disabled={uploading}
                 />
                 <p className="text-xs text-muted-foreground">
                   Nombres de columnas separados por comas
@@ -408,7 +436,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>Reemplazar Valores</Label>
-                  <Button variant="outline" size="sm" onClick={handleAddReplacement}>
+                  <Button variant="outline" size="sm" onClick={handleAddReplacement} disabled={uploading}>
                     <Plus className="h-4 w-4 mr-1" />
                     Agregar
                   </Button>
@@ -423,6 +451,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
                         newReplacements[index].from = e.target.value;
                         setReplacements(newReplacements);
                       }}
+                      disabled={uploading}
                     />
                     <span>→</span>
                     <Input
@@ -433,12 +462,14 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
                         newReplacements[index].to = e.target.value;
                         setReplacements(newReplacements);
                       }}
+                      disabled={uploading}
                     />
                     {replacements.length > 1 && (
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleRemoveReplacement(index)}
+                        disabled={uploading}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -450,34 +481,11 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
           </CollapsibleContent>
         </Collapsible>
       </Card>
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-    </div>
-  );
-
-
-  return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="border-b bg-background sticky top-0 z-10">
-        <div className="flex items-center justify-between p-4">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={onCancel} disabled={uploading}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Volver
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold">Cargar Archivo</h1>
-              <p className="text-sm text-muted-foreground">Proyecto: {projectName}</p>
-            </div>
-          </div>
-          
-          <Button onClick={handleUploadFile} disabled={uploading}>
+      
+      {/* Show upload button here in compact mode */}
+      {compact && (
+        <div className="pt-2">
+          <Button onClick={handleUploadFile} disabled={uploading} className="w-full">
             {uploading ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -491,20 +499,72 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
             )}
           </Button>
         </div>
-      </div>
+      )}
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {successMessage && (
+        <Alert className="border-green-200 bg-green-50 text-green-800">
+          <CheckCircle2 className="h-4 w-4 text-green-600" />
+          <AlertDescription>{successMessage}</AlertDescription>
+        </Alert>
+      )}
+    </div>
+  );
+
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Header - Only show if NOT compact */}
+      {!compact && (
+        <div className="border-b bg-background sticky top-0 z-10">
+          <div className="flex items-center justify-between p-4">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" onClick={onCancel} disabled={uploading}>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Volver
+              </Button>
+              <div>
+                <h1 className="text-2xl font-bold">Cargar Archivo</h1>
+                <p className="text-sm text-muted-foreground">Proyecto: {projectName}</p>
+              </div>
+            </div>
+            
+            <Button onClick={handleUploadFile} disabled={uploading}>
+              {uploading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Cargando...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Cargar Archivo
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-5xl mx-auto">
-          {uploading ? (
-            <div className="flex flex-col items-center justify-center py-16 space-y-4">
-              <Loader2 className="h-16 w-16 animate-spin text-primary" />
-              <h3 className="text-xl font-semibold">Cargando archivo...</h3>
-              <p className="text-muted-foreground">Por favor espere mientras procesamos el archivo</p>
-            </div>
-          ) : (
-            renderUploadForm()
-          )}
+      <div className="flex-1 relative overflow-hidden">
+        {uploading && (
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+            <Loader2 className="h-16 w-16 animate-spin text-primary" />
+            <h3 className="text-xl font-semibold mt-4">Cargando archivo...</h3>
+            <p className="text-muted-foreground">Por favor espere mientras procesamos el archivo</p>
+          </div>
+        )}
+        <div className={`h-full overflow-y-auto ${compact ? 'p-4' : 'p-6'}`}>
+          <div className={compact ? '' : 'max-w-5xl mx-auto'}>
+            {renderUploadForm()}
+          </div>
         </div>
       </div>
     </div>
