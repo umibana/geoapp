@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+message Mensaje{
+    string nombre_usuario = 1;
+    string region = 2;
+    string pais = 3;
+    string ciudad = 4;
+}

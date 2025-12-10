@@ -1,5 +1,5 @@
 import React from "react";
-import BaseLayout from "@/layouts/BaseLayout";
+import BaseLayout from "@/routes/layouts/BaseLayout";
 import { Outlet, createRootRoute } from "@tanstack/react-router";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";

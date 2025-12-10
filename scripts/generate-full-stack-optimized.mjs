@@ -24,7 +24,11 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 // Use @bufbuild/protoc for cross-platform protoc binary (ensures same version everywhere)
-const PROTOC_PATH = path.join(__dirname, '../node_modules/.bin/protoc');
+// On Windows, use .cmd extension
+const isWindows = process.platform === 'win32';
+const PROTOC_PATH = isWindows
+  ? path.join(__dirname, '../node_modules/.bin/protoc.cmd')
+  : path.join(__dirname, '../node_modules/.bin/protoc');
 
 const PROTO_DIR = 'protos';
 const MAIN_PROTO_FILE = 'protos/main_service.proto';

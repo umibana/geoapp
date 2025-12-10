@@ -37,7 +37,7 @@
 ### SendFile
 Procesa el archivo completo e inserta **dataset en proyecto**.
 
-> **Fuente del archivo**: Se usa `file_path` (app local). Más adelante se puede soportar `bytes`.
+> **Fuente del archivo**: Se usa `file_path` (app local).
 
 **Enums cortos**
 - `dataset_type`: `"SAMPLE" | "DRILL_HOLE" | "BLOCK"`
