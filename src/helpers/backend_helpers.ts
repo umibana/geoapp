@@ -95,10 +95,13 @@ class BackendManager {
       
       if (isDev) {
         // En desarrollo: ejecutar el servidor gRPC directamente
+        // Use shell: true on Windows so it can find python via PATH/registry
+        const isWindows = process.platform === 'win32';
         this.config.process = spawn('python', ['grpc_server.py'], {
           stdio: ['pipe', 'pipe', 'pipe'],
           cwd: cwd,
           env: { ...process.env, PYTHONUNBUFFERED: '1' },
+          shell: isWindows,
         });
       } else {
         // En producción: ejecutar el ejecutable
