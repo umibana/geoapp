@@ -147,7 +147,7 @@ jobs:
           venv\Scripts\pip install -r backend\requirements.txt
         shell: powershell
 
-      - name: Generate Protocol Buffers
+      - name: Generate Protocol Buffers (Windows)
         run: |
           $env:PATH = "${{ github.workspace }}\venv\Scripts;$env:PATH"
           Write-Host "==================== Environment Check ===================="
