@@ -752,9 +752,6 @@ async function generateOriginalProtos() {
 
   const protoFiles = fs.readdirSync(PROTO_DIR).filter(f => f.endsWith('.proto'));
   
-  // TypeScript via ts-proto (using npm protoc for cross-platform compatibility)
-  const isWindows = process.platform === 'win32';
-  
   // Build proto list (use native paths for protoc, it handles both)
   const protoList = protoFiles.map(f => path.join(PROTO_DIR, f)).join(' ');
   
