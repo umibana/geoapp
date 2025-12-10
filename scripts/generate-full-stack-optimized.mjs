@@ -755,22 +755,34 @@ async function generateOriginalProtos() {
   // TypeScript via ts-proto (using npm protoc for cross-platform compatibility)
   const isWindows = process.platform === 'win32';
   
-  // On Windows, use .cmd extension for the plugin
-  const tsProtoPlugin = isWindows 
-    ? path.resolve('node_modules/.bin/protoc-gen-ts_proto.cmd')
-    : path.resolve('node_modules/.bin/protoc-gen-ts_proto');
-  
   // Build proto list (use native paths for protoc, it handles both)
   const protoList = protoFiles.map(f => path.join(PROTO_DIR, f)).join(' ');
   
-  const frontendCommand =
-    `${PROTOC_PATH} --plugin=protoc-gen-ts_proto="${tsProtoPlugin}" ` +
-    `--ts_proto_out=${FRONTEND_OUT_DIR} ` +
-    `--ts_proto_opt=lowerCaseServiceMethods=true,snakeToCamel=false ` +
-    `--proto_path=${PROTO_DIR} ${protoList}`;
+  let frontendSuccess;
   
-  log(`Frontend command: ${frontendCommand}`);
-  const frontendSuccess = runCommand(frontendCommand, 'Generating TypeScript protobuf files with ts-proto');
+  if (isWindows) {
+    // On Windows, use npx to handle the .cmd wrapper resolution properly
+    // This avoids the "%1 is not a valid Win32 application" error
+    const frontendCommand =
+      `npx protoc --plugin=protoc-gen-ts_proto=".\\node_modules\\.bin\\protoc-gen-ts_proto.cmd" ` +
+      `--ts_proto_out=${FRONTEND_OUT_DIR} ` +
+      `--ts_proto_opt=lowerCaseServiceMethods=true,snakeToCamel=false ` +
+      `--proto_path=${PROTO_DIR} ${protoList}`;
+    
+    log(`Frontend command: ${frontendCommand}`);
+    frontendSuccess = runCommand(frontendCommand, 'Generating TypeScript protobuf files with ts-proto');
+  } else {
+    // On Unix, use the direct path
+    const tsProtoPlugin = path.resolve('node_modules/.bin/protoc-gen-ts_proto');
+    const frontendCommand =
+      `${PROTOC_PATH} --plugin=protoc-gen-ts_proto="${tsProtoPlugin}" ` +
+      `--ts_proto_out=${FRONTEND_OUT_DIR} ` +
+      `--ts_proto_opt=lowerCaseServiceMethods=true,snakeToCamel=false ` +
+      `--proto_path=${PROTO_DIR} ${protoList}`;
+    
+    log(`Frontend command: ${frontendCommand}`);
+    frontendSuccess = runCommand(frontendCommand, 'Generating TypeScript protobuf files with ts-proto');
+  }
 
   // Python via grpc_tools.protoc with type stubs
   // protoc expects forward slashes even on Windows
