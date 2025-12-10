@@ -541,14 +541,14 @@ class ProjectManager:
             
             if is_gslib:
                 # Parse GSLIB format and convert to CSV bytes
-                print(f"📊 Detected GSLIB format file: {request.original_filename}")
+                print(f"[DATA] Detected GSLIB format file: {request.original_filename}")
                 df = self._parse_gslib_to_dataframe(file_content)
                 
                 # Convert DataFrame to CSV bytes
                 csv_buffer = io.BytesIO()
                 df.to_csv(csv_buffer, index=False)
                 file_content = csv_buffer.getvalue()
-                print(f"✓ Converted GSLIB to CSV: {len(df)} rows, {len(df.columns)} columns")
+                print(f"[OK] Converted GSLIB to CSV: {len(df)} rows, {len(df.columns)} columns")
             
             # 1. Import CSV to DuckDB with preprocessing
             self._import_csv_to_duckdb(
@@ -941,7 +941,7 @@ class ProjectManager:
             return response
 
         except Exception as e:
-            print(f"❌ [BACKEND/ProjectManager] Exception during rename: {str(e)}")
+            print(f"[ERROR] [BACKEND/ProjectManager] Exception during rename: {str(e)}")
             import traceback
             traceback.print_exc()
             response = projects_pb2.RenameFileColumnResponse()
@@ -1024,7 +1024,7 @@ class ProjectManager:
                 schema_result = conn.execute(text(f"DESCRIBE {table_name}"))
                 schema_data = [(row[0], row[1]) for row in schema_result]  # (column_name, column_type)
             
-            print(f"🔍 [AnalyzeCSV] DuckDB schema for {table_name}:")
+            print(f"[DEBUG] [AnalyzeCSV] DuckDB schema for {table_name}:")
             for col_name, col_type in schema_data:
                 print(f"  - {col_name}: {col_type}")
             
@@ -1047,15 +1047,15 @@ class ProjectManager:
                     numeric_keywords = ['INT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'NUMERIC', 'REAL', 'BIGINT', 'SMALLINT', 'TINYINT']
                     is_numeric = any(keyword in duckdb_type for keyword in numeric_keywords)
                 
-                print(f"  📊 Column '{header}': DuckDB type='{duckdb_type}', is_numeric={is_numeric}")
+                print(f"  [DATA] Column '{header}': DuckDB type='{duckdb_type}', is_numeric={is_numeric}")
                 
                 # Set column type
                 if is_numeric:
                     suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)
-                    print(f"    ✅ Set as NUMERIC (value={projects_pb2.COLUMN_TYPE_NUMERIC})")
+                    print(f"    [OK] Set as NUMERIC (value={projects_pb2.COLUMN_TYPE_NUMERIC})")
                 else:
                     suggested_types.append(projects_pb2.COLUMN_TYPE_CATEGORICAL)
-                    print(f"    ✅ Set as CATEGORICAL (value={projects_pb2.COLUMN_TYPE_CATEGORICAL})")
+                    print(f"    [OK] Set as CATEGORICAL (value={projects_pb2.COLUMN_TYPE_CATEGORICAL})")
                 
                 # Suggest coordinate mappings based on column names (only for numeric columns)
                 if is_numeric:
@@ -1124,9 +1124,9 @@ class ProjectManager:
     ) -> projects_pb2.ProcessDatasetResponse:
         """Process a SAMPLE type dataset"""
         try:
-            print(f"🔍 [ProcessSampleDataset] Received {len(request.column_mappings)} column mappings")
+            print(f"[DEBUG] [ProcessSampleDataset] Received {len(request.column_mappings)} column mappings")
             if len(request.column_mappings) > 0:
-                print(f"🔍 [ProcessSampleDataset] First mapping: column_name={request.column_mappings[0].column_name}, column_type={request.column_mappings[0].column_type}")
+                print(f"[DEBUG] [ProcessSampleDataset] First mapping: column_name={request.column_mappings[0].column_name}, column_type={request.column_mappings[0].column_type}")
 
             # Obtener el nombre de la tabla DuckDB para este archivo
             table_name = f"data_{request.file_id.replace('-', '_')}"
@@ -1153,9 +1153,9 @@ class ProjectManager:
                 }
                 column_mappings_list.append(mapping_dict)
 
-            print(f"🔍 [ProcessSampleDataset] Storing {len(column_mappings_list)} mappings to database")
+            print(f"[DEBUG] [ProcessSampleDataset] Storing {len(column_mappings_list)} mappings to database")
             if len(column_mappings_list) > 0:
-                print(f"🔍 [ProcessSampleDataset] First stored mapping: {column_mappings_list[0]}")
+                print(f"[DEBUG] [ProcessSampleDataset] First stored mapping: {column_mappings_list[0]}")
             
             # Crear registro de dataset que apunte a la tabla DuckDB
             dataset = models.Dataset(
@@ -1220,7 +1220,7 @@ class ProjectManager:
     ) -> projects_pb2.ProcessDatasetResponse:
         """Process a BLOCK_MODEL type dataset"""
         try:
-            print(f"🔍 [ProcessBlockDataset] Processing BLOCK_MODEL dataset")
+            print(f"[DEBUG] [ProcessBlockDataset] Processing BLOCK_MODEL dataset")
             
             # Get the table name
             table_name = f"data_{request.file_id.replace('-', '_')}"
@@ -1319,7 +1319,7 @@ class ProjectManager:
     ) -> projects_pb2.ProcessDatasetResponse:
         """Process a DRILL_HOLES type dataset"""
         try:
-            print(f"🔍 [ProcessDrillHoleDataset] Processing DRILL_HOLES dataset")
+            print(f"[DEBUG] [ProcessDrillHoleDataset] Processing DRILL_HOLES dataset")
             
             # Get file metadata to find group_id and validate it's an assay file
             if not file.extra_metadata:
@@ -1391,7 +1391,7 @@ class ProjectManager:
             # This will be implemented in the future when composite_data is needed
             # The composite_distance parameter is stored in metadata for future use
             if file_metadata.get('composite_data', False):
-                print(f"⚠️  [ProcessDrillHoleDataset] Composite data calculation not yet implemented")
+                print(f"[WARN]  [ProcessDrillHoleDataset] Composite data calculation not yet implemented")
                 print(f"    Composite distance: {file_metadata.get('composite_distance')} meters")
                 # Future implementation will:
                 # 1. Read assay, collar, and survey data
@@ -1441,7 +1441,7 @@ class ProjectManager:
     def delete_dataset(self, request: projects_pb2.DeleteDatasetRequest) -> projects_pb2.DeleteDatasetResponse:
         """Eliminar un dataset usando operaciones bulk eficientes"""
         try:
-            print(f"🗑️  Solicitud de eliminar dataset: {request.dataset_id}")
+            print(f"[DELETE]  Solicitud de eliminar dataset: {request.dataset_id}")
             
             start_time = time.time()
             
@@ -1474,12 +1474,12 @@ class ProjectManager:
             response.success = True
             response.delete_time = delete_time
             
-            print(f"✅ Dataset eliminado en {delete_time:.2f}s")
+            print(f"[OK] Dataset eliminado en {delete_time:.2f}s")
             
             return response
             
         except Exception as e:
-            print(f"❌ Error eliminando dataset: {e}")
+            print(f"[ERROR] Error eliminando dataset: {e}")
             response = projects_pb2.DeleteDatasetResponse()
             response.success = False
             response.error_message = str(e)

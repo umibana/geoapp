@@ -75,24 +75,24 @@ def migrate_add_extra_metadata(engine: Engine) -> None:
             # Check if extra_metadata column exists in file table
             try:
                 result = conn.execute(text("SELECT extra_metadata FROM file LIMIT 1"))
-                print("✓ Migration: extra_metadata column already exists in file table")
+                print("[OK] Migration: extra_metadata column already exists in file table")
             except Exception:
                 # Column doesn't exist, add it
                 conn.execute(text("ALTER TABLE file ADD COLUMN extra_metadata VARCHAR"))
                 conn.commit()
-                print("✓ Migration: Added extra_metadata column to file table")
+                print("[OK] Migration: Added extra_metadata column to file table")
             
             # Check if extra_metadata column exists in dataset table
             try:
                 result = conn.execute(text("SELECT extra_metadata FROM dataset LIMIT 1"))
-                print("✓ Migration: extra_metadata column already exists in dataset table")
+                print("[OK] Migration: extra_metadata column already exists in dataset table")
             except Exception:
                 # Column doesn't exist, add it
                 conn.execute(text("ALTER TABLE dataset ADD COLUMN extra_metadata VARCHAR"))
                 conn.commit()
-                print("✓ Migration: Added extra_metadata column to dataset table")
+                print("[OK] Migration: Added extra_metadata column to dataset table")
                 
     except Exception as e:
-        print(f"⚠️  Migration warning: {e}")
+        print(f"[WARN] Migration warning: {e}")
 
 

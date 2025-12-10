@@ -66,11 +66,11 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
                     "streaming_available": "true"
                 }
             )
-            print("💚 Health check: OK")
+            print("[OK] Health check: OK")
             return response
             
         except Exception as e:
-            print(f"❌ Health check error: {e}")
+            print(f"[ERROR] Health check error: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"Health check failed: {str(e)}")
             return geospatial_pb2.HealthCheckResponse(healthy=False, version=self.version)
@@ -103,7 +103,7 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
             return response
             
         except Exception as e:
-            print(f"❌ HelloWorld error: {e}")
+            print(f"[ERROR] HelloWorld error: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"HelloWorld failed: {str(e)}")
             return geospatial_pb2.HelloWorldResponse()
@@ -151,7 +151,7 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
             return response
             
         except Exception as e:
-            print(f"❌ EchoParameter error: {e}")
+            print(f"[ERROR] EchoParameter error: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"EchoParameter failed: {str(e)}")
             return geospatial_pb2.EchoParameterResponse()
@@ -303,7 +303,7 @@ def serve():
             server.stop(grace=5)
                 
     except Exception as e:
-        print(f"❌ Error al iniciar el servidor gRPC: {e}")
+        print(f"[ERROR] Error al iniciar el servidor gRPC: {e}")
         
         # Escribimos el error en un archivo
         script_dir = Path(__file__).parent.absolute()

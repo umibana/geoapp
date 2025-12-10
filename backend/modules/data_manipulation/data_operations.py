@@ -337,9 +337,9 @@ class DataManipulationManager:
     def add_filtered_column(self, request: projects_pb2.AddFilteredColumnRequest) -> projects_pb2.AddFilteredColumnResponse:
         """Add filtered column (non-destructive)"""
         try:
-            print(f"🔍 [BACKEND/DataManipulation] Adding filtered column for file_id: {request.file_id}")
-            print(f"🔍 [BACKEND/DataManipulation] New column: {request.new_column_name}")
-            print(f"🔍 [BACKEND/DataManipulation] Filter: {request.source_column} {request.operation} {request.value}")
+            print(f"[DEBUG] [BACKEND/DataManipulation] Adding filtered column for file_id: {request.file_id}")
+            print(f"[DEBUG] [BACKEND/DataManipulation] New column: {request.new_column_name}")
+            print(f"[DEBUG] [BACKEND/DataManipulation] Filter: {request.source_column} {request.operation} {request.value}")
             
             table_name = f"data_{request.file_id.replace('-', '_')}"
             
@@ -368,7 +368,7 @@ class DataManipulationManager:
                         ADD COLUMN "{request.new_column_name}" VARCHAR
                     """
                     conn.execute(text(alter_query))
-                    print(f"✅ [BACKEND/DataManipulation] Added column '{request.new_column_name}'")
+                    print(f"[OK] [BACKEND/DataManipulation] Added column '{request.new_column_name}'")
                     
                     # Update with filtered values using CASE
                     update_query = f"""
@@ -379,7 +379,7 @@ class DataManipulationManager:
                         END
                     """
                     conn.execute(text(update_query))
-                    print(f"✅ [BACKEND/DataManipulation] Updated column with filtered values")
+                    print(f"[OK] [BACKEND/DataManipulation] Updated column with filtered values")
                     
                     # Count how many rows have non-NULL values
                     count_query = f"""
@@ -419,11 +419,11 @@ class DataManipulationManager:
                         
                         dataset.column_mappings = json.dumps(mappings)
                         session.add(dataset)
-                        print(f"✅ [BACKEND/DataManipulation] Updated column_mappings for dataset {dataset.id}")
+                        print(f"[OK] [BACKEND/DataManipulation] Updated column_mappings for dataset {dataset.id}")
                 
                 session.commit()
             
-            print(f"✅ [BACKEND/DataManipulation] Filtered column added: {rows_with_values} matches, {rows_with_null} NULL")
+            print(f"[OK] [BACKEND/DataManipulation] Filtered column added: {rows_with_values} matches, {rows_with_null} NULL")
             
             response = projects_pb2.AddFilteredColumnResponse()
             response.success = True
@@ -433,7 +433,7 @@ class DataManipulationManager:
             return response
             
         except Exception as e:
-            print(f"❌ [BACKEND/DataManipulation] Exception during add_filtered_column: {str(e)}")
+            print(f"[ERROR] [BACKEND/DataManipulation] Exception during add_filtered_column: {str(e)}")
             import traceback
             traceback.print_exc()
             response = projects_pb2.AddFilteredColumnResponse()
@@ -584,7 +584,7 @@ class DataManipulationManager:
                     
                     session.commit()
             
-            print(f"✅ [BACKEND/DataManipulation] Successfully duplicated {len(duplicated_columns)} columns")
+            print(f"[OK] [BACKEND/DataManipulation] Successfully duplicated {len(duplicated_columns)} columns")
             
             response = projects_pb2.DuplicateFileColumnsResponse()
             response.success = True
@@ -592,7 +592,7 @@ class DataManipulationManager:
             return response
             
         except Exception as e:
-            print(f"❌ [BACKEND/DataManipulation] Exception during duplication: {str(e)}")
+            print(f"[ERROR] [BACKEND/DataManipulation] Exception during duplication: {str(e)}")
             import traceback
             traceback.print_exc()
             response = projects_pb2.DuplicateFileColumnsResponse()

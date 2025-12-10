@@ -80,14 +80,14 @@ class EDAManager:
                 if filter_columns and len(filter_columns) >= 2:
                     x_col, y_col = filter_columns[0], filter_columns[1]
                     z_col = filter_columns[2] if len(filter_columns) >= 3 else None
-                    print(f"🔍 Using specified filter columns: x='{x_col}', y='{y_col}'")
+                    print(f"[DEBUG] Using specified filter columns: x='{x_col}', y='{y_col}'")
                 else:
                     # Default to first 3 columns for backward compatibility
                     x_col, y_col = columns[0], columns[1]
                     z_col = columns[2] if len(columns) >= 3 else None
-                    print(f"🔍 Using default filter columns (first 3): x='{x_col}', y='{y_col}'")
+                    print(f"[DEBUG] Using default filter columns (first 3): x='{x_col}', y='{y_col}'")
 
-                print(f"🔍 Filtering dataset {dataset_id} with bounding box: x[{x1}, {x2}], y[{y1}, {y2}]" +
+                print(f"[DEBUG] Filtering dataset {dataset_id} with bounding box: x[{x1}, {x2}], y[{y1}, {y2}]" +
                       (f", z[{z1}, {z2}]" if is_3d else ""))
 
                 # Get coordinate data for filtering
@@ -150,7 +150,7 @@ class EDAManager:
             return flat_numpy, boundaries
 
         except (KeyError, Exception) as e:
-            print(f"❌ Error in get_dataset_data_and_stats_combined: {e}")
+            print(f"[ERROR] Error in get_dataset_data_and_stats_combined: {e}")
             return np.array([], dtype=np.float32), {}
     
     def compute_histogram(self, data: np.ndarray, column_name: str, num_bins: int = 30) -> Dict:
@@ -197,7 +197,7 @@ class EDAManager:
             }
 
         except Exception as e:
-            print(f"❌ Error computing histogram for {column_name}: {e}")
+            print(f"[ERROR] Error computing histogram for {column_name}: {e}")
             return {}
     
     def compute_boxplot(self, data: np.ndarray, column_name: str) -> Dict:
@@ -255,7 +255,7 @@ class EDAManager:
             }
 
         except Exception as e:
-            print(f"❌ Error computing box plot for {column_name}: {e}")
+            print(f"[ERROR] Error computing box plot for {column_name}: {e}")
             return {}
     
     def compute_heatmap(self, x_data: np.ndarray, y_data: np.ndarray, value_data: np.ndarray,
@@ -352,7 +352,7 @@ class EDAManager:
             }
 
         except Exception as e:
-            print(f"❌ Error computing heatmap: {e}")
+            print(f"[ERROR] Error computing heatmap: {e}")
             import traceback
             print(traceback.format_exc())
             return {}
@@ -423,7 +423,7 @@ class EDAManager:
             table_name = f"data_{file_id.replace('-', '_')}"
 
             if not db_connection.check_duckdb_table_exists(self.engine, table_name):
-                print(f"⚠️ Table {table_name} does not exist, skipping statistics recalculation")
+                print(f"[WARN] Table {table_name} does not exist, skipping statistics recalculation")
                 return False
 
             # Get data from DuckDB into pandas
@@ -435,7 +435,7 @@ class EDAManager:
                 df = result.df()
 
             if df.empty:
-                print(f"⚠️ No data in table {table_name}, skipping statistics recalculation")
+                print(f"[WARN] No data in table {table_name}, skipping statistics recalculation")
                 return False
 
             total_rows = len(df)
@@ -485,13 +485,13 @@ class EDAManager:
 
                 for dataset in datasets:
                     self.store_column_statistics(dataset.id, column_statistics)
-                    print(f"✅ Recalculated statistics for dataset {dataset.id}")
+                    print(f"[OK] Recalculated statistics for dataset {dataset.id}")
 
             return True
 
         except Exception as e:
             import traceback
-            print(f"❌ Error recalculating file statistics: {e}")
+            print(f"[ERROR] Error recalculating file statistics: {e}")
             print(traceback.format_exc())
             return False
     
@@ -539,11 +539,11 @@ class EDAManager:
     def get_file_statistics(self, request: projects_pb2.GetFileStatisticsRequest) -> projects_pb2.GetFileStatisticsResponse:
         """Get file statistics"""
         try:
-            print(f"📊 [BACKEND/EDA] Getting file statistics for file_id: {request.file_id}")
+            print(f"[DATA] [BACKEND/EDA] Getting file statistics for file_id: {request.file_id}")
 
             # Get column names filter if provided
             column_names = list(request.columns) if request.columns else None
-            print(f"📊 [BACKEND/EDA] Column filter: {column_names}")
+            print(f"[DATA] [BACKEND/EDA] Column filter: {column_names}")
 
             # Get the dataset associated with this file
             with Session(self.engine) as session:
@@ -644,8 +644,8 @@ class EDAManager:
 
                         statistics[stat.column_name] = stat_dict
 
-            print(f"📊 [BACKEND/EDA] Retrieved statistics for {len(statistics)} columns")
-            print(f"📊 [BACKEND/EDA] Column names: {list(statistics.keys())}")
+            print(f"[DATA] [BACKEND/EDA] Retrieved statistics for {len(statistics)} columns")
+            print(f"[DATA] [BACKEND/EDA] Column names: {list(statistics.keys())}")
 
             response = projects_pb2.GetFileStatisticsResponse()
             response.success = True
@@ -683,12 +683,12 @@ class EDAManager:
                     if stats.get('top_counts'):
                         col_stat.top_counts.extend(stats['top_counts'])
 
-            print(f"✅ [BACKEND/EDA] Returning statistics response with {len(response.statistics)} columns")
+            print(f"[OK] [BACKEND/EDA] Returning statistics response with {len(response.statistics)} columns")
 
             return response
 
         except Exception as e:
-            print(f"❌ [BACKEND/EDA] Error getting file statistics: {str(e)}")
+            print(f"[ERROR] [BACKEND/EDA] Error getting file statistics: {str(e)}")
             import traceback
             traceback.print_exc()
             response = projects_pb2.GetFileStatisticsResponse()
@@ -711,7 +711,7 @@ class EDAManager:
 
             # Check if table exists
             if not db_connection.check_duckdb_table_exists(self.engine, table_name):
-                print(f"⚠️ Table {table_name} does not exist, skipping statistics generation")
+                print(f"[WARN] Table {table_name} does not exist, skipping statistics generation")
                 return {}
 
             # Use DuckDB's to_df() method for efficient DataFrame conversion
@@ -769,7 +769,7 @@ class EDAManager:
             return column_statistics
 
         except Exception as e:
-            print(f"❌ Error generating statistics from DuckDB with pandas: {e}")
+            print(f"[ERROR] Error generating statistics from DuckDB with pandas: {e}")
             return {}
     
     def get_dataset_data(self, request: projects_pb2.GetDatasetDataRequest) -> projects_pb2.GetDatasetDataResponse:
@@ -777,7 +777,7 @@ class EDAManager:
         try:
             # Columns for visualization (raw data points - typically x, y, z)
             viz_columns = list(request.columns) if request.columns else ["x", "y", "z"]
-            print(f"📋 Visualization columns (for raw data): {viz_columns}")
+            print(f"[INFO] Visualization columns (for raw data): {viz_columns}")
 
             # Get dataset information first
             dataset = self.get_dataset_by_id(request.dataset_id)
@@ -787,15 +787,15 @@ class EDAManager:
 
             # Get ALL numeric column names from dataset for statistics computation
             column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
-            print(f"🔍 DEBUG: Raw column_mappings from database: {column_mappings}")
-            print(f"🔍 DEBUG: Number of mappings: {len(column_mappings)}")
+            print(f"[DEBUG] DEBUG: Raw column_mappings from database: {column_mappings}")
+            print(f"[DEBUG] DEBUG: Number of mappings: {len(column_mappings)}")
 
             all_numeric_columns = [m['column_name'] for m in column_mappings if m['column_type'] == 1]  # NUMERIC only
-            print(f"📊 All numeric columns (for statistics): {all_numeric_columns} ({len(all_numeric_columns)} columns)")
+            print(f"[DATA] All numeric columns (for statistics): {all_numeric_columns} ({len(all_numeric_columns)} columns)")
 
             # DEBUG: Show all column types
             for m in column_mappings:
-                print(f"🔍 Column '{m['column_name']}': type={m['column_type']} (1=NUMERIC, 0=CATEGORICAL)")
+                print(f"[DEBUG] Column '{m['column_name']}': type={m['column_type']} (1=NUMERIC, 0=CATEGORICAL)")
 
             # Find coordinate columns from mappings (these are used for bounding box filtering)
             coord_columns = {}
@@ -809,7 +809,7 @@ class EDAManager:
                 coord_columns.get('y', viz_columns[1] if len(viz_columns) > 1 else 'y'),
                 coord_columns.get('z', viz_columns[2] if len(viz_columns) > 2 else 'z')
             ]
-            print(f"🔍 Coordinate columns for filtering: {filter_columns_for_bbox} (from column_mappings)")
+            print(f"[DEBUG] Coordinate columns for filtering: {filter_columns_for_bbox} (from column_mappings)")
 
             # Extract optional filtering parameters
             bounding_box = list(request.bounding_box) if request.bounding_box else None
@@ -819,13 +819,13 @@ class EDAManager:
 
             # Log optional parameters if provided
             if bounding_box:
-                print(f"📦 GetDatasetData with bounding_box: {bounding_box}")
+                print(f"[BOX] GetDatasetData with bounding_box: {bounding_box}")
             if shape:
-                print(f"🔷 Shape: {shape}")
+                print(f"[SHAPE] Shape: {shape}")
             if color:
-                print(f"🎨 Color: {color}")
+                print(f"[COLOR] Color: {color}")
             if function:
-                print(f"🔧 Function: {function}")
+                print(f"[FUNC] Function: {function}")
 
             # Get visualization data (only requested columns for raw data)
             data, boundaries = self.get_dataset_data_and_stats_combined(
@@ -835,9 +835,9 @@ class EDAManager:
             )
 
             # Get ALL numeric columns data for statistics computation
-            print(f"🔍 DEBUG: About to fetch data for columns: {all_numeric_columns}")
-            print(f"🔍 DEBUG: Bounding box: {bounding_box}")
-            print(f"🔍 DEBUG: Filter columns for bbox: {filter_columns_for_bbox}")
+            print(f"[DEBUG] DEBUG: About to fetch data for columns: {all_numeric_columns}")
+            print(f"[DEBUG] DEBUG: Bounding box: {bounding_box}")
+            print(f"[DEBUG] DEBUG: Filter columns for bbox: {filter_columns_for_bbox}")
 
             all_data, all_boundaries = self.get_dataset_data_and_stats_combined(
                 request.dataset_id,
@@ -845,9 +845,9 @@ class EDAManager:
                 bounding_box=bounding_box,
                 filter_columns=filter_columns_for_bbox  # Use coordinate columns from dataset mapping
             )
-            print(f"📊 Fetched {len(all_data)} values for {len(all_numeric_columns)} columns")
-            print(f"🔍 DEBUG: all_data type: {type(all_data)}, shape/len: {all_data.shape if hasattr(all_data, 'shape') else len(all_data)}")
-            print(f"🔍 DEBUG: all_boundaries keys: {list(all_boundaries.keys()) if all_boundaries else 'None'}")
+            print(f"[DATA] Fetched {len(all_data)} values for {len(all_numeric_columns)} columns")
+            print(f"[DEBUG] DEBUG: all_data type: {type(all_data)}, shape/len: {all_data.shape if hasattr(all_data, 'shape') else len(all_data)}")
+            print(f"[DEBUG] DEBUG: all_boundaries keys: {list(all_boundaries.keys()) if all_boundaries else 'None'}")
 
             # Direct binary conversion without unnecessary copying
             binary_data = data.tobytes()
@@ -867,23 +867,23 @@ class EDAManager:
                 boundary.valid_count = int(stats['valid_count'])
 
             # ========== Compute statistics for ALL numeric columns ==========
-            print(f"🔍 DEBUG: Checking if we should compute statistics...")
-            print(f"🔍 DEBUG: len(all_data)={len(all_data)}, len(all_numeric_columns)={len(all_numeric_columns)}")
+            print(f"[DEBUG] DEBUG: Checking if we should compute statistics...")
+            print(f"[DEBUG] DEBUG: len(all_data)={len(all_data)}, len(all_numeric_columns)={len(all_numeric_columns)}")
 
             if len(all_data) > 0:
                 if len(all_numeric_columns) == 0:
-                    print(f"⚠️ WARNING: all_data has {len(all_data)} values but all_numeric_columns is empty! Cannot compute statistics.")
+                    print(f"[WARN] WARNING: all_data has {len(all_data)} values but all_numeric_columns is empty! Cannot compute statistics.")
                 else:
                     num_points = len(all_data) // len(all_numeric_columns)
-                    print(f"📊 Computing statistics for {num_points} points across {len(all_numeric_columns)} columns...")
+                    print(f"[DATA] Computing statistics for {num_points} points across {len(all_numeric_columns)} columns...")
 
                     # 1. Compute histograms for ALL numeric columns
-                    print(f"🔍 DEBUG: Starting histogram computation for {len(all_numeric_columns)} columns...")
+                    print(f"[DEBUG] DEBUG: Starting histogram computation for {len(all_numeric_columns)} columns...")
                     for i, col_name in enumerate(all_numeric_columns):
                         col_data = all_data[i::len(all_numeric_columns)]  # Extract column data from interleaved format
-                        print(f"🔍 DEBUG: Computing histogram for column {i}: '{col_name}', data length: {len(col_data)}")
+                        print(f"[DEBUG] DEBUG: Computing histogram for column {i}: '{col_name}', data length: {len(col_data)}")
                         histogram = self.compute_histogram(col_data, col_name, num_bins=30)
-                        print(f"🔍 DEBUG: Histogram result: {histogram is not None and len(histogram) > 0}")
+                        print(f"[DEBUG] DEBUG: Histogram result: {histogram is not None and len(histogram) > 0}")
 
                         if histogram:
                             hist_proto = response.histograms[col_name]
@@ -894,7 +894,7 @@ class EDAManager:
                             hist_proto.min_value = histogram['min_value']
                             hist_proto.max_value = histogram['max_value']
                             hist_proto.total_count = histogram['total_count']
-                            print(f"  ✅ Histogram for '{col_name}': {histogram['num_bins']} bins")
+                            print(f"  [OK] Histogram for '{col_name}': {histogram['num_bins']} bins")
 
                     # 2. Compute box plots for ALL numeric columns
                     for i, col_name in enumerate(all_numeric_columns):
@@ -915,7 +915,7 @@ class EDAManager:
                             bp_proto.upper_fence = boxplot['upper_fence']
                             bp_proto.iqr = boxplot['iqr']
                             bp_proto.total_count = boxplot['total_count']
-                            print(f"  ✅ Box plot for '{col_name}': median={boxplot['median']:.2f}, {len(boxplot['outliers'])} outliers")
+                            print(f"  [OK] Box plot for '{col_name}': median={boxplot['median']:.2f}, {len(boxplot['outliers'])} outliers")
 
                     # 3. Compute heatmap (using visualization columns only - x, y, z)
                     if len(viz_columns) >= 3:
@@ -956,23 +956,23 @@ class EDAManager:
                             hm_proto.x_column = heatmap['x_column']
                             hm_proto.y_column = heatmap['y_column']
                             hm_proto.value_column = heatmap['value_column']
-                            print(f"  ✅ Heatmap: {len(heatmap['cells'])} cells in {heatmap['grid_size_x']}x{heatmap['grid_size_y']} grid")
+                            print(f"  [OK] Heatmap: {len(heatmap['cells'])} cells in {heatmap['grid_size_x']}x{heatmap['grid_size_y']} grid")
 
-                    print(f"✅ Statistics computation complete!")
+                    print(f"[OK] Statistics computation complete!")
 
             return response
 
         except Exception as e:
             import traceback
-            print(f"❌ Error in ultra-optimized dataset retrieval: {e}")
-            print(f"❌ Traceback completo: {traceback.format_exc()}")
+            print(f"[ERROR] Error in ultra-optimized dataset retrieval: {e}")
+            print(f"[ERROR] Traceback completo: {traceback.format_exc()}")
             response = projects_pb2.GetDatasetDataResponse()
             return response
     
     def get_dataset_table_data(self, request: projects_pb2.GetDatasetTableDataRequest) -> projects_pb2.GetDatasetTableDataResponse:
         """Get paginated table data for dataset (efficient for large datasets)"""
         try:
-            print(f"📊 [GetDatasetTableData] dataset_id={request.dataset_id}, limit={request.limit}, offset={request.offset}")
+            print(f"[DATA] [GetDatasetTableData] dataset_id={request.dataset_id}, limit={request.limit}, offset={request.offset}")
             
             # Get dataset info
             dataset = self.get_dataset_by_id(request.dataset_id)
@@ -985,10 +985,10 @@ class EDAManager:
             # Get column names - either from request or all numeric columns from mappings
             column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
 
-            print(f"🔍 [GetDatasetTableData] Retrieved {len(column_mappings)} column mappings from database")
+            print(f"[DEBUG] [GetDatasetTableData] Retrieved {len(column_mappings)} column mappings from database")
             if len(column_mappings) > 0:
-                print(f"🔍 [GetDatasetTableData] First mapping: {column_mappings[0]}")
-                print(f"🔍 [GetDatasetTableData] First mapping column_type: {column_mappings[0]['column_type']} (type: {type(column_mappings[0]['column_type'])})")
+                print(f"[DEBUG] [GetDatasetTableData] First mapping: {column_mappings[0]}")
+                print(f"[DEBUG] [GetDatasetTableData] First mapping column_type: {column_mappings[0]['column_type']} (type: {type(column_mappings[0]['column_type'])})")
 
             if request.columns and len(request.columns) > 0:
                 # Use specified columns
@@ -996,7 +996,7 @@ class EDAManager:
             else:
                 # Get all numeric columns
                 columns_to_fetch = [m['column_name'] for m in column_mappings if m['column_type'] == 1]  # NUMERIC only
-                print(f"🔍 [GetDatasetTableData] Filtered to {len(columns_to_fetch)} numeric columns")
+                print(f"[DEBUG] [GetDatasetTableData] Filtered to {len(columns_to_fetch)} numeric columns")
 
             if not columns_to_fetch:
                 response = projects_pb2.GetDatasetTableDataResponse()
@@ -1004,7 +1004,7 @@ class EDAManager:
                 response.error_message = "No hay columnas numéricas para mostrar"
                 return response
             
-            print(f"📊 [GetDatasetTableData] Fetching {len(columns_to_fetch)} columns")
+            print(f"[DATA] [GetDatasetTableData] Fetching {len(columns_to_fetch)} columns")
             
             # Build SQL query with pagination
             table_name = dataset.duckdb_table_name
@@ -1022,7 +1022,7 @@ class EDAManager:
                 result = conn.execute(text(query))
                 rows_data = result.fetchall()
             
-            print(f"📊 [GetDatasetTableData] Fetched {len(rows_data)} rows")
+            print(f"[DATA] [GetDatasetTableData] Fetched {len(rows_data)} rows")
             
             # Build response
             response = projects_pb2.GetDatasetTableDataResponse()
@@ -1036,11 +1036,11 @@ class EDAManager:
                 for i, col_name in enumerate(columns_to_fetch):
                     table_row.values[col_name] = float(row[i]) if row[i] is not None else 0.0
             
-            print(f"✅ [GetDatasetTableData] Returning {len(response.rows)} rows")
+            print(f"[OK] [GetDatasetTableData] Returning {len(response.rows)} rows")
             return response
             
         except Exception as e:
-            print(f"❌ Error getting dataset table data: {e}")
+            print(f"[ERROR] Error getting dataset table data: {e}")
             import traceback
             traceback.print_exc()
             response = projects_pb2.GetDatasetTableDataResponse()
