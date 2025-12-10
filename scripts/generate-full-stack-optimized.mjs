@@ -761,11 +761,13 @@ async function generateOriginalProtos() {
   let frontendSuccess;
   
   if (isWindows) {
-    // On Windows, use the buf CLI which is more reliable than @protobuf-ts/protoc
-    // buf includes protoc and handles Windows paths correctly
+    // On Windows, use Python's grpc_tools.protoc which is already installed and reliable
+    // This avoids the @protobuf-ts/protoc download issues and Win32 application errors
+    const tsProtoPlugin = path.resolve('node_modules/.bin/protoc-gen-ts_proto.cmd');
+    
     const frontendCommand =
-      `npx buf build --path ${PROTO_DIR} && ` +
-      `npx protoc-gen-ts_proto --plugin=protoc-gen-ts_proto=node_modules\\.bin\\protoc-gen-ts_proto.cmd ` +
+      `python -m grpc_tools.protoc ` +
+      `--plugin=protoc-gen-ts_proto="${tsProtoPlugin}" ` +
       `--ts_proto_out=${FRONTEND_OUT_DIR} ` +
       `--ts_proto_opt=lowerCaseServiceMethods=true,snakeToCamel=false ` +
       `--proto_path=${PROTO_DIR} ${protoList}`;
