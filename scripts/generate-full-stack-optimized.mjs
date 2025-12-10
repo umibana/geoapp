@@ -761,10 +761,11 @@ async function generateOriginalProtos() {
   let frontendSuccess;
   
   if (isWindows) {
-    // On Windows, use npx to handle the .cmd wrapper resolution properly
-    // This avoids the "%1 is not a valid Win32 application" error
+    // On Windows, use the buf CLI which is more reliable than @protobuf-ts/protoc
+    // buf includes protoc and handles Windows paths correctly
     const frontendCommand =
-      `npx protoc --plugin=protoc-gen-ts_proto=".\\node_modules\\.bin\\protoc-gen-ts_proto.cmd" ` +
+      `npx buf build --path ${PROTO_DIR} && ` +
+      `npx protoc-gen-ts_proto --plugin=protoc-gen-ts_proto=node_modules\\.bin\\protoc-gen-ts_proto.cmd ` +
       `--ts_proto_out=${FRONTEND_OUT_DIR} ` +
       `--ts_proto_opt=lowerCaseServiceMethods=true,snakeToCamel=false ` +
       `--proto_path=${PROTO_DIR} ${protoList}`;
