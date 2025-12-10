@@ -60,8 +60,17 @@ function generateFrontendProtos() {
   
   ensureDirectory(FRONTEND_OUT_DIR);
   
-  // Generate TypeScript files using ts-proto - process all proto files
-  const command = `protoc --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=${FRONTEND_OUT_DIR} --ts_proto_opt=lowerCaseServiceMethods=true --ts_proto_opt=snakeToCamel=false --proto_path=${PROTO_DIR} ${PROTO_DIR}/*.proto`;
+  const isWindows = process.platform === 'win32';
+  
+  // On Windows, use Python's grpc_tools.protoc which is more reliable
+  // On Unix, use the npm protoc binary
+  let command;
+  if (isWindows) {
+    const tsProtoPlugin = './node_modules/.bin/protoc-gen-ts_proto.cmd';
+    command = `python -m grpc_tools.protoc --plugin=protoc-gen-ts_proto=${tsProtoPlugin} --ts_proto_out=${FRONTEND_OUT_DIR} --ts_proto_opt=lowerCaseServiceMethods=true --ts_proto_opt=snakeToCamel=false --proto_path=${PROTO_DIR} ${PROTO_DIR}/*.proto`;
+  } else {
+    command = `protoc --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=${FRONTEND_OUT_DIR} --ts_proto_opt=lowerCaseServiceMethods=true --ts_proto_opt=snakeToCamel=false --proto_path=${PROTO_DIR} ${PROTO_DIR}/*.proto`;
+  }
   
   return runCommand(command, 'Generating TypeScript protobuf files for frontend with ts-proto');
 }

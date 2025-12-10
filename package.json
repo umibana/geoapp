@@ -7,7 +7,6 @@
   "private": true,
   "scripts": {
     "start": "electron-forge start",
-    "prestart": "npm run generate:protos",
     "dev": "npm run generate:full-stack && npm start",
     "dev:local": "source venv/bin/activate && npm run generate:full-stack && npm start",
     "package": "electron-forge package",
@@ -18,7 +17,7 @@
     "make:mac:x64": "electron-forge make --platform=darwin --arch=x64",
     "make:mac:arm64": "electron-forge make --platform=darwin --arch=arm64",
     "make:linux": "electron-forge make --platform=linux",
-    "premake": "npm run generate:protos",
+    "premake": "npm run generate:full-stack",
     "publish": "electron-forge publish",
     "lint": "eslint .",
     "format": "prettier --check .",

@@ -752,19 +752,19 @@ async function generateOriginalProtos() {
 
   const protoFiles = fs.readdirSync(PROTO_DIR).filter(f => f.endsWith('.proto'));
   
+  // TypeScript via ts-proto (using npm protoc for cross-platform compatibility)
+  const isWindows = process.platform === 'win32';
+  
   // Build proto list (use native paths for protoc, it handles both)
   const protoList = protoFiles.map(f => path.join(PROTO_DIR, f)).join(' ');
   
   let frontendSuccess;
   
   if (isWindows) {
-    // On Windows, use Python's grpc_tools.protoc which is already installed and reliable
-    // This avoids the @protobuf-ts/protoc download issues and Win32 application errors
-    const tsProtoPlugin = path.resolve('node_modules/.bin/protoc-gen-ts_proto.cmd');
-    
+    // On Windows, use npx to handle the .cmd wrapper resolution properly
+    // This avoids the "%1 is not a valid Win32 application" error
     const frontendCommand =
-      `python -m grpc_tools.protoc ` +
-      `--plugin=protoc-gen-ts_proto="${tsProtoPlugin}" ` +
+      `npx protoc --plugin=protoc-gen-ts_proto=".\\node_modules\\.bin\\protoc-gen-ts_proto.cmd" ` +
       `--ts_proto_out=${FRONTEND_OUT_DIR} ` +
       `--ts_proto_opt=lowerCaseServiceMethods=true,snakeToCamel=false ` +
       `--proto_path=${PROTO_DIR} ${protoList}`;
