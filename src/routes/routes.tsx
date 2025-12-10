@@ -4,7 +4,6 @@ import { RootRoute } from "./__root";
 import Procesamiento from "@/routes/pages/Procesamiento";
 import Proyectos from "@/routes/pages/Proyectos";
 import EDA2D from "@/routes/pages/EDA2D";
-import { GeoVizViewWithMosaic } from "@/components/geo-viz/GeovizView";
 
 // TODO: Steps to add a new route:
 // 1. Create a new page component in the '../pages/' directory (e.g., NewPage.tsx)
@@ -42,8 +41,8 @@ export const EDA3DRoute = createRoute({
   getParentRoute: () => RootRoute,
   path: "/eda-3d",
   // Comentado para probar en diferente os
-  component: GeoVizViewWithMosaic,
-  // component: EDA2D,
+  // component: GeoVizViewWithMosaic,
+  component: EDA2D,
 });
 
 export const ProcesamientoRoute = createRoute({
