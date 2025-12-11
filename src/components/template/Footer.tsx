@@ -1,12 +1,18 @@
-
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Progress } from "@/components/ui/progress";
 import { useTranslation } from "react-i18next";
 import langs from "@/localization/langs";
 import { setAppLanguage } from "@/helpers/language_helpers";
-import { Languages, Moon } from "lucide-react";
+import { Languages, Moon, X, Loader2 } from "lucide-react";
 import { toggleTheme } from "@/helpers/theme_helpers";
+import { 
+  useOperationsStore, 
+  getOperationTypeLabel,
+  type ActiveOperation
+} from "@/stores/operationsStore";
+import { OperationStatus } from "@/generated/projects";
 
 
 interface BackendStatusProps {
@@ -280,15 +286,103 @@ function ToggleTheme() {
   );
 }
 
+/**
+ * Single operation progress display
+ */
+function OperationProgressItem({ operation }: { operation: ActiveOperation }) {
+  const cancelOperation = useOperationsStore((state) => state.cancelOperation);
+  const isRunning = operation.status === OperationStatus.OPERATION_STATUS_RUNNING;
 
+  const handleCancel = async () => {
+    await cancelOperation(operation.operationId);
+  };
 
+  return (
+    <div className="flex items-center gap-2 min-w-[200px] max-w-[350px]">
+      {isRunning && (
+        <Loader2 size={12} className="animate-spin text-primary shrink-0" />
+      )}
+      <div className="flex flex-col flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs truncate">
+            {getOperationTypeLabel(operation.operationType)}
+          </span>
+          <span className="text-xs font-medium shrink-0">{operation.progress}%</span>
+        </div>
+        <Progress 
+          value={operation.progress} 
+          className="h-1.5 w-full" 
+        />
+        {operation.message && (
+          <span className="text-[0.6rem] text-muted-foreground truncate">
+            {operation.message}
+          </span>
+        )}
+      </div>
+      {isRunning && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-4 w-4 shrink-0 hover:bg-destructive/20"
+          onClick={handleCancel}
+          aria-label="Cancel operation"
+          tabIndex={0}
+        >
+          <X size={10} className="text-destructive" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Operations progress display in footer
+ */
+function OperationsProgress() {
+  // Select the Map directly to avoid creating new array references on every render
+  const operationsMap = useOperationsStore((state) => state.operations);
+  
+  // Convert to array for rendering (this is fine since we're not in the selector)
+  const operations = Array.from(operationsMap.values());
+  const hasOperations = operations.length > 0;
+
+  if (!hasOperations) {
+    return null;
+  }
+
+  // Show single operation inline, or popover for multiple
+  if (operations.length === 1) {
+    return <OperationProgressItem operation={operations[0]} />;
+  }
+
+  return (
+    <Popover>
+      <PopoverTrigger className="flex items-center gap-2 cursor-pointer">
+        <Loader2 size={12} className="animate-spin text-primary" />
+        <span className="text-xs">{operations.length} operations</span>
+      </PopoverTrigger>
+      <PopoverContent className="w-80" align="end">
+        <div className="space-y-3">
+          <h4 className="text-sm font-medium">Active Operations</h4>
+          {operations.map((op) => (
+            <OperationProgressItem key={op.operationId} operation={op} />
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export default function Footer() {
   return (
     <footer className="text-muted-foreground flex flex-row justify-between border px-1 text-[0.7rem]">
-      {/* Se dejan div vacios, se puede cambiar por componentes reales en el futuro */}
+      {/* Left side - Operations progress */}
+      <div className="flex items-center">
+        <OperationsProgress />
+      </div>
+      {/* Center - empty for now */}
       <div></div>
-      <div></div>
+      {/* Right side - Controls and status */}
       <div className="flex flex-row items-center gap-2">
         <LangToggle />
         <ToggleTheme />

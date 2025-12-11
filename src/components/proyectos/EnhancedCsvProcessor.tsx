@@ -9,6 +9,7 @@ import { CheckCircle2, XCircle, AlertCircle, FileText, Settings, Database } from
 
 // Importar tipos generados
 import { AnalyzeCsvForProjectResponse, ColumnMapping, ColumnType, ProcessDatasetResponse } from '@/generated/projects';
+import { startOperationTracking } from '@/stores/operationsStore';
 
 /**
  * Propiedades del procesador mejorado de CSV
@@ -264,6 +265,9 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
 
       console.log('🚀 [ProcessDataset] Sending column_mappings:', columnMappings);
       console.log('🚀 [ProcessDataset] Sample mapping:', columnMappings[0]);
+
+      // Start progress tracking in footer
+      startOperationTracking();
 
       const response = await window.grpc.processDataset({
         file_id: fileId,

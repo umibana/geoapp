@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ArrowLeft, Upload, ChevronDown, ChevronRight, Plus, Trash2, AlertCircle, Loader2, Settings, CheckCircle2 } from 'lucide-react';
 import { DatasetType } from '@/generated/projects';
+import { startOperationTracking } from '@/stores/operationsStore';
 
 /**
  * FileUploadView Component
@@ -66,6 +67,9 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
     setError(null);
     setSuccessMessage(null);
     setUploading(true);
+
+    // Start progress tracking in footer
+    startOperationTracking();
 
     try {
       // Prepare preprocessing options

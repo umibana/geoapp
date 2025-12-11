@@ -618,3 +618,54 @@ message DeleteDatasetResponse {
   int32 rows_deleted = 3;  // Number of data rows deleted
   double delete_time = 4;  // Time taken in seconds
 }
+
+// ========== Operation Progress Tracking ==========
+
+// Operation status enum
+enum OperationStatus {
+  OPERATION_STATUS_UNSPECIFIED = 0;
+  OPERATION_STATUS_PENDING = 1;
+  OPERATION_STATUS_RUNNING = 2;
+  OPERATION_STATUS_COMPLETED = 3;
+  OPERATION_STATUS_CANCELLED = 4;
+  OPERATION_STATUS_FAILED = 5;
+}
+
+// Single operation progress info
+message OperationProgress {
+  string operation_id = 1;
+  string operation_type = 2;  // "create_file", "process_dataset", etc.
+  int32 progress = 3;         // 0-100
+  OperationStatus status = 4;
+  string message = 5;         // Current status message
+  int64 started_at = 6;
+  int64 updated_at = 7;
+  string error = 8;
+}
+
+// Get progress for a specific operation
+message GetOperationProgressRequest {
+  string operation_id = 1;
+}
+
+message GetOperationProgressResponse {
+  OperationProgress operation = 1;
+  bool found = 2;
+}
+
+// Get all active operations
+message GetActiveOperationsRequest {}
+
+message GetActiveOperationsResponse {
+  repeated OperationProgress operations = 1;
+}
+
+// Cancel an operation
+message CancelOperationRequest {
+  string operation_id = 1;
+}
+
+message CancelOperationResponse {
+  bool success = 1;
+  string error_message = 2;
+}

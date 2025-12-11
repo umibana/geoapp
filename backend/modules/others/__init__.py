@@ -5,6 +5,7 @@ from . import decorators
 from . import file_parsers
 from . import column_mappings
 from . import statistics_service
+from . import progress_tracker
 
 __all__ = [
     'models', 
@@ -12,6 +13,7 @@ __all__ = [
     'decorators',
     'file_parsers',
     'column_mappings',
-    'statistics_service'
+    'statistics_service',
+    'progress_tracker'
 ]
 

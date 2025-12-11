@@ -59,4 +59,9 @@ service GeospatialService {
   rpc ProcessDataset(ProcessDatasetRequest) returns (ProcessDatasetResponse);
   rpc GetDatasetData(GetDatasetDataRequest) returns (GetDatasetDataResponse);
   rpc GetDatasetTableData(GetDatasetTableDataRequest) returns (GetDatasetTableDataResponse);
+
+  // Operation progress tracking
+  rpc GetOperationProgress(GetOperationProgressRequest) returns (GetOperationProgressResponse);
+  rpc GetActiveOperations(GetActiveOperationsRequest) returns (GetActiveOperationsResponse);
+  rpc CancelOperation(CancelOperationRequest) returns (CancelOperationResponse);
 }

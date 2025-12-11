@@ -31,6 +31,7 @@ import main_service_pb2  # pyright: ignore[reportMissingImports]
 
 from modules.others import db_connection, models
 from modules.others.data_generation import DataGenerator
+from modules.others.progress_tracker import progress_tracker, OperationStatus
 from modules.project_explorer.project_manager import ProjectManager
 from modules.data_manipulation.data_operations import DataManipulationManager
 from modules.exploratory_data_analysis.eda_manager import EDAManager
@@ -255,6 +256,71 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
 
     def MergeDatasets(self, request, context):
         return self.data_manipulation.merge_datasets(request)
+
+    # ---------- Operation Progress Tracking ----------
+
+    def GetOperationProgress(self, request, context):
+        """Get progress for a specific operation."""
+        operation_id = request.operation_id
+        op = progress_tracker.get(operation_id)
+        
+        response = projects_pb2.GetOperationProgressResponse()
+        if op:
+            response.found = True
+            response.operation.operation_id = op.operation_id
+            response.operation.operation_type = op.operation_type
+            response.operation.progress = op.progress
+            response.operation.status = self._map_status_to_proto(op.status)
+            response.operation.message = op.message
+            response.operation.started_at = int(op.started_at)
+            response.operation.updated_at = int(op.updated_at)
+            response.operation.error = op.error or ""
+        else:
+            response.found = False
+        
+        return response
+
+    def GetActiveOperations(self, request, context):
+        """Get all active (running) operations."""
+        active_ops = progress_tracker.get_active()
+        
+        response = projects_pb2.GetActiveOperationsResponse()
+        for op in active_ops.values():
+            op_proto = projects_pb2.OperationProgress(
+                operation_id=op.operation_id,
+                operation_type=op.operation_type,
+                progress=op.progress,
+                status=self._map_status_to_proto(op.status),
+                message=op.message,
+                started_at=int(op.started_at),
+                updated_at=int(op.updated_at),
+                error=op.error or ""
+            )
+            response.operations.append(op_proto)
+        
+        return response
+
+    def CancelOperation(self, request, context):
+        """Cancel an operation."""
+        success = progress_tracker.cancel(request.operation_id)
+        
+        response = projects_pb2.CancelOperationResponse()
+        response.success = success
+        if not success:
+            response.error_message = "Operation not found or already completed"
+        
+        return response
+
+    def _map_status_to_proto(self, status: OperationStatus) -> int:
+        """Map internal OperationStatus to proto enum value."""
+        mapping = {
+            OperationStatus.PENDING: projects_pb2.OPERATION_STATUS_PENDING,
+            OperationStatus.RUNNING: projects_pb2.OPERATION_STATUS_RUNNING,
+            OperationStatus.COMPLETED: projects_pb2.OPERATION_STATUS_COMPLETED,
+            OperationStatus.CANCELLED: projects_pb2.OPERATION_STATUS_CANCELLED,
+            OperationStatus.FAILED: projects_pb2.OPERATION_STATUS_FAILED,
+        }
+        return mapping.get(status, projects_pb2.OPERATION_STATUS_UNSPECIFIED)
 
 
 # Servidor gRPC

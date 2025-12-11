@@ -79,6 +79,11 @@ const grpcMethods: GeospatialService = {
   processDataset: createMethod('processDataset'),
   getDatasetData: createMethod('getDatasetData'),
   getDatasetTableData: createMethod('getDatasetTableData'),
+  
+  // Operation progress tracking
+  getOperationProgress: createMethod('getOperationProgress'),
+  getActiveOperations: createMethod('getActiveOperations'),
+  cancelOperation: createMethod('cancelOperation'),
 };
 
 /**
