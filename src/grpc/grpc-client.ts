@@ -123,7 +123,6 @@ function processResponse<T>(response: T): T {
 // ============================================================================
 // gRPC Client
 // ============================================================================
-
 class GrpcClient {
   private client: ServiceClient | null = null;
 
@@ -153,8 +152,6 @@ class GrpcClient {
       const options = {
         'grpc.max_send_message_length': 1024 * 1024 * 1024,
         'grpc.max_receive_message_length': 1024 * 1024 * 1024,
-        'grpc.default_compression_algorithm': 1,
-        'grpc.default_compression_level': 6,
       };
 
       this.client = new GeospatialService(
@@ -163,9 +160,9 @@ class GrpcClient {
         options
       );
 
-      console.log(`🔗 gRPC client connected to ${SERVER_ADDRESS}`);
+      console.log(`Cliente gRPC conectado a ${SERVER_ADDRESS}`);
     } catch (error) {
-      console.error('Failed to initialize gRPC client:', error);
+      console.error('Error al inicializar el cliente gRPC:', error);
       throw error;
     }
   }

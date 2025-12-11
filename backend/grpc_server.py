@@ -260,61 +260,47 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
 # Servidor gRPC
 # Utilizamos el puerto 50077 para el servidor gRPC
 # tambien configuramos el tamaño de los mensajes a 1GB
-def serve():
-    try:
-        port = 50077
-        options = [
-            ('grpc.max_message_length', 1024 * 1024 * 1024),  # 1GB
-            ('grpc.max_receive_message_length', 1024 * 1024 * 1024),  # 1GB
-            ('grpc.max_send_message_length', 1024 * 1024 * 1024),  # 1GB
             # ('grpc.default_compression_level', 1),  # Nivel de compresión, uso 6, pero podría usar 1 si queremos menor latencia
             # ('grpc.compression_algorithm', grpc.Compression.Gzip),  # Al
             # Con 6 me toma 2-3s 1 million datos
             # con 1 me toma 1.8-2.3s
             # Sin compresion me toma 1.2-1.5s
+def serve():
+    try:
+        port = 50077
+        options = [
+            ('grpc.max_message_length', 1024 * 1024 * 1024),('grpc.max_receive_message_length', 1024 * 1024 * 1024),  
+            ('grpc.max_send_message_length', 1024 * 1024 * 1024),  
         ]
         ## Definimos el servidor gRPC con el maximo de workers 10 y las opciones de maximo de mensaje
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=10), options=options)
-        
         # Agregamos el servicio principal al servidor gRPC
-        main_service_pb2_grpc.add_GeospatialServiceServicer_to_server(
-            GeospatialServicer(), server
-        )
-
-        # Esto se hace para que el servidor gRPC sea reflectivo (Osea, exponga metodos en servicio)
+        main_service_pb2_grpc.add_GeospatialServiceServicer_to_server(GeospatialServicer(), server)
+        # Esto se hace para que el servidor gRPC sea reflectivo (Osea, exponga métodos en servicio)
         # Muy util para probar API con grpc_cli/grpcurl o Kreya 
         SERVICE_NAMES = (
             main_service_pb2.DESCRIPTOR.services_by_name['GeospatialService'].full_name,
             reflection.SERVICE_NAME,
         )
         reflection.enable_server_reflection(SERVICE_NAMES, server)
-        
         listen_addr = f'127.0.0.1:{port}'
         server.add_insecure_port(listen_addr)
-
         server.start()
-        
-        print(f"Server gRPC (geospatialService) iniciado en {listen_addr}")
-        
+        print(f"Server gRPC iniciado en {listen_addr}")
         try:
             server.wait_for_termination()
         except KeyboardInterrupt:
             print("\n Cerrando servidor gRPC...")
             server.stop(grace=5)
-                
     except Exception as e:
         print(f"[ERROR] Error al iniciar el servidor gRPC: {e}")
-        
-        # Escribimos el error en un archivo
+        # Escribimos el error en un archivo para debugging
         script_dir = Path(__file__).parent.absolute()
         error_file = script_dir / 'grpc_error.txt'
         with open(error_file, 'w') as f:
             f.write(f"Error: {e}\n")
             import traceback
             f.write(traceback.format_exc())
-        
         sys.exit(1)
-
-
 if __name__ == '__main__':
     serve() 
