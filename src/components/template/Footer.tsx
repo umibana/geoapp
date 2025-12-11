@@ -30,7 +30,7 @@ function BackendStatusContent(){
     try {
       const url = await window.electronBackend.getBackendUrl();
       setBackendUrl(url);
-      const healthData = await window.autoGrpc.healthCheck({});
+      const healthData = await window.grpc.healthCheck({});
 
       setHealthStatus({
         ...healthData,
@@ -71,7 +71,7 @@ function BackendStatusContent(){
   const testGrpcAPI = async () => {
     try {
       // Test gRPC HelloWorld call using auto-generated API
-      const result = await window.autoGrpc.helloWorld({
+      const result = await window.grpc.helloWorld({
         message: "Test from frontend " + new Date().toISOString(),
       });
 
@@ -191,7 +191,7 @@ function BackendStatus({ className = "" }: BackendStatusProps) {
   const checkBackendStatus = async () => {
     try {
 
-      const healthData = await window.autoGrpc.healthCheck({});
+      const healthData = await window.grpc.healthCheck({});
 
       setHealthStatus({
         ...healthData,

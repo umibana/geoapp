@@ -28,7 +28,7 @@ export function GrpcDemo() {
     try {
       setLoading(true);
       // Probar conexión vía IPC usando cliente auto-generado
-      const health = await window.autoGrpc.healthCheck({});
+      const health = await window.grpc.healthCheck({});
       setIsConnected(health.healthy);
     } catch (error) {
       setIsConnected(false);
@@ -55,7 +55,7 @@ export function GrpcDemo() {
                   onKeyDown={async (e) => {
                     if (e.key === 'Enter' && helloWorldInput.trim()) {
                       try {
-                        const response = await window.autoGrpc.helloWorld({ message: helloWorldInput });
+                        const response = await window.grpc.helloWorld({ message: helloWorldInput });
                         toast.success('Respuesta Hola Mundo', {
                           description: response.message
                         });
@@ -89,7 +89,7 @@ export function GrpcDemo() {
                           toast.error('Error', { description: 'Por favor ingresa un número válido' });
                           return;
                         }
-                        const response = await window.autoGrpc.echoParameter({ value, operation: 'square' });
+                        const response = await window.grpc.echoParameter({ value, operation: 'square' });
                         toast.success('Respuesta Parámetro Echo', {
                           description: `${response.original_value} al cuadrado = ${response.processed_value}`
                         });

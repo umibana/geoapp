@@ -76,7 +76,7 @@ function DatasetSelector() {
       };
 
       // Fetch full dataset with initial columns
-      const datasetResponse = (await window.autoGrpc.getDatasetData({
+      const datasetResponse = (await window.grpc.getDatasetData({
         dataset_id: targetDataset.id,
         columns: [
           initialColumns.xAxis,

@@ -7,8 +7,8 @@
   "private": true,
   "scripts": {
     "start": "electron-forge start",
-    "dev": "npm run generate:full-stack && npm start",
-    "dev:local": "source venv/bin/activate && npm run generate:full-stack && npm start",
+    "dev": "npm run generate:protos && npm start",
+    "dev:local": "source venv/bin/activate && npm run generate:protos && npm start",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "make:all": "electron-forge make --platform=darwin,win32,linux --arch=x64,arm64",
@@ -17,7 +17,7 @@
     "make:mac:x64": "electron-forge make --platform=darwin --arch=x64",
     "make:mac:arm64": "electron-forge make --platform=darwin --arch=arm64",
     "make:linux": "electron-forge make --platform=linux",
-    "premake": "npm run generate:full-stack",
+    "premake": "npm run generate:protos",
     "publish": "electron-forge publish",
     "lint": "eslint .",
     "format": "prettier --check .",
@@ -33,10 +33,7 @@
     "dev:backend": "source venv/bin/activate && cd backend && python grpc_server.py",
     "setup:backend": "cd backend && pip install -r requirements.txt",
     "setup:backend:local": "source venv/bin/activate && cd backend && pip install -r requirements.txt",
-    "generate:protos": "node scripts/generate-protos.js",
-    "generate:simple": "node scripts/generate-full-stack.js",
-    "generate:full-stack": "node scripts/generate-full-stack-optimized.mjs",
-    "test:simplified": "node scripts/test-simplified-system.js"
+    "generate:protos": "node scripts/generate-protos.mjs"
   },
   "author": "Hans Villarroel <hans.villarroel@usach.cl>",
   "license": "Apache-2.0",

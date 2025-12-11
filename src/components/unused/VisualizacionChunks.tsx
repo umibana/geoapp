@@ -189,7 +189,7 @@ export function VisualizacionDatos({
     setIsLoading(true);
 
     try {
-      const result = await window.autoGrpc.getColumnarData({
+      const result = await window.grpc.getColumnarData({
         max_points: testMaxPoints
       }) as GetColumnarDataResponse;
 

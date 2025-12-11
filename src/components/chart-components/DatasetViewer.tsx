@@ -484,7 +484,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     try {
       setLoadingColumns(true);
 
-      const response = await window.autoGrpc.getFileStatistics({
+      const response = await window.grpc.getFileStatistics({
         file_id: datasetInfo.file_id,
         columns: [] // Get all columns
       });
@@ -515,7 +515,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
       // Get dataset data with binary format - request currently selected columns
       const startTime = performance.now();
-      const response = await window.autoGrpc.getDatasetData({
+      const response = await window.grpc.getDatasetData({
         dataset_id: datasetInfo.id,
         columns: [selectedXAxis, selectedYAxis, selectedValueColumn]
       }) as GetDatasetDataResponse;
@@ -596,7 +596,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       setIsApplyingSelection(true);
       const rect = currentBrushRectRef.current;
 
-      const response = await window.autoGrpc.getDatasetData({
+      const response = await window.grpc.getDatasetData({
         dataset_id: datasetInfo.id,
         columns: [selectedXAxis, selectedYAxis, selectedValueColumn],
         bounding_box: [rect.x1, rect.x2, rect.y1, rect.y2]

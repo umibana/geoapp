@@ -135,7 +135,7 @@ const DatasetInfoViewer: React.FC = () => {
     try {
       setLoadingStatistics(true);
 
-      const response = await window.autoGrpc.getFileStatistics({
+      const response = await window.grpc.getFileStatistics({
         file_id: selectedDataset.file_id,
         columns: []
       });
@@ -156,7 +156,7 @@ const DatasetInfoViewer: React.FC = () => {
 
     try {
       // Fetch fresh file statistics to get updated column list
-      const statsResponse = await window.autoGrpc.getFileStatistics({
+      const statsResponse = await window.grpc.getFileStatistics({
         file_id: selectedDataset.file_id,
         columns: []
       });
@@ -216,7 +216,7 @@ const DatasetInfoViewer: React.FC = () => {
       console.log('📊 [DatasetInfoViewer] Requesting table data for dataset:', selectedDataset.id);
       console.log('📊 [DatasetInfoViewer] Dataset column_mappings:', selectedDataset.column_mappings);
 
-      const response = await window.autoGrpc.getDatasetTableData({
+      const response = await window.grpc.getDatasetTableData({
         dataset_id: selectedDataset.id,
         limit: pagination.pageSize,
         offset: offset,
@@ -305,7 +305,7 @@ const DatasetInfoViewer: React.FC = () => {
       setOperationLoading(true);
       setError(null);
 
-      const response = await window.autoGrpc.replaceFileData({
+      const response = await window.grpc.replaceFileData({
         file_id: fileId,
         replacements: [{ from_value: oldValue, to_value: newValue }],
         columns: [editingCell.columnId]
@@ -365,7 +365,7 @@ const DatasetInfoViewer: React.FC = () => {
       setOperationLoading(true);
       setError(null);
 
-      const response = await window.autoGrpc.renameFileColumn({
+      const response = await window.grpc.renameFileColumn({
         file_id: fileId,
         column_renames: { [oldName]: newName }
       });
@@ -410,7 +410,7 @@ const DatasetInfoViewer: React.FC = () => {
       setOperationLoading(true);
       setError(null);
 
-      const response = await window.autoGrpc.duplicateFileColumns({
+      const response = await window.grpc.duplicateFileColumns({
         file_id: fileId,
         columns: [{ source_column: columnName, new_column_name: '' }] // Empty string lets backend auto-generate name
       });
@@ -443,7 +443,7 @@ const DatasetInfoViewer: React.FC = () => {
       setOperationLoading(true);
       setError(null);
 
-      const response = await window.autoGrpc.deleteFileColumns({
+      const response = await window.grpc.deleteFileColumns({
         file_id: fileId,
         column_names: [columnName]
       });
@@ -475,7 +475,7 @@ const DatasetInfoViewer: React.FC = () => {
       setOperationLoading(true);
       setError(null);
 
-      const response = await window.autoGrpc.replaceFileData({
+      const response = await window.grpc.replaceFileData({
         file_id: fileId,
         replacements: [{ from_value: oldValue, to_value: newValue }],
         columns: [columnName]
@@ -570,7 +570,7 @@ const DatasetInfoViewer: React.FC = () => {
       setOperationLoading(true);
       setError(null);
 
-      const response = await window.autoGrpc.deleteFilePoints({
+      const response = await window.grpc.deleteFilePoints({
         file_id: fileId,
         row_indices: actualIndices
       });
@@ -604,7 +604,7 @@ const DatasetInfoViewer: React.FC = () => {
       setOperationLoading(true);
       setError(null);
 
-      const response = await window.autoGrpc.deleteFilePoints({
+      const response = await window.grpc.deleteFilePoints({
         file_id: fileId,
         row_indices: [actualIndex]
       });
@@ -638,7 +638,7 @@ const DatasetInfoViewer: React.FC = () => {
       setOperationLoading(true);
       setError(null);
 
-      const response = await window.autoGrpc.replaceFileData({
+      const response = await window.grpc.replaceFileData({
         file_id: fileId,
         replacements: validReplacements.map(r => ({ from_value: r.from, to_value: r.to })),
         columns: replaceColumns
@@ -683,7 +683,7 @@ const DatasetInfoViewer: React.FC = () => {
       setError(null);
 
       if (filterMode === 'add_column') {
-        const response = await window.autoGrpc.addFilteredColumn({
+        const response = await window.grpc.addFilteredColumn({
           file_id: fileId,
           new_column_name: newFilterColumnName,
           source_column: filterColumn,
@@ -699,7 +699,7 @@ const DatasetInfoViewer: React.FC = () => {
           setError(response.error_message || 'Error al filtrar');
         }
       } else {
-        const response = await window.autoGrpc.filterFileData({
+        const response = await window.grpc.filterFileData({
           file_id: fileId,
           column: filterColumn,
           operation: filterOperation,
@@ -738,7 +738,7 @@ const DatasetInfoViewer: React.FC = () => {
       setOperationLoading(true);
       setError(null);
 
-      const response = await window.autoGrpc.duplicateFileColumns({
+      const response = await window.grpc.duplicateFileColumns({
         file_id: fileId,
         columns: columnsToDuplicate.map(col => ({
           source_column: col.sourceColumn,
@@ -780,7 +780,7 @@ const DatasetInfoViewer: React.FC = () => {
       setOperationLoading(true);
       setError(null);
 
-      const response = await window.autoGrpc.deleteFileColumns({
+      const response = await window.grpc.deleteFileColumns({
         file_id: fileId,
         column_names: columnsToDelete
       });

@@ -40,5 +40,5 @@ declare interface Window {
   electronWindow: ElectronWindow;
   electronBackend: ElectronBackend;
   electronAPI: ElectronAPI;
-  autoGrpc: import('./grpc-auto/auto-context').AutoGrpcContext;
+  grpc: import('./generated/main_service').GeospatialService;
 }

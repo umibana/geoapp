@@ -120,7 +120,7 @@ export default function EDA2D() {
                 
                 // Refetch full dataset with statistics (same as initial load in ProjectManager)
                 try {
-                  const response = await window.autoGrpc.getDatasetData({
+                  const response = await window.grpc.getDatasetData({
                     dataset_id: selectedDataset.id,
                     columns: [globalColumns.xAxis, globalColumns.yAxis, globalColumns.value]
                   });

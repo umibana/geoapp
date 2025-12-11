@@ -119,7 +119,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
           });
         }
 
-        const result = await window.autoGrpc.createMultiFile({
+        const result = await window.grpc.createMultiFile({
           project_id: projectId,
           dataset_type: uploadDatasetType,
           files: fileUploads,
@@ -173,7 +173,7 @@ const FileUploadView: React.FC<FileUploadViewProps> = ({
           };
         }
 
-        const result = await window.autoGrpc.createFile(requestData);
+        const result = await window.grpc.createFile(requestData);
 
         if (result.success && result.file) {
           setSuccessMessage('Archivo cargado correctamente.');

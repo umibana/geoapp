@@ -132,7 +132,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
       setLoading(true);
       setError(null);
       
-      const response = await window.autoGrpc.getProjects({ limit: 100, offset: 0 });
+      const response = await window.grpc.getProjects({ limit: 100, offset: 0 });
       const projectsList = response.projects || [];
       setProjects(projectsList);
       syncProjects(projectsList); // Sync to project store
@@ -146,7 +146,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
 
   const loadProjectFiles = async (projectId: string) => {
     try {
-      const response = await window.autoGrpc.getProjectFiles({ project_id: projectId });
+      const response = await window.grpc.getProjectFiles({ project_id: projectId });
       setProjectFiles(response.files || []);
     } catch (err) {
       console.error('Error loading project files:', err);
@@ -156,7 +156,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
 
   const loadProjectDatasets = async (projectId: string) => {
     try {
-      const response = await window.autoGrpc.getProjectDatasets({ project_id: projectId });
+      const response = await window.grpc.getProjectDatasets({ project_id: projectId });
       const datasetsList = response.datasets || [];
       setProjectDatasetsMap(prev => {
         const newMap = new Map(prev);
@@ -205,7 +205,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
 
       // Fetch full dataset with initial columns (x, y, z)
       // The backend will compute statistics for the full dataset
-      const datasetResponse = await window.autoGrpc.getDatasetData({
+      const datasetResponse = await window.grpc.getDatasetData({
         dataset_id: dataset.id,
         columns: [initialColumns.xAxis, initialColumns.yAxis, initialColumns.value]
       }) as GetDatasetDataResponse;
@@ -290,7 +290,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
 
     try {
       setLoading(true);
-      const response = await window.autoGrpc.createProject({
+      const response = await window.grpc.createProject({
         name: projectName,
         description: projectDescription
       });
@@ -316,7 +316,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
 
     try {
       setLoading(true);
-      const response = await window.autoGrpc.updateProject({
+      const response = await window.grpc.updateProject({
         project_id: editingProject.id,
         name: projectName,
         description: projectDescription
@@ -346,7 +346,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
 
     try {
       setLoading(true);
-      const response = await window.autoGrpc.deleteProject({ project_id: projectId });
+      const response = await window.grpc.deleteProject({ project_id: projectId });
 
       if (response.success) {
         if (selectedProject?.id === projectId) {
@@ -374,7 +374,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
       console.log('🔄 Updating statistics for file:', fileId);
 
       // Call the backend to recalculate statistics
-      const response = await window.autoGrpc.getFileStatistics({
+      const response = await window.grpc.getFileStatistics({
         file_id: fileId,
         columns: []
       });
@@ -405,7 +405,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
 
     try {
       setLoading(true);
-      const response = await window.autoGrpc.deleteDataset({ dataset_id: datasetId });
+      const response = await window.grpc.deleteDataset({ dataset_id: datasetId });
 
       if (response.success) {
         // Clear selected dataset if it was deleted

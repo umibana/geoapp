@@ -80,7 +80,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
       setError(null);
       setCurrentStep('analyzing');
 
-      const response = await window.autoGrpc.analyzeCsvForProject({
+      const response = await window.grpc.analyzeCsvForProject({
         file_id: fileId
         
       }) as AnalyzeCsvForProjectResponse;
@@ -265,7 +265,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
       console.log('🚀 [ProcessDataset] Sending column_mappings:', columnMappings);
       console.log('🚀 [ProcessDataset] Sample mapping:', columnMappings[0]);
 
-      const response = await window.autoGrpc.processDataset({
+      const response = await window.grpc.processDataset({
         file_id: fileId,
         column_mappings: columnMappings
       }) as ProcessDatasetResponse;

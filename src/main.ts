@@ -1,8 +1,7 @@
 import { app, BrowserWindow } from "electron";
 import registerListeners from "./helpers/ipc/listeners-register";
 import { backendManager } from "./helpers/backend_helpers";
-import { autoMainGrpcClient } from "./grpc-auto/auto-main-client";
-// removed unused imports
+import { grpcClient } from "./grpc/grpc-client";
 import * as path from "path";
 import {
   installExtension,
@@ -47,15 +46,13 @@ async function createWindow() {
     .then(() => {
       console.log('gRPC backend iniciado!');
       // Initialize gRPC client after backend is ready
-      return autoMainGrpcClient.initialize();
+      return grpcClient.initialize();
     })
     .then(() => {
       console.log('gRPC cliente inicializado');
-      // Nota: Los manejadores gRPC auto-generados se registran en listeners-register.ts
     })
     .catch((error) => {
       console.error('Error al iniciar el backend gRPC o inicializar el cliente:', error);
-      // El backend se mostrará como inutilizable en la UI, lo cual es normal
     });
 }
 
