@@ -97,6 +97,8 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
   const [loading, setLoading] = useState(false);                            // Estado de carga
   const [loadingDataset, setLoadingDataset] = useState(false);              // Estado de carga de dataset
   const [error, setError] = useState<string | null>(null);                  // Mensajes de error
+  const [isRetrying, setIsRetrying] = useState(false);                      // Estado de reintento de conexión
+  const [retryCount, setRetryCount] = useState(0);                          // Contador de reintentos
   
   // Estado del dataset seleccionado (no hay cambio de vista, todo en la misma página)
   const [selectedDataset, setSelectedDataset] = useState<DatasetData | null>(null);  // Dataset para visualizar
@@ -116,8 +118,11 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
   const [projectDescription, setProjectDescription] = useState('');
   const [editingProject, setEditingProject] = useState<ProjectData | null>(null);
 
+  const MAX_RETRIES = 10;
+  const BASE_DELAY_MS = 1000;
+
   useEffect(() => {
-    loadProjects();
+    loadProjectsWithRetry();
   }, []);
 
   // Load datasets for all projects when projects change
@@ -127,21 +132,45 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
     });
   }, [projects]);
 
-  const loadProjects = async () => {
+  const loadProjectsWithRetry = async (attempt = 0): Promise<void> => {
     try {
       setLoading(true);
       setError(null);
+      setIsRetrying(attempt > 0);
+      setRetryCount(attempt);
       
       const response = await window.grpc.getProjects({ limit: 100, offset: 0 });
       const projectsList = response.projects || [];
       setProjects(projectsList);
-      syncProjects(projectsList); // Sync to project store
+      syncProjects(projectsList);
+      
+      // Reset state on success
+      setIsRetrying(false);
+      setRetryCount(0);
+      setLoading(false);
     } catch (err) {
       console.error('Error loading projects:', err);
-      setError('Failed to load projects');
-    } finally {
-      setLoading(false);
+      
+      if (attempt < MAX_RETRIES) {
+        // Exponential backoff: 1s, 2s, 4s, 8s... capped at 10s
+        const delay = Math.min(BASE_DELAY_MS * Math.pow(2, attempt), 10000);
+        console.log(`Backend not ready, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        
+        setTimeout(() => {
+          loadProjectsWithRetry(attempt + 1);
+        }, delay);
+      } else {
+        setError('No se pudo conectar al backend. Por favor, asegúrese de que el servidor esté en ejecución.');
+        setIsRetrying(false);
+        setLoading(false);
+      }
     }
+  };
+
+  const loadProjects = async () => {
+    setRetryCount(0);
+    setIsRetrying(false);
+    await loadProjectsWithRetry(0);
   };
 
   const loadProjectFiles = async (projectId: string) => {
@@ -518,8 +547,33 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
           </CardHeader>
           <CardContent className="flex-1 overflow-auto p-0">
             <div className="px-4 pb-4">
-            {loading && projects.length === 0 ? (
-              <p className="text-muted-foreground">Cargando proyectos...</p>
+            {(loading || isRetrying) && projects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 space-y-3">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <p className="text-muted-foreground">
+                  {isRetrying 
+                    ? `Conectando al backend... (intento ${retryCount}/${MAX_RETRIES})`
+                    : 'Cargando proyectos...'}
+                </p>
+                {isRetrying && (
+                  <p className="text-xs text-muted-foreground">
+                    El servidor está iniciando, por favor espere...
+                  </p>
+                )}
+              </div>
+            ) : error && projects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 space-y-3">
+                <p className="text-destructive">{error}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadProjects}
+                  className="gap-2"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Reintentar
+                </Button>
+              </div>
             ) : projects.length === 0 ? (
               <p className="text-muted-foreground">No se encontraron proyectos. Crea tu primer proyecto para comenzar</p>
             ) : (
