@@ -96,7 +96,7 @@ jobs:
       - name: Generate Protocol Buffers
         run: |
           export PATH="${{ github.workspace }}/venv/bin:$PATH"
-          npm run generate:full-stack
+          npm run generate:protos
         shell: bash
 
       - name: Build Python backend (macOS)
@@ -165,7 +165,7 @@ jobs:
           Write-Host "Proto files:"
           Get-ChildItem -Path "protos" -Filter "*.proto"
           Write-Host "==================== Running Generation ===================="
-          npm run generate:full-stack
+          npm run generate:protos
           if ($LASTEXITCODE -ne 0) {
             Write-Host "ERROR: Proto generation failed with exit code $LASTEXITCODE"
             exit $LASTEXITCODE
@@ -245,7 +245,7 @@ jobs:
       - name: Generate Protocol Buffers
         run: |
           export PATH="${{ github.workspace }}/venv/bin:$PATH"
-          npm run generate:full-stack
+          npm run generate:protos
         shell: bash
 
       - name: Verify generated files (Linux)

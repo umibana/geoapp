@@ -17,7 +17,7 @@ def build_server():
     generated_dir = backend_dir / 'generated'
     if not generated_dir.exists():
         print(f"ERROR: Directory '{generated_dir}' does not exist!")
-        print("Please run 'npm run generate:full-stack' first to generate proto files.")
+        print("Please run 'npm run generate:protos' first to generate proto files.")
         sys.exit(1)
     
     # Se arma imagen con pyinstaller

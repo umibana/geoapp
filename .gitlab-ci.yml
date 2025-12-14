@@ -43,7 +43,7 @@ setup:dependencies:
     - cd backend && pip install -r requirements.txt && cd ..
 
     # Generate Protocol Buffers
-    - npm run generate:full-stack
+    - npm run generate:protos
   artifacts:
     paths:
       - node_modules/
