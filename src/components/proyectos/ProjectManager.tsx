@@ -103,11 +103,19 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
   // Estado del dataset seleccionado (no hay cambio de vista, todo en la misma página)
   const [selectedDataset, setSelectedDataset] = useState<DatasetData | null>(null);  // Dataset para visualizar
   
-  // Get Zustand store actions
+  // Get Zustand store actions and state
   const setSelectedDatasetInStore = useBrushStore((state) => state.setSelectedDataset);
+  const selectedDatasetFromBrushStore = useBrushStore((state) => state.selectedDataset);
   const syncProjects = useProjectStore((state) => state.syncProjects);
   const syncProjectDatasets = useProjectStore((state) => state.syncProjectDatasets);
   const setSelectedProjectInStore = useProjectStore((state) => state.setSelectedProject);
+  const selectedProjectFromStore = useProjectStore((state) => state.selectedProject);
+  const getProjectByDatasetId = useProjectStore((state) => state.getProjectByDatasetId);
+  
+  // State for project switch confirmation dialog
+  const [isSwitchDialogOpen, setIsSwitchDialogOpen] = useState(false);
+  const [pendingProject, setPendingProject] = useState<ProjectData | null>(null);
+  const [pendingDataset, setPendingDataset] = useState<DatasetData | null>(null);
 
   // Dialog states
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -124,6 +132,23 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
   useEffect(() => {
     loadProjectsWithRetry();
   }, []);
+
+  // Restore selected project from store on mount and auto-expand it
+  useEffect(() => {
+    if (selectedProjectFromStore && projects.length > 0) {
+      // Verify the project still exists in the loaded projects
+      const projectExists = projects.find(p => p.id === selectedProjectFromStore.id);
+      if (projectExists) {
+        setSelectedProject(projectExists);
+        // Auto-expand the selected project
+        setExpandedProjects(prev => {
+          const newSet = new Set(prev);
+          newSet.add(projectExists.id);
+          return newSet;
+        });
+      }
+    }
+  }, [projects, selectedProjectFromStore]);
 
   // Load datasets for all projects when projects change
   useEffect(() => {
@@ -211,10 +236,101 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
     });
   };
 
-  const handleDatasetClick = async (dataset: DatasetData) => {
+  /**
+   * Handle project selection with confirmation if switching from another project with active dataset
+   */
+  const handleProjectClick = (project: ProjectData) => {
+    // If no dataset is selected, or clicking on already selected project, allow without confirmation
+    if (!selectedDatasetFromBrushStore || selectedProject?.id === project.id) {
+      selectProject(project);
+      return;
+    }
+    
+    // Check if the currently selected dataset belongs to a different project
+    const currentDatasetProject = getProjectByDatasetId(selectedDatasetFromBrushStore.id);
+    if (currentDatasetProject && currentDatasetProject.id !== project.id) {
+      // Show confirmation dialog
+      setPendingProject(project);
+      setIsSwitchDialogOpen(true);
+      return;
+    }
+    
+    selectProject(project);
+  };
+
+  /**
+   * Actually select a project (after confirmation if needed)
+   */
+  const selectProject = (project: ProjectData) => {
+    setSelectedProject(project);
+    setSelectedProjectInStore(project);
+    toggleProjectExpansion(project.id);
+  };
+
+  /**
+   * Confirm project switch - clears current dataset and switches to new project
+   * If a pending dataset exists, also loads that dataset
+   */
+  const confirmProjectSwitch = () => {
+    if (pendingProject) {
+      // Clear current dataset selection
+      setSelectedDataset(null);
+      useBrushStore.getState().clearSelectedDataset();
+      useBrushStore.getState().clearAllSelections();
+      
+      if (pendingDataset) {
+        // User clicked on a dataset in another project - load that dataset
+        loadDataset(pendingDataset, pendingProject);
+      } else {
+        // User clicked on a project header - just select the project
+        selectProject(pendingProject);
+      }
+    }
+    setIsSwitchDialogOpen(false);
+    setPendingProject(null);
+    setPendingDataset(null);
+  };
+
+  /**
+   * Cancel project switch
+   */
+  const cancelProjectSwitch = () => {
+    setIsSwitchDialogOpen(false);
+    setPendingProject(null);
+    setPendingDataset(null);
+  };
+
+  /**
+   * Handle dataset click - checks if switching projects and asks for confirmation
+   */
+  const handleDatasetClick = (dataset: DatasetData, parentProject: ProjectData) => {
+    // Check if there's a selected dataset from a different project
+    if (selectedDatasetFromBrushStore && selectedProject) {
+      const currentDatasetProject = getProjectByDatasetId(selectedDatasetFromBrushStore.id);
+      if (currentDatasetProject && currentDatasetProject.id !== parentProject.id) {
+        // Show confirmation dialog for project switch via dataset selection
+        setPendingProject(parentProject);
+        setPendingDataset(dataset);
+        setIsSwitchDialogOpen(true);
+        return;
+      }
+    }
+    
+    // No confirmation needed, load the dataset directly
+    loadDataset(dataset, parentProject);
+  };
+
+  /**
+   * Actually load a dataset (after confirmation if needed)
+   */
+  const loadDataset = async (dataset: DatasetData, parentProject: ProjectData) => {
     try {
       setLoadingDataset(true);
       setError(null);
+      
+      // Select the parent project when selecting a dataset
+      setSelectedProject(parentProject);
+      setSelectedProjectInStore(parentProject);
       
       // Find coordinate columns from dataset mappings
       const coordColumns = dataset.column_mappings
@@ -591,11 +707,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
                             ? 'bg-accent dark:bg-accent/50 border-b'
                             : 'hover:bg-muted/50'
                         }`}
-                        onClick={() => {
-                          setSelectedProject(project);
-                          setSelectedProjectInStore(project); // Sync to project store
-                          toggleProjectExpansion(project.id);
-                        }}
+                        onClick={() => handleProjectClick(project)}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -677,7 +789,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
                                       ? 'bg-accent dark:bg-accent/50 border border-primary/20 dark:border-primary/30'
                                       : 'bg-card hover:bg-accent/50 dark:hover:bg-accent/30 border border-transparent'
                                   }`}
-                                  onClick={() => handleDatasetClick(dataset)}
+                                  onClick={() => handleDatasetClick(dataset, project)}
                                 >
                                   <div className="flex items-center justify-between">
                                     <div className="flex-1 min-w-0">
@@ -798,6 +910,32 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
               disabled={loading || !projectName.trim()}
             >
               Update Project
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Project Switch Confirmation Dialog */}
+      <Dialog open={isSwitchDialogOpen} onOpenChange={setIsSwitchDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cambiar de proyecto</DialogTitle>
+            <DialogDescription>
+              Tienes un dataset seleccionado en el proyecto actual. ¿Deseas cambiar al proyecto &ldquo;{pendingProject?.name}&rdquo;? 
+              Esto deseleccionará el dataset actual.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={cancelProjectSwitch}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmProjectSwitch}
+            >
+              Cambiar proyecto
             </Button>
           </DialogFooter>
         </DialogContent>

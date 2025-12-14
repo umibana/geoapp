@@ -47,6 +47,9 @@ interface ProjectStore {
   
   // Helper to find a dataset by ID across all projects
   getDatasetById: (datasetId: string) => DatasetData | null;
+  
+  // Helper to find the project that contains a dataset
+  getProjectByDatasetId: (datasetId: string) => ProjectData | null;
 }
 
 /**
@@ -83,6 +86,18 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     for (const datasets of projectDatasetsMap.values()) {
       const dataset = datasets.find((d) => d.id === datasetId);
       if (dataset) return dataset;
+    }
+    return null;
+  },
+
+  // Find the project that contains a dataset by dataset ID
+  getProjectByDatasetId: (datasetId: string) => {
+    const { projectDatasetsMap, projects } = get();
+    for (const [projectId, datasets] of projectDatasetsMap.entries()) {
+      const dataset = datasets.find((d) => d.id === datasetId);
+      if (dataset) {
+        return projects.find((p) => p.id === projectId) || null;
+      }
     }
     return null;
   }
