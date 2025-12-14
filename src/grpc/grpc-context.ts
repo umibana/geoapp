@@ -63,11 +63,13 @@ const grpcMethods: GeospatialService = {
   filterFileData: createMethod('filterFileData'),
   addFilteredColumn: createMethod('addFilteredColumn'),
   deleteFilePoints: createMethod('deleteFilePoints'),
-  
+  updateCell: createMethod('updateCell'),
+
   // Column operations
   addFileColumns: createMethod('addFileColumns'),
   duplicateFileColumns: createMethod('duplicateFileColumns'),
   deleteFileColumns: createMethod('deleteFileColumns'),
+
   
   // Dataset management
   getProjectDatasets: createMethod('getProjectDatasets'),

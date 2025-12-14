@@ -302,20 +302,25 @@ const DatasetInfoViewer: React.FC = () => {
       return;
     }
 
+    // Calculate the actual row index in the dataset (accounting for pagination)
+    const actualRowIndex = pagination.pageIndex * pagination.pageSize + editingCell.rowIndex;
+
     try {
       setOperationLoading(true);
       setError(null);
 
-      const response = await window.grpc.replaceFileData({
+      // Use updateCell to update only the specific cell by row index
+      const response = await window.grpc.updateCell({
         file_id: fileId,
-        replacements: [{ from_value: oldValue, to_value: newValue }],
-        columns: [editingCell.columnId]
+        row_index: actualRowIndex,
+        column_name: editingCell.columnId,
+        new_value: newValue
       });
 
       if (response.success) {
-        showSuccess(`Actualizado: ${response.rows_affected} celdas`);
+        showSuccess('Celda actualizada');
         await refreshData();
-        await loadStatistics(); // Reload statistics after data change
+        await loadStatistics();
       } else {
         setError(response.error_message || 'Error al actualizar');
       }

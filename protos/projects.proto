@@ -285,6 +285,20 @@ message ReplaceFileDataResponse {
   string error_message = 3;
 }
 
+// Update a single cell by row index
+message UpdateCellRequest {
+  string file_id = 1;
+  int32 row_index = 2;      // 0-based row index
+  string column_name = 3;   // Column to update
+  string new_value = 4;     // New value for the cell
+}
+
+message UpdateCellResponse {
+  bool success = 1;
+  string error_message = 2;
+  string old_value = 3;     // Previous value (for undo functionality)
+}
+
 // Search/filter file data with pagination
 message SearchFileDataRequest {
   string file_id = 1;

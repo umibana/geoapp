@@ -214,6 +214,9 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
     def ReplaceFileData(self, request, context):
         return self.data_manipulation.replace_file_data(request)
 
+    def UpdateCell(self, request, context):
+        return self.data_manipulation.update_cell(request)
+
     def SearchFileData(self, request, context):
         return self.data_manipulation.search_file_data(request)
 

@@ -39,6 +39,7 @@ service GeospatialService {
 
   // Manipulación de datos de archivos
   rpc ReplaceFileData(ReplaceFileDataRequest) returns (ReplaceFileDataResponse);
+  rpc UpdateCell(UpdateCellRequest) returns (UpdateCellResponse);
   rpc SearchFileData(SearchFileDataRequest) returns (SearchFileDataResponse);
   rpc FilterFileData(FilterFileDataRequest) returns (FilterFileDataResponse);
   rpc AddFilteredColumn(AddFilteredColumnRequest) returns (AddFilteredColumnResponse);
