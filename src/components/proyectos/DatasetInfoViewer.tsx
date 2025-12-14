@@ -54,6 +54,28 @@ interface PendingEdit {
   timestamp: number;             // When the edit was made
 }
 
+/**
+ * Types of batch operations that can be queued
+ */
+type BatchOperationType = 
+  | 'replace'           // Find and replace values
+  | 'duplicate_column'  // Duplicate columns
+  | 'delete_column'     // Delete columns
+  | 'add_filtered_column' // Add a filtered column
+  | 'filter_delete_rows'  // Delete rows based on filter
+  | 'filter_new_file';    // Create new file from filter
+
+/**
+ * Represents a pending batch operation
+ */
+interface PendingBatchOperation {
+  id: string;
+  type: BatchOperationType;
+  description: string;           // Human-readable description
+  timestamp: number;
+  params: Record<string, unknown>; // Operation-specific parameters
+}
+
 interface ContextMenuState {
   show: boolean;
   x: number;
@@ -78,6 +100,7 @@ const DatasetInfoViewer: React.FC = () => {
   
   // Pending edits queue - edits are queued until user clicks Apply
   const [pendingEdits, setPendingEdits] = useState<PendingEdit[]>([]);
+  const [pendingBatchOperations, setPendingBatchOperations] = useState<PendingBatchOperation[]>([]);
   const [isApplyingEdits, setIsApplyingEdits] = useState(false);
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
@@ -313,16 +336,28 @@ const DatasetInfoViewer: React.FC = () => {
   };
 
   /**
-   * Apply all pending edits to the backend
+   * Apply all pending edits and batch operations to the backend
    */
   const applyPendingEdits = async () => {
-    if (pendingEdits.length === 0 || !selectedDataset) return;
+    if (pendingEdits.length === 0 && pendingBatchOperations.length === 0) return;
+    if (!selectedDataset) return;
     
     setIsApplyingEdits(true);
     let successCount = 0;
     let errorCount = 0;
     
     try {
+      // First apply batch operations (they might affect structure)
+      for (const op of pendingBatchOperations) {
+        const success = await executeBatchOperation(op);
+        if (success) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      }
+      
+      // Then apply individual cell edits
       for (const edit of pendingEdits) {
         try {
           const response = await window.grpc.updateCell({
@@ -344,17 +379,19 @@ const DatasetInfoViewer: React.FC = () => {
         }
       }
       
-      // Clear pending edits
+      // Clear all pending operations
       setPendingEdits([]);
+      setPendingBatchOperations([]);
       
       // Refresh data and statistics
       await refreshData();
       await loadStatistics();
+      await refreshDatasetMetadata();
       
       if (errorCount === 0) {
-        toast.success(`${successCount} cambio(s) aplicado(s)`);
+        toast.success(`${successCount} operación(es) aplicada(s)`);
       } else {
-        toast.warning(`${successCount} aplicado(s), ${errorCount} error(es)`);
+        toast.warning(`${successCount} aplicada(s), ${errorCount} error(es)`);
       }
     } catch (err) {
       toast.error('Error al aplicar cambios');
@@ -368,9 +405,10 @@ const DatasetInfoViewer: React.FC = () => {
    * Discard all pending edits and revert to original data
    */
   const discardPendingEdits = () => {
-    if (pendingEdits.length === 0) return;
+    if (pendingEdits.length === 0 && pendingBatchOperations.length === 0) return;
     
     setPendingEdits([]);
+    setPendingBatchOperations([]);
     // Refresh data to revert visual changes
     refreshData();
     toast.info('Cambios descartados');
@@ -381,6 +419,139 @@ const DatasetInfoViewer: React.FC = () => {
    */
   const hasPendingEdit = (rowIndex: number, columnId: string): boolean => {
     return pendingEdits.some(e => e.rowIndex === rowIndex && e.columnId === columnId);
+  };
+
+  /**
+   * Queue a batch operation
+   */
+  const queueBatchOperation = (
+    type: BatchOperationType,
+    description: string,
+    params: Record<string, unknown>
+  ) => {
+    const newOp: PendingBatchOperation = {
+      id: `batch-${type}-${Date.now()}`,
+      type,
+      description,
+      timestamp: Date.now(),
+      params
+    };
+    setPendingBatchOperations(prev => [...prev, newOp]);
+    toast.info(`Operación agregada: ${description}`);
+  };
+
+  /**
+   * Remove a specific batch operation from the queue
+   */
+  const removeBatchOperation = (id: string) => {
+    setPendingBatchOperations(prev => prev.filter(op => op.id !== id));
+  };
+
+  /**
+   * Execute a single batch operation
+   */
+  const executeBatchOperation = async (op: PendingBatchOperation): Promise<boolean> => {
+    if (!selectedDataset) return false;
+    
+    const fileId = selectedDataset.file_id;
+    
+    try {
+      switch (op.type) {
+        case 'replace': {
+          const { replacements: reps, columns } = op.params as { 
+            replacements: { from: string; to: string }[]; 
+            columns: string[] 
+          };
+          const response = await window.grpc.replaceFileData({
+            file_id: fileId,
+            replacements: reps.map(r => ({ from_value: r.from, to_value: r.to })),
+            columns
+          });
+          return response.success;
+        }
+        
+        case 'duplicate_column': {
+          const { columns: cols } = op.params as { 
+            columns: { sourceColumn: string; newName: string }[] 
+          };
+          const response = await window.grpc.duplicateFileColumns({
+            file_id: fileId,
+            columns: cols.map(col => ({
+              source_column: col.sourceColumn,
+              new_column_name: col.newName
+            }))
+          });
+          return response.success;
+        }
+        
+        case 'delete_column': {
+          const { columns: delCols } = op.params as { columns: string[] };
+          const response = await window.grpc.deleteFileColumns({
+            file_id: fileId,
+            column_names: delCols
+          });
+          return response.success;
+        }
+        
+        case 'add_filtered_column': {
+          const { columnName, sourceColumn, operation, value } = op.params as {
+            columnName: string;
+            sourceColumn: string;
+            operation: string;
+            value: string;
+          };
+          const response = await window.grpc.addFilteredColumn({
+            file_id: fileId,
+            new_column_name: columnName,
+            source_column: sourceColumn,
+            operation,
+            value
+          });
+          return response.success;
+        }
+        
+        case 'filter_delete_rows': {
+          const { column, operation, value } = op.params as {
+            column: string;
+            operation: string;
+            value: string;
+          };
+          const response = await window.grpc.filterFileData({
+            file_id: fileId,
+            column,
+            operation,
+            value,
+            create_new_file: false,
+            new_file_name: ''
+          });
+          return response.success;
+        }
+        
+        case 'filter_new_file': {
+          const { column, operation, value, newFileName } = op.params as {
+            column: string;
+            operation: string;
+            value: string;
+            newFileName: string;
+          };
+          const response = await window.grpc.filterFileData({
+            file_id: fileId,
+            column,
+            operation,
+            value,
+            create_new_file: true,
+            new_file_name: newFileName
+          });
+          return response.success;
+        }
+        
+        default:
+          return false;
+      }
+    } catch (err) {
+      console.error(`Error executing batch operation ${op.type}:`, err);
+      return false;
+    }
   };
 
   // Context menu handlers
@@ -725,8 +896,8 @@ const DatasetInfoViewer: React.FC = () => {
     }
   };
 
-  // Advanced operations - Replace values
-  const handleReplaceData = async () => {
+  // Advanced operations - Replace values (queued)
+  const handleReplaceData = () => {
     if (!selectedDataset) return;
 
     const validReplacements = replacements.filter(r => r.from);
@@ -735,34 +906,24 @@ const DatasetInfoViewer: React.FC = () => {
       return;
     }
 
-    const fileId = selectedDataset.file_id;
+    const columnsText = replaceColumns.length > 0 
+      ? `en ${replaceColumns.join(', ')}` 
+      : 'en todas las columnas';
+    const description = `Reemplazar ${validReplacements.length} valor(es) ${columnsText}`;
 
-    try {
-      setOperationLoading(true);
+    queueBatchOperation('replace', description, {
+      replacements: validReplacements,
+      columns: replaceColumns
+    });
 
-      const response = await window.grpc.replaceFileData({
-        file_id: fileId,
-        replacements: validReplacements.map(r => ({ from_value: r.from, to_value: r.to })),
-        columns: replaceColumns
-      });
-
-      if (response.success) {
-        toast.success(`Reemplazadas ${response.rows_affected} celdas`);
-        await refreshData();
-        setReplacements([{from: '', to: ''}]);
-        setReplaceColumns([]);
-      } else {
-        toast.error(response.error_message || 'Error al reemplazar');
-      }
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Error desconocido');
-    } finally {
-      setOperationLoading(false);
-    }
+    // Reset form
+    setReplacements([{from: '', to: ''}]);
+    setReplaceColumns([]);
+    setAdvancedDialogOpen(false);
   };
 
-  // Advanced operations - Filter data
-  const handleFilterData = async () => {
+  // Advanced operations - Filter data (queued)
+  const handleFilterData = () => {
     if (!selectedDataset || !filterColumn || !filterValue) {
       toast.error('Selecciona columna y valor para filtrar');
       return;
@@ -778,125 +939,72 @@ const DatasetInfoViewer: React.FC = () => {
       return;
     }
 
-    const fileId = selectedDataset.file_id;
-
-    try {
-      setOperationLoading(true);
-
-      if (filterMode === 'add_column') {
-        const response = await window.grpc.addFilteredColumn({
-          file_id: fileId,
-          new_column_name: newFilterColumnName,
-          source_column: filterColumn,
-          operation: filterOperation,
-          value: filterValue
-        });
-
-        if (response.success) {
-          toast.success(`Columna filtrada creada: ${response.rows_with_values} coincidencias`);
-          await refreshData();
-          setNewFilterColumnName('');
-        } else {
-          toast.error(response.error_message || 'Error al filtrar');
-        }
-      } else {
-        const response = await window.grpc.filterFileData({
-          file_id: fileId,
-          column: filterColumn,
-          operation: filterOperation,
-          value: filterValue,
-          create_new_file: filterMode === 'new_file',
-          new_file_name: filterMode === 'new_file' ? newFilterFileName : ''
-        });
-
-        if (response.success) {
-          toast.success(`Filtrado completado: ${response.total_rows} filas`);
-          await refreshData();
-          if (filterMode === 'new_file') {
-            setNewFilterFileName('');
-          }
-        } else {
-          toast.error(response.error_message || 'Error al filtrar');
-        }
-      }
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Error desconocido');
-    } finally {
-      setOperationLoading(false);
+    if (filterMode === 'add_column') {
+      const description = `Crear columna "${newFilterColumnName}" (${filterColumn} ${filterOperation} ${filterValue})`;
+      queueBatchOperation('add_filtered_column', description, {
+        columnName: newFilterColumnName,
+        sourceColumn: filterColumn,
+        operation: filterOperation,
+        value: filterValue
+      });
+      setNewFilterColumnName('');
+    } else if (filterMode === 'delete_rows') {
+      const description = `Filtrar filas donde ${filterColumn} ${filterOperation} ${filterValue}`;
+      queueBatchOperation('filter_delete_rows', description, {
+        column: filterColumn,
+        operation: filterOperation,
+        value: filterValue
+      });
+    } else if (filterMode === 'new_file') {
+      const description = `Crear archivo "${newFilterFileName}" (${filterColumn} ${filterOperation} ${filterValue})`;
+      queueBatchOperation('filter_new_file', description, {
+        column: filterColumn,
+        operation: filterOperation,
+        value: filterValue,
+        newFileName: newFilterFileName
+      });
+      setNewFilterFileName('');
     }
+
+    // Reset filter form
+    setFilterColumn('');
+    setFilterValue('');
+    setAdvancedDialogOpen(false);
   };
 
-  // Advanced operations - Duplicate columns (bulk)
-  const handleDuplicateColumns = async () => {
+  // Advanced operations - Duplicate columns (queued)
+  const handleDuplicateColumns = () => {
     if (!selectedDataset || columnsToDuplicate.length === 0) {
       toast.error('Selecciona columnas para duplicar');
       return;
     }
 
-    const fileId = selectedDataset.file_id;
+    const colNames = columnsToDuplicate.map(c => c.sourceColumn).join(', ');
+    const description = `Duplicar ${columnsToDuplicate.length} columna(s): ${colNames}`;
 
-    try {
-      setOperationLoading(true);
+    queueBatchOperation('duplicate_column', description, {
+      columns: columnsToDuplicate
+    });
 
-      const response = await window.grpc.duplicateFileColumns({
-        file_id: fileId,
-        columns: columnsToDuplicate.map(col => ({
-          source_column: col.sourceColumn,
-          new_column_name: col.newName
-        }))
-      });
-
-      if (response.success) {
-        toast.success(`${response.duplicated_columns.length} columna(s) duplicada(s)`);
-        await refreshData();
-        await refreshDatasetMetadata(); // Refresh column list
-        setColumnsToDuplicate([]);
-      } else {
-        toast.error(response.error_message || 'Error al duplicar columnas');
-      }
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Error desconocido');
-    } finally {
-      setOperationLoading(false);
-    }
+    setColumnsToDuplicate([]);
+    setAdvancedDialogOpen(false);
   };
 
-  // Advanced operations - Delete columns (bulk)
-  const handleDeleteColumns = async () => {
+  // Advanced operations - Delete columns (queued)
+  const handleDeleteColumns = () => {
     if (!selectedDataset || columnsToDelete.length === 0) {
       toast.error('Selecciona columnas para eliminar');
       return;
     }
 
-    const confirmed = window.confirm(
-      `¿Estás seguro de que deseas eliminar ${columnsToDelete.length} columna(s)?\n\nColumnas a eliminar:\n${columnsToDelete.join(', ')}\n\nEsta operación es permanente y no se puede deshacer.`
-    );
+    const description = `Eliminar ${columnsToDelete.length} columna(s): ${columnsToDelete.join(', ')}`;
 
-    if (!confirmed) return;
+    queueBatchOperation('delete_column', description, {
+      columns: columnsToDelete
+    });
 
-    const fileId = selectedDataset.file_id;
-
-    try {
-      setOperationLoading(true);
-
-      const response = await window.grpc.deleteFileColumns({
-        file_id: fileId,
-        column_names: columnsToDelete
-      });
-
-      if (response.success) {
-        toast.success(`${response.deleted_columns.length} columna(s) eliminada(s)`);
-        await refreshData();
-        await refreshDatasetMetadata(); // Refresh column list
-        setColumnsToDelete([]);
-      } else {
-        toast.error(response.error_message || 'Error al eliminar columnas');
-      }
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Error desconocido');
-    } finally {
-      setOperationLoading(false);
-    }
+    setColumnsToDelete([]);
+    setAdvancedDialogOpen(false);
   };
 
 
@@ -1278,9 +1386,9 @@ const DatasetInfoViewer: React.FC = () => {
             <div>
               <CardTitle className="text-base flex items-center gap-2">
                 Datos
-                {pendingEdits.length > 0 && (
+                {(pendingEdits.length > 0 || pendingBatchOperations.length > 0) && (
                   <Badge variant="secondary" className="text-xs">
-                    {pendingEdits.length} cambio(s) pendiente(s)
+                    {pendingEdits.length + pendingBatchOperations.length} operación(es) pendiente(s)
                   </Badge>
                 )}
               </CardTitle>
@@ -1289,8 +1397,8 @@ const DatasetInfoViewer: React.FC = () => {
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              {/* Apply/Discard buttons - only show when there are pending edits */}
-              {pendingEdits.length > 0 && (
+              {/* Apply/Discard buttons - only show when there are pending operations */}
+              {(pendingEdits.length > 0 || pendingBatchOperations.length > 0) && (
                 <>
                   <Button
                     variant="outline"
@@ -1311,7 +1419,7 @@ const DatasetInfoViewer: React.FC = () => {
                     ) : (
                       <CheckCircle className="mr-2 h-4 w-4" />
                     )}
-                    Aplicar ({pendingEdits.length})
+                    Aplicar ({pendingEdits.length + pendingBatchOperations.length})
                   </Button>
                 </>
               )}
@@ -1332,6 +1440,36 @@ const DatasetInfoViewer: React.FC = () => {
             <div className="flex items-center justify-center py-2 text-sm text-muted-foreground">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Procesando operación...
+            </div>
+          )}
+
+          {/* Pending Batch Operations List */}
+          {pendingBatchOperations.length > 0 && (
+            <div className="border border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/20 rounded-md p-3">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                  Operaciones pendientes ({pendingBatchOperations.length})
+                </h4>
+              </div>
+              <div className="space-y-1">
+                {pendingBatchOperations.map((op) => (
+                  <div
+                    key={op.id}
+                    className="flex items-center justify-between text-sm bg-white dark:bg-gray-800 rounded px-2 py-1.5 border"
+                  >
+                    <span className="text-gray-700 dark:text-gray-300">{op.description}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 text-gray-500 hover:text-red-600"
+                      onClick={() => removeBatchOperation(op.id)}
+                      title="Quitar operación"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
