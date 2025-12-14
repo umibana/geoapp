@@ -21,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
+import { toast } from 'sonner';
 
 /**
  * DatasetInfoViewer Component
@@ -830,11 +831,10 @@ const DatasetInfoViewer: React.FC = () => {
     }
 
     navigator.clipboard.writeText(text).then(() => {
-      setSuccess('Estadísticas copiadas al portapapeles');
-      setTimeout(() => setSuccess(null), 2000);
+      toast.success('Estadísticas copiadas al portapapeles');
     }).catch((err) => {
       console.error('Error copying to clipboard:', err);
-      setError('Error al copiar al portapapeles');
+      toast.error('Error al copiar al portapapeles');
     });
   };
 
