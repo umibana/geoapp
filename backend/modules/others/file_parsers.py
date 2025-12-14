@@ -181,6 +181,45 @@ class FileParser:
         except AttributeError:
             df = df.applymap(lambda x: None if isinstance(x, str) and x.strip() == '' else x)
         
+        # Ensure numeric columns are properly typed
+        df = FileParser._ensure_numeric_types(df)
+        
+        return df
+    
+    @staticmethod
+    def _ensure_numeric_types(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Ensure columns that look numeric are stored as numeric types.
+        
+        This prevents issues where numeric data is stored as strings,
+        which can cause display and calculation problems.
+        
+        Args:
+            df: Input DataFrame
+            
+        Returns:
+            DataFrame with proper numeric types
+        """
+        for col in df.columns:
+            # Skip if already numeric
+            if pd.api.types.is_numeric_dtype(df[col]):
+                continue
+            
+            # Try to convert to numeric
+            try:
+                numeric_col = pd.to_numeric(df[col], errors='coerce')
+                # Only convert if most values are successfully converted
+                # (allows for some NaN values from failed conversions)
+                non_null_original = df[col].notna().sum()
+                non_null_numeric = numeric_col.notna().sum()
+                
+                # If we didn't lose too many values (allow up to 10% loss for edge cases)
+                if non_null_original == 0 or (non_null_numeric / non_null_original) >= 0.9:
+                    df[col] = numeric_col
+            except (ValueError, TypeError):
+                # Keep as-is if conversion fails
+                pass
+        
         return df
 
 

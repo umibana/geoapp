@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
+import { ColumnType } from '@/generated/projects';
 
 /**
  * DatasetInfoViewer Component
@@ -216,7 +217,7 @@ const DatasetInfoViewer: React.FC = () => {
 
           return {
             column_name: stat.column_name,
-            column_type: stat.data_type === 'numeric' ? 'COLUMN_TYPE_NUMERIC' : 'COLUMN_TYPE_CATEGORICAL',
+            column_type: stat.data_type === 'numeric' ? ColumnType.COLUMN_TYPE_NUMERIC : ColumnType.COLUMN_TYPE_CATEGORICAL,
             mapped_field: existingMapping?.mapped_field || '',
             is_coordinate: existingMapping?.is_coordinate || false
           };
@@ -260,10 +261,14 @@ const DatasetInfoViewer: React.FC = () => {
         offset: offset,
         columns: []
       });
-      console.log('📊 [DatasetInfoViewer] Response:', response);
-
       if (response.success && response.rows) {
-        setPreviewColumns(response.column_names);
+        // Use actual column keys from first row data instead of response.column_names
+        // This ensures we show ALL columns that have data, even if column_names is incomplete
+        const actualColumnKeys = response.rows.length > 0
+          ? Object.keys(response.rows[0].values)
+          : response.column_names;
+
+        setPreviewColumns(actualColumnKeys);
         setTotalRows(response.total_rows);
 
         const rows: DataRow[] = response.rows.map((row: { values: Record<string, number> }, index: number) => {
@@ -1115,11 +1120,25 @@ const DatasetInfoViewer: React.FC = () => {
     // Add data columns
     previewColumns.forEach(colName => {
       cols.push({
-        accessorKey: colName,
+        // Use accessorFn instead of accessorKey to handle column names with dots
+        // TanStack Table converts dots to underscores in accessorKey, breaking our column names
+        id: colName,
+        accessorFn: (row) => row[colName],
         header: colName,
         cell: info => {
-          const value = info.getValue() as number;
-          return typeof value === 'number' ? value.toFixed(4) : value;
+          const value = info.getValue();
+
+          // Handle null, undefined, NaN, and non-finite numbers
+          if (value === null || value === undefined) {
+            return <span className="text-muted-foreground">—</span>;
+          }
+          if (typeof value === 'number') {
+            if (!Number.isFinite(value)) {
+              return <span className="text-muted-foreground">—</span>;
+            }
+            return value.toFixed(4);
+          }
+          return String(value);
         },
       });
     });

@@ -236,58 +236,31 @@ export default function Estimaciones() {
         setLatestResult({ type: 'idw', data: resultData });
         
         // Refresh dataset metadata to show new column
+        // The backend already updates the dataset's column_mappings, so we just need to refetch
         if (selectedProject) {
           try {
             const datasetsResponse = await window.grpc.getProjectDatasets({
               project_id: selectedProject.id,
             });
             if (datasetsResponse.datasets) {
+              // Update project store
               syncProjectDatasets(selectedProject.id, datasetsResponse.datasets);
               
               // Also refresh the brush store's selected dataset if it's the block model we just updated
               if (brushStoreSelectedDataset?.file_id === blockModelDataset.file_id) {
-                // Find the updated dataset info from the fresh response
                 const updatedDatasetInfo = datasetsResponse.datasets.find(
                   (d: DatasetData) => d.file_id === blockModelDataset.file_id
                 );
                 
                 if (updatedDatasetInfo) {
-                  // Get fresh file statistics to rebuild column_mappings
-                  const statsResponse = await window.grpc.getFileStatistics({
-                    file_id: blockModelDataset.file_id,
-                    columns: [],
-                  });
-                  
-                  if (statsResponse.success && statsResponse.statistics) {
-                    // Rebuild column_mappings from fresh statistics
-                    const updatedColumnMappings = statsResponse.statistics.map((stat: {
-                      column_name: string;
-                      data_type: string;
-                    }) => {
-                      const existingMapping = brushStoreSelectedDataset.column_mappings?.find(
-                        (m: { column_name: string }) => m.column_name === stat.column_name
-                      );
-                      return {
-                        column_name: stat.column_name,
-                        column_type: stat.data_type === 'numeric' ? 1 : 2,
-                        mapped_field: existingMapping?.mapped_field || '',
-                        is_coordinate: existingMapping?.is_coordinate || false,
-                      };
-                    });
-                    
-                    // Update the brush store with refreshed dataset info
-                    const currentState = useBrushStore.getState();
-                    if (currentState.datasetData && currentState.globalColumns) {
-                      const refreshedDataset = {
-                        ...brushStoreSelectedDataset,
-                        column_mappings: updatedColumnMappings,
-                      };
-                      setSelectedDatasetInBrushStore(
-                        refreshedDataset,
-                        currentState.datasetData,
-                        currentState.globalColumns
-                      );
-                    }
+                  // Update the brush store with the refreshed dataset info from backend
+                  const currentState = useBrushStore.getState();
+                  if (currentState.datasetData && currentState.globalColumns) {
+                    setSelectedDatasetInBrushStore(
+                      updatedDatasetInfo,
+                      currentState.datasetData,
+                      currentState.globalColumns
+                    );
                   }
                 }
               }

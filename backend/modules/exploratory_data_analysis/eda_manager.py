@@ -14,6 +14,7 @@ from generated import projects_pb2
 from modules.others import models, db_connection
 from modules.others.decorators import grpc_response
 from modules.others.statistics_service import StatisticsService
+from modules.others.column_mappings import is_numeric_column_type
 
 
 class EDAManager:
@@ -478,7 +479,10 @@ class EDAManager:
 
             # Get all numeric columns for statistics
             column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
-            all_numeric_columns = [m['column_name'] for m in column_mappings if m.get('column_type') == 1]
+            all_numeric_columns = [
+                m['column_name'] for m in column_mappings 
+                if is_numeric_column_type(m.get('column_type'))
+            ]
 
             # Get coordinate columns for filtering
             coord_columns = {}
@@ -625,7 +629,11 @@ class EDAManager:
         if request.columns and len(request.columns) > 0:
             columns_to_fetch = list(request.columns)
         else:
-            columns_to_fetch = [m['column_name'] for m in column_mappings if m.get('column_type') == 1]
+            # Handle both integer (1) and string ('COLUMN_TYPE_NUMERIC') column_type values
+            columns_to_fetch = [
+                m['column_name'] for m in column_mappings 
+                if is_numeric_column_type(m.get('column_type'))
+            ]
 
         if not columns_to_fetch:
             response = projects_pb2.GetDatasetTableDataResponse()

@@ -16,6 +16,8 @@ from sqlmodel import Session, select
 from generated import projects_pb2
 from modules.others import models, db_connection
 from modules.others.decorators import grpc_response
+from modules.others.column_mappings import ColumnMappingsService
+from modules.others.statistics_service import StatisticsService
 
 # Get CPU count for parallel processing
 CPU_COUNT = os.cpu_count() or 1
@@ -212,6 +214,8 @@ class IDWManager:
             engine: SQLAlchemy Engine instance.
         """
         self.engine = engine
+        self.column_mappings = ColumnMappingsService(engine)
+        self.statistics = StatisticsService(engine)
     
     def _get_table_name(self, file_id: str) -> str:
         """Get table name for file."""
@@ -428,6 +432,7 @@ class IDWManager:
             )
         
         # Write results in a separate connection with explicit transaction
+        column_added = False
         with self.engine.connect() as conn:
             with conn.begin():
                 # Add column if it doesn't exist
@@ -435,6 +440,7 @@ class IDWManager:
                     conn.execute(text(
                         f'ALTER TABLE {block_table} ADD COLUMN "{output_variable}" DOUBLE'
                     ))
+                    column_added = True
                 
                 # Update values using rowid
                 # For efficiency, we'll use a CASE statement in batches
@@ -457,7 +463,19 @@ class IDWManager:
                     '''
                     conn.execute(text(update_sql))
         
-        # Calculate statistics
+        # Update dataset column_mappings if we added a new column
+        if column_added:
+            self.column_mappings.add_column(
+                file_id=block_model_file_id,
+                column_name=output_variable,
+                column_type=1,  # NUMERIC
+                mapped_field=output_variable,
+                is_coordinate=False
+            )
+            # Recalculate statistics for the file so the new column has statistics
+            self.statistics.recalculate_for_file(block_model_file_id)
+        
+        # Calculate statistics for the response
         min_val = float(np.min(estimated_values))
         max_val = float(np.max(estimated_values))
         mean_val = float(np.mean(estimated_values))

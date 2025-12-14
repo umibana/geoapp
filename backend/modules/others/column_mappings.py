@@ -3,11 +3,39 @@
 Column mappings service for managing dataset column_mappings JSON
 """
 import json
-from typing import List, Dict, Any, Callable, Optional
+from typing import List, Dict, Any, Callable, Optional, Union
 from sqlalchemy import Engine
 from sqlmodel import Session, select
 
 from . import models
+
+
+def is_numeric_column_type(column_type: Union[int, str, None]) -> bool:
+    """
+    Check if a column_type value represents a numeric column.
+    
+    Handles both integer values (1) and string values ('COLUMN_TYPE_NUMERIC')
+    that may be stored in the database due to different serialization methods.
+    
+    Args:
+        column_type: The column type value from column_mappings
+        
+    Returns:
+        True if the column is numeric, False otherwise
+    """
+    if column_type is None:
+        return False
+    
+    # Integer check (1 = NUMERIC in the protobuf enum)
+    if isinstance(column_type, int):
+        return column_type == 1
+    
+    # String check for various formats
+    if isinstance(column_type, str):
+        upper_type = column_type.upper()
+        return upper_type in ('1', 'NUMERIC', 'COLUMN_TYPE_NUMERIC')
+    
+    return False
 
 
 class ColumnMappingsService:
@@ -151,7 +179,7 @@ class ColumnMappingsService:
         
         # Use first dataset's mappings
         mappings = all_mappings[0]
-        return [m['column_name'] for m in mappings if m.get('column_type') == 1]
+        return [m['column_name'] for m in mappings if is_numeric_column_type(m.get('column_type'))]
     
     def get_coordinate_columns(self, file_id: str) -> Dict[str, str]:
         """
