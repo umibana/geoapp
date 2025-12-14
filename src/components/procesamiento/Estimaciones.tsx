@@ -1,12 +1,349 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { X, Calculator } from 'lucide-react';
+import { X, Calculator, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
+import { useProjectStore, type DatasetData } from '@/stores/projectStore';
+import { useProcessingStore } from '@/stores/processingStore';
+import { useBrushStore } from '@/stores/brushStore';
+import { DatasetType } from '@/generated/projects';
+import { toast } from 'sonner';
+
+interface IDWFormState {
+  blockModelFileId: string;
+  drillHolesFileId: string;
+  variable: string;
+  outputVariable: string;
+  power: number;
+  numSamples: number;
+}
+
+interface IDWResult {
+  success: boolean;
+  outputVariable: string;
+  blocksEstimated: number;
+  samplesUsed: number;
+  minValue: number;
+  maxValue: number;
+  meanValue: number;
+  stdValue: number;
+}
 
 export default function Estimaciones() {
+  // Get project and datasets from store
+  const selectedProject = useProjectStore((state) => state.selectedProject);
+  const projectDatasetsMap = useProjectStore((state) => state.projectDatasetsMap);
+  const syncProjectDatasets = useProjectStore((state) => state.syncProjectDatasets);
+  const setLatestResult = useProcessingStore((state) => state.setLatestResult);
+  
+  // Get brush store for refreshing selected dataset metadata
+  const brushStoreSelectedDataset = useBrushStore((state) => state.selectedDataset);
+  const setSelectedDatasetInBrushStore = useBrushStore((state) => state.setSelectedDataset);
+  
+  // Form state
+  const [formState, setFormState] = useState<IDWFormState>({
+    blockModelFileId: '',
+    drillHolesFileId: '',
+    variable: '',
+    outputVariable: '',
+    power: 2,
+    numSamples: 5,
+  });
+  
+  // UI state
+  const [isCalculating, setIsCalculating] = useState(false);
+  const [result, setResult] = useState<IDWResult | null>(null);
+  const [drillHolesColumns, setDrillHolesColumns] = useState<string[]>([]);
+  const [loadingColumns, setLoadingColumns] = useState(false);
+  
+  // Get datasets for current project
+  const currentProjectDatasets = useMemo(() => {
+    if (!selectedProject) return [];
+    return projectDatasetsMap.get(selectedProject.id) || [];
+  }, [selectedProject, projectDatasetsMap]);
+  
+  // Filter datasets by type
+  const blockModelDatasets = useMemo(() => {
+    return currentProjectDatasets.filter(
+      (d: DatasetData) => d.dataset_type === DatasetType.DATASET_TYPE_BLOCK
+    );
+  }, [currentProjectDatasets]);
+  
+  const drillHolesDatasets = useMemo(() => {
+    return currentProjectDatasets.filter(
+      (d: DatasetData) => d.dataset_type === DatasetType.DATASET_TYPE_DRILL_HOLES
+    );
+  }, [currentProjectDatasets]);
+  
+  // Load columns when drill holes dataset is selected
+  useEffect(() => {
+    const loadDrillHolesColumns = async () => {
+      if (!formState.drillHolesFileId) {
+        setDrillHolesColumns([]);
+        return;
+      }
+      
+      try {
+        setLoadingColumns(true);
+        const response = await window.grpc.getFileStatistics({
+          file_id: formState.drillHolesFileId,
+          columns: [],
+        });
+        
+        if (response.success && response.statistics) {
+          // Get only numeric columns for estimation
+          const numericColumns = response.statistics
+            .filter((stat: { data_type: string }) => stat.data_type === 'numeric')
+            .map((stat: { column_name: string }) => stat.column_name);
+          setDrillHolesColumns(numericColumns);
+        }
+      } catch (err) {
+        console.error('Error loading columns:', err);
+        setDrillHolesColumns([]);
+      } finally {
+        setLoadingColumns(false);
+      }
+    };
+    
+    loadDrillHolesColumns();
+  }, [formState.drillHolesFileId]);
+  
+  // Auto-generate output variable name when variable is selected
+  useEffect(() => {
+    if (formState.variable && !formState.outputVariable) {
+      setFormState(prev => ({
+        ...prev,
+        outputVariable: `${formState.variable}_est`,
+      }));
+    }
+  }, [formState.variable, formState.outputVariable]);
+  
+  // Handle form field changes
+  const handleBlockModelChange = (value: string) => {
+    setFormState(prev => ({ ...prev, blockModelFileId: value }));
+    setResult(null);
+  };
+  
+  const handleDrillHolesChange = (value: string) => {
+    // Find the dataset to get the file_id
+    const dataset = drillHolesDatasets.find((d: DatasetData) => d.id === value);
+    setFormState(prev => ({
+      ...prev,
+      drillHolesFileId: dataset?.file_id || '',
+      variable: '', // Reset variable when dataset changes
+      outputVariable: '',
+    }));
+    setResult(null);
+  };
+  
+  const handleVariableChange = (value: string) => {
+    setFormState(prev => ({
+      ...prev,
+      variable: value,
+      outputVariable: `${value}_est`,
+    }));
+    setResult(null);
+  };
+  
+  const handleOutputVariableChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormState(prev => ({ ...prev, outputVariable: e.target.value }));
+  };
+  
+  const handlePowerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(e.target.value);
+    if (!isNaN(value) && value > 0) {
+      setFormState(prev => ({ ...prev, power: value }));
+    }
+  };
+  
+  const handleNumSamplesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(e.target.value, 10);
+    if (!isNaN(value) && value > 0) {
+      setFormState(prev => ({ ...prev, numSamples: value }));
+    }
+  };
+  
+  // Calculate IDW
+  const handleCalculateIdw = async () => {
+    // Find the block model dataset to get file_id
+    const blockModelDataset = blockModelDatasets.find(
+      (d: DatasetData) => d.id === formState.blockModelFileId
+    );
+    
+    if (!blockModelDataset) {
+      toast.error('Please select a block model');
+      return;
+    }
+    
+    if (!formState.drillHolesFileId) {
+      toast.error('Please select drill holes dataset');
+      return;
+    }
+    
+    if (!formState.variable) {
+      toast.error('Please select a variable to estimate');
+      return;
+    }
+    
+    if (!formState.outputVariable.trim()) {
+      toast.error('Please enter an output variable name');
+      return;
+    }
+    
+    try {
+      setIsCalculating(true);
+      setResult(null);
+      
+      const response = await window.grpc.calculateIdw({
+        block_model_file_id: blockModelDataset.file_id,
+        drill_holes_file_id: formState.drillHolesFileId,
+        variable: formState.variable,
+        output_variable: formState.outputVariable,
+        power: formState.power,
+        num_samples: formState.numSamples,
+        // Optional coordinate column overrides (empty = use defaults from dataset mappings)
+        block_x_col: '',
+        block_y_col: '',
+        block_z_col: '',
+        drill_x_col: '',
+        drill_y_col: '',
+        drill_z_col: '',
+      });
+      
+      if (response.success) {
+        const resultData = {
+          success: true,
+          outputVariable: response.output_variable || formState.outputVariable,
+          blockModelName: blockModelDataset.file_name,
+          drillHolesName: drillHolesDatasets.find((d: DatasetData) => d.file_id === formState.drillHolesFileId)?.file_name || '',
+          variable: formState.variable,
+          blocksEstimated: response.blocks_estimated || 0,
+          samplesUsed: response.samples_used || 0,
+          minValue: response.min_value || 0,
+          maxValue: response.max_value || 0,
+          meanValue: response.mean_value || 0,
+          stdValue: response.std_value || 0,
+          power: formState.power,
+          numSamples: formState.numSamples,
+          timestamp: Date.now(),
+        };
+        
+        setResult(resultData);
+        
+        // Store result in processing store for the main content area
+        setLatestResult({ type: 'idw', data: resultData });
+        
+        // Refresh dataset metadata to show new column
+        if (selectedProject) {
+          try {
+            const datasetsResponse = await window.grpc.getProjectDatasets({
+              project_id: selectedProject.id,
+            });
+            if (datasetsResponse.datasets) {
+              syncProjectDatasets(selectedProject.id, datasetsResponse.datasets);
+              
+              // Also refresh the brush store's selected dataset if it's the block model we just updated
+              if (brushStoreSelectedDataset?.file_id === blockModelDataset.file_id) {
+                // Find the updated dataset info from the fresh response
+                const updatedDatasetInfo = datasetsResponse.datasets.find(
+                  (d: DatasetData) => d.file_id === blockModelDataset.file_id
+                );
+                
+                if (updatedDatasetInfo) {
+                  // Get fresh file statistics to rebuild column_mappings
+                  const statsResponse = await window.grpc.getFileStatistics({
+                    file_id: blockModelDataset.file_id,
+                    columns: [],
+                  });
+                  
+                  if (statsResponse.success && statsResponse.statistics) {
+                    // Rebuild column_mappings from fresh statistics
+                    const updatedColumnMappings = statsResponse.statistics.map((stat: {
+                      column_name: string;
+                      data_type: string;
+                    }) => {
+                      const existingMapping = brushStoreSelectedDataset.column_mappings?.find(
+                        (m: { column_name: string }) => m.column_name === stat.column_name
+                      );
+                      return {
+                        column_name: stat.column_name,
+                        column_type: stat.data_type === 'numeric' ? 1 : 2,
+                        mapped_field: existingMapping?.mapped_field || '',
+                        is_coordinate: existingMapping?.is_coordinate || false,
+                      };
+                    });
+                    
+                    // Update the brush store with refreshed dataset info
+                    const currentState = useBrushStore.getState();
+                    if (currentState.datasetData && currentState.globalColumns) {
+                      const refreshedDataset = {
+                        ...brushStoreSelectedDataset,
+                        column_mappings: updatedColumnMappings,
+                      };
+                      setSelectedDatasetInBrushStore(
+                        refreshedDataset,
+                        currentState.datasetData,
+                        currentState.globalColumns
+                      );
+                    }
+                  }
+                }
+              }
+            }
+          } catch (refreshErr) {
+            console.error('Failed to refresh datasets:', refreshErr);
+          }
+        }
+        
+        toast.success(`IDW calculation complete! Estimated ${response.blocks_estimated} blocks.`);
+      } else {
+        toast.error(response.error_message || 'IDW calculation failed');
+      }
+    } catch (err) {
+      console.error('IDW calculation error:', err);
+      toast.error('Failed to calculate IDW. Check console for details.');
+    } finally {
+      setIsCalculating(false);
+    }
+  };
+  
+  // Reset form
+  const handleCancel = () => {
+    setFormState({
+      blockModelFileId: '',
+      drillHolesFileId: '',
+      variable: '',
+      outputVariable: '',
+      power: 2,
+      numSamples: 5,
+    });
+    setResult(null);
+  };
+  
+  // Check if form is valid
+  const isFormValid = useMemo(() => {
+    return (
+      formState.blockModelFileId &&
+      formState.drillHolesFileId &&
+      formState.variable &&
+      formState.outputVariable.trim()
+    );
+  }, [formState]);
+  
+  // Show message if no project selected
+  if (!selectedProject) {
+    return (
+      <div className="space-y-4 p-2">
+        <div className="flex items-center gap-2 text-muted-foreground text-xs">
+          <AlertCircle className="h-4 w-4" />
+          <span>Select a project first</span>
+        </div>
+      </div>
+    );
+  }
+  
   return (
     <div className="space-y-4">
       {/* Data Section */}
@@ -15,36 +352,88 @@ export default function Estimaciones() {
         <div className="space-y-3">
           <div>
             <Label htmlFor="block-model" className="text-xs">Block Model</Label>
-            <Select value="" onValueChange={() => {}}>
-              <SelectTrigger id="block-model" className="h-8 text-xs">
+            <Select
+              value={formState.blockModelFileId}
+              onValueChange={handleBlockModelChange}
+            >
+              <SelectTrigger
+                id="block-model"
+                className="h-8 text-xs"
+                aria-label="Select block model dataset"
+              >
                 <SelectValue placeholder="Seleccionar Block Model" />
               </SelectTrigger>
               <SelectContent>
-                {/* Options will be populated here */}
+                {blockModelDatasets.length === 0 ? (
+                  <SelectItem value="_empty" disabled>
+                    No block models available
+                  </SelectItem>
+                ) : (
+                  blockModelDatasets.map((dataset: DatasetData) => (
+                    <SelectItem key={dataset.id} value={dataset.id}>
+                      {dataset.file_name}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
           
           <div>
             <Label htmlFor="drill-holes" className="text-xs">Drill Holes</Label>
-            <Select value="" onValueChange={() => {}}>
-              <SelectTrigger id="drill-holes" className="h-8 text-xs">
+            <Select
+              value={drillHolesDatasets.find((d: DatasetData) => d.file_id === formState.drillHolesFileId)?.id || ''}
+              onValueChange={handleDrillHolesChange}
+            >
+              <SelectTrigger
+                id="drill-holes"
+                className="h-8 text-xs"
+                aria-label="Select drill holes dataset"
+              >
                 <SelectValue placeholder="Seleccionar Drill Holes" />
               </SelectTrigger>
               <SelectContent>
-                {/* Options will be populated here */}
+                {drillHolesDatasets.length === 0 ? (
+                  <SelectItem value="_empty" disabled>
+                    No drill holes available
+                  </SelectItem>
+                ) : (
+                  drillHolesDatasets.map((dataset: DatasetData) => (
+                    <SelectItem key={dataset.id} value={dataset.id}>
+                      {dataset.file_name}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
           
           <div>
             <Label htmlFor="variable" className="text-xs">Variable</Label>
-            <Select value="" onValueChange={() => {}}>
-              <SelectTrigger id="variable" className="h-8 text-xs">
-                <SelectValue placeholder="Seleccionar Variable" />
+            <Select
+              value={formState.variable}
+              onValueChange={handleVariableChange}
+              disabled={!formState.drillHolesFileId || loadingColumns}
+            >
+              <SelectTrigger
+                id="variable"
+                className="h-8 text-xs"
+                aria-label="Select variable to estimate"
+              >
+                <SelectValue placeholder={loadingColumns ? 'Loading...' : 'Seleccionar Variable'} />
               </SelectTrigger>
               <SelectContent>
-                {/* Options will be populated here */}
+                {drillHolesColumns.length === 0 ? (
+                  <SelectItem value="_empty" disabled>
+                    {loadingColumns ? 'Loading columns...' : 'No numeric columns available'}
+                  </SelectItem>
+                ) : (
+                  drillHolesColumns.map((column: string) => (
+                    <SelectItem key={column} value={column}>
+                      {column}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -55,7 +444,10 @@ export default function Estimaciones() {
               id="output-variable"
               type="text"
               placeholder="x_est"
+              value={formState.outputVariable}
+              onChange={handleOutputVariableChange}
               className="h-8 text-xs"
+              aria-label="Output variable name"
             />
           </div>
           
@@ -64,10 +456,12 @@ export default function Estimaciones() {
             <Input
               id="power"
               type="number"
-              defaultValue="2"
-              min="1"
-              step="0.1"
+              value={formState.power}
+              onChange={handlePowerChange}
+              min={0.1}
+              step={0.1}
               className="h-8 text-xs"
+              aria-label="IDW power parameter"
             />
           </div>
           
@@ -76,10 +470,12 @@ export default function Estimaciones() {
             <Input
               id="number-of-samples"
               type="number"
-              defaultValue="5"
-              min="1"
-              step="1"
+              value={formState.numSamples}
+              onChange={handleNumSamplesChange}
+              min={1}
+              step={1}
               className="h-8 text-xs"
+              aria-label="Number of nearest samples"
             />
           </div>
         </div>
@@ -87,28 +483,79 @@ export default function Estimaciones() {
 
       <Separator />
 
+      {/* Result Section */}
+      {result && result.success && (
+        <>
+          <div className="bg-muted/50 rounded-md p-3 space-y-2">
+            <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+              <CheckCircle2 className="h-4 w-4" />
+              <span className="text-xs font-medium">Calculation Complete</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="text-muted-foreground">Output:</span>
+                <span className="ml-1 font-mono">{result.outputVariable}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Blocks:</span>
+                <span className="ml-1">{result.blocksEstimated.toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Samples:</span>
+                <span className="ml-1">{result.samplesUsed.toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Mean:</span>
+                <span className="ml-1">{result.meanValue.toFixed(4)}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Min:</span>
+                <span className="ml-1">{result.minValue.toFixed(4)}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Max:</span>
+                <span className="ml-1">{result.maxValue.toFixed(4)}</span>
+              </div>
+            </div>
+          </div>
+          <Separator />
+        </>
+      )}
+
       {/* Action Buttons */}
       <div className="space-y-2 pt-2">
         <Button
           variant="default"
           size="sm"
           className="w-full"
-          onClick={() => {}}
+          onClick={handleCalculateIdw}
+          disabled={!isFormValid || isCalculating}
+          aria-label="Calculate IDW estimation"
         >
-          <Calculator className="h-4 w-4 mr-2" />
-          Calculate IDW
+          {isCalculating ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Calculating...
+            </>
+          ) : (
+            <>
+              <Calculator className="h-4 w-4 mr-2" />
+              Calculate IDW
+            </>
+          )}
         </Button>
         <Button
           variant="outline"
           size="sm"
           className="w-full"
-          onClick={() => {}}
+          onClick={handleCancel}
+          disabled={isCalculating}
+          aria-label="Clear form"
         >
           <X className="h-4 w-4 mr-2" />
-          Cancel
+          Clear
         </Button>
       </div>
     </div>
   );
 }
-

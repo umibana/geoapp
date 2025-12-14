@@ -683,3 +683,37 @@ message CancelOperationResponse {
   bool success = 1;
   string error_message = 2;
 }
+
+// ========== IDW Estimation ==========
+
+// Calculate IDW estimation from drill holes to block model
+message CalculateIdwRequest {
+  string block_model_file_id = 1;     // Block model dataset file_id
+  string drill_holes_file_id = 2;     // Drill holes dataset file_id
+  string variable = 3;                 // Variable to estimate (column name in drill holes)
+  string output_variable = 4;          // Output column name (default: variable + "_est")
+  double power = 5;                    // Power parameter (default: 2.0)
+  int32 num_samples = 6;               // Number of nearest samples to use (default: 5)
+  
+  // Optional coordinate column overrides for block model
+  string block_x_col = 7;
+  string block_y_col = 8;
+  string block_z_col = 9;
+  
+  // Optional coordinate column overrides for drill holes
+  string drill_x_col = 10;
+  string drill_y_col = 11;
+  string drill_z_col = 12;
+}
+
+message CalculateIdwResponse {
+  bool success = 1;
+  string error_message = 2;
+  string output_variable = 3;          // Name of the output column created
+  int32 blocks_estimated = 4;          // Number of blocks that were estimated
+  int32 samples_used = 5;              // Number of valid samples used
+  double min_value = 6;                // Minimum estimated value
+  double max_value = 7;                // Maximum estimated value
+  double mean_value = 8;               // Mean estimated value
+  double std_value = 9;                // Standard deviation of estimated values
+}

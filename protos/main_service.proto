@@ -65,4 +65,7 @@ service GeospatialService {
   rpc GetOperationProgress(GetOperationProgressRequest) returns (GetOperationProgressResponse);
   rpc GetActiveOperations(GetActiveOperationsRequest) returns (GetActiveOperationsResponse);
   rpc CancelOperation(CancelOperationRequest) returns (CancelOperationResponse);
+
+  // Processing / Estimation
+  rpc CalculateIdw(CalculateIdwRequest) returns (CalculateIdwResponse);
 }

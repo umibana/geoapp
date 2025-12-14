@@ -35,6 +35,7 @@ from modules.others.progress_tracker import progress_tracker, OperationStatus
 from modules.project_explorer.project_manager import ProjectManager
 from modules.data_manipulation.data_operations import DataManipulationManager
 from modules.exploratory_data_analysis.eda_manager import EDAManager
+from modules.processing.IDW import IDWManager
 
 class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
 
@@ -51,6 +52,7 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
         self.eda_manager = EDAManager(engine)
         self.data_manipulation = DataManipulationManager(engine, self.eda_manager)
         self.project_manager = ProjectManager(engine, self.eda_manager)
+        self.idw_manager = IDWManager(engine)
     
     """
     -------- Definición de métodos para probar conexión de gRPC -------- 
@@ -259,6 +261,11 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
 
     def MergeDatasets(self, request, context):
         return self.data_manipulation.merge_datasets(request)
+
+    # ---------- Processing / Estimation ----------
+
+    def CalculateIdw(self, request, context):
+        return self.idw_manager.calculate_idw(request)
 
     # ---------- Operation Progress Tracking ----------
 

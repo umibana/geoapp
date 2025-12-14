@@ -2,6 +2,7 @@ grpcio>=1.73.0
 grpcio-tools>=1.73.0
 protobuf>=6.30.0
 numpy>=1.24.0
+scipy>=1.11.0
 pandas>=1.5.0
 sqlmodel>=0.0.21
 # Update to 1.4.1 when its available

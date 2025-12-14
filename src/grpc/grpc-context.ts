@@ -86,6 +86,9 @@ const grpcMethods: GeospatialService = {
   getOperationProgress: createMethod('getOperationProgress'),
   getActiveOperations: createMethod('getActiveOperations'),
   cancelOperation: createMethod('cancelOperation'),
+
+  // Processing / Estimation
+  calculateIdw: createMethod('calculateIdw'),
 };
 
 /**
