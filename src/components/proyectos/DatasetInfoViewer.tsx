@@ -19,8 +19,8 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 
 /**
@@ -39,6 +39,19 @@ interface EditingCell {
   rowIndex: number;
   columnId: string;
   value: string;
+}
+
+/**
+ * Represents a pending cell edit that hasn't been applied yet
+ */
+interface PendingEdit {
+  id: string;                    // Unique ID for the edit
+  rowIndex: number;              // Row index in the current page
+  actualRowIndex: number;        // Actual row index in the dataset (accounting for pagination)
+  columnId: string;              // Column name
+  oldValue: string;              // Original value before edit
+  newValue: string;              // New value to apply
+  timestamp: number;             // When the edit was made
 }
 
 interface ContextMenuState {
@@ -61,9 +74,11 @@ const DatasetInfoViewer: React.FC = () => {
   const [previewData, setPreviewData] = useState<DataRow[]>([]);
   const [previewColumns, setPreviewColumns] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [totalRows, setTotalRows] = useState(0);
+  
+  // Pending edits queue - edits are queued until user clicks Apply
+  const [pendingEdits, setPendingEdits] = useState<PendingEdit[]>([]);
+  const [isApplyingEdits, setIsApplyingEdits] = useState(false);
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: ROWS_PER_PAGE,
@@ -210,7 +225,6 @@ const DatasetInfoViewer: React.FC = () => {
 
     try {
       setLoading(true);
-      setError(null);
 
       const offset = pagination.pageIndex * pagination.pageSize;
 
@@ -239,19 +253,134 @@ const DatasetInfoViewer: React.FC = () => {
 
         setPreviewData(rows);
       } else {
-        setError(response.error_message || 'Error al cargar datos');
+        toast.error(response.error_message || 'Error al cargar datos');
       }
     } catch {
-      setError('Error al refrescar los datos');
+      toast.error('Error al refrescar los datos');
     } finally {
       setLoading(false);
     }
   };
 
-  // Show success message temporarily
-  const showSuccess = (message: string) => {
-    setSuccess(message);
-    setTimeout(() => setSuccess(null), 3000);
+  // ========== Pending Edits Queue Functions ==========
+
+  /**
+   * Queue a cell edit (doesn't apply immediately)
+   */
+  const queueCellEdit = (rowIndex: number, columnId: string, oldValue: string, newValue: string) => {
+    const actualRowIndex = pagination.pageIndex * pagination.pageSize + rowIndex;
+    
+    // Check if there's already a pending edit for this cell
+    const existingEditIndex = pendingEdits.findIndex(
+      e => e.rowIndex === rowIndex && e.columnId === columnId
+    );
+    
+    const newEdit: PendingEdit = {
+      id: `${rowIndex}-${columnId}-${Date.now()}`,
+      rowIndex,
+      actualRowIndex,
+      columnId,
+      oldValue: existingEditIndex >= 0 ? pendingEdits[existingEditIndex].oldValue : oldValue,
+      newValue,
+      timestamp: Date.now()
+    };
+    
+    if (existingEditIndex >= 0) {
+      // Update existing edit
+      setPendingEdits(prev => {
+        const updated = [...prev];
+        // If new value equals original, remove the edit
+        if (newValue === updated[existingEditIndex].oldValue) {
+          updated.splice(existingEditIndex, 1);
+        } else {
+          updated[existingEditIndex] = newEdit;
+        }
+        return updated;
+      });
+    } else {
+      // Add new edit
+      setPendingEdits(prev => [...prev, newEdit]);
+    }
+    
+    // Update local preview data immediately for visual feedback
+    setPreviewData(prev => {
+      const updated = [...prev];
+      if (updated[rowIndex]) {
+        updated[rowIndex] = { ...updated[rowIndex], [columnId]: parseFloat(newValue) || 0 };
+      }
+      return updated;
+    });
+  };
+
+  /**
+   * Apply all pending edits to the backend
+   */
+  const applyPendingEdits = async () => {
+    if (pendingEdits.length === 0 || !selectedDataset) return;
+    
+    setIsApplyingEdits(true);
+    let successCount = 0;
+    let errorCount = 0;
+    
+    try {
+      for (const edit of pendingEdits) {
+        try {
+          const response = await window.grpc.updateCell({
+            file_id: selectedDataset.file_id,
+            row_index: edit.actualRowIndex,
+            column_name: edit.columnId,
+            new_value: edit.newValue
+          });
+          
+          if (response.success) {
+            successCount++;
+          } else {
+            errorCount++;
+            console.error(`Failed to apply edit: ${response.error_message}`);
+          }
+        } catch (err) {
+          errorCount++;
+          console.error('Error applying edit:', err);
+        }
+      }
+      
+      // Clear pending edits
+      setPendingEdits([]);
+      
+      // Refresh data and statistics
+      await refreshData();
+      await loadStatistics();
+      
+      if (errorCount === 0) {
+        toast.success(`${successCount} cambio(s) aplicado(s)`);
+      } else {
+        toast.warning(`${successCount} aplicado(s), ${errorCount} error(es)`);
+      }
+    } catch (err) {
+      toast.error('Error al aplicar cambios');
+      console.error('Error applying edits:', err);
+    } finally {
+      setIsApplyingEdits(false);
+    }
+  };
+
+  /**
+   * Discard all pending edits and revert to original data
+   */
+  const discardPendingEdits = () => {
+    if (pendingEdits.length === 0) return;
+    
+    setPendingEdits([]);
+    // Refresh data to revert visual changes
+    refreshData();
+    toast.info('Cambios descartados');
+  };
+
+  /**
+   * Check if a cell has a pending edit
+   */
+  const hasPendingEdit = (rowIndex: number, columnId: string): boolean => {
+    return pendingEdits.some(e => e.rowIndex === rowIndex && e.columnId === columnId);
   };
 
   // Context menu handlers
@@ -289,10 +418,9 @@ const DatasetInfoViewer: React.FC = () => {
     });
   };
 
-  const handleCellEditSave = async () => {
+  const handleCellEditSave = () => {
     if (!editingCell || !selectedDataset) return;
 
-    const fileId = selectedDataset.file_id;
     const row = previewData[editingCell.rowIndex];
     const oldValue = String(row[editingCell.columnId]);
     const newValue = editingCell.value;
@@ -302,34 +430,9 @@ const DatasetInfoViewer: React.FC = () => {
       return;
     }
 
-    // Calculate the actual row index in the dataset (accounting for pagination)
-    const actualRowIndex = pagination.pageIndex * pagination.pageSize + editingCell.rowIndex;
-
-    try {
-      setOperationLoading(true);
-      setError(null);
-
-      // Use updateCell to update only the specific cell by row index
-      const response = await window.grpc.updateCell({
-        file_id: fileId,
-        row_index: actualRowIndex,
-        column_name: editingCell.columnId,
-        new_value: newValue
-      });
-
-      if (response.success) {
-        showSuccess('Celda actualizada');
-        await refreshData();
-        await loadStatistics();
-      } else {
-        setError(response.error_message || 'Error al actualizar');
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
-    } finally {
-      setOperationLoading(false);
-      setEditingCell(null);
-    }
+    // Queue the edit instead of applying immediately
+    queueCellEdit(editingCell.rowIndex, editingCell.columnId, oldValue, newValue);
+    setEditingCell(null);
   };
 
   const handleCellEditCancel = () => {
@@ -369,7 +472,6 @@ const DatasetInfoViewer: React.FC = () => {
 
     try {
       setOperationLoading(true);
-      setError(null);
 
       const response = await window.grpc.renameFileColumn({
         file_id: fileId,
@@ -377,14 +479,14 @@ const DatasetInfoViewer: React.FC = () => {
       });
 
       if (response.success) {
-        showSuccess(`Columna renombrada: ${oldName} → ${newName}`);
+        toast.success(`Columna renombrada: ${oldName} → ${newName}`);
         await refreshData();
         await refreshDatasetMetadata(); // Refresh column list
       } else {
-        setError(response.error_message || 'Error al renombrar columna');
+        toast.error(response.error_message || 'Error al renombrar columna');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      toast.error(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
       setOperationLoading(false);
       setEditingColumnHeader(null);
@@ -414,7 +516,6 @@ const DatasetInfoViewer: React.FC = () => {
 
     try {
       setOperationLoading(true);
-      setError(null);
 
       const response = await window.grpc.duplicateFileColumns({
         file_id: fileId,
@@ -422,13 +523,13 @@ const DatasetInfoViewer: React.FC = () => {
       });
 
       if (response.success) {
-        showSuccess(`Columna duplicada: ${columnName} → ${response.duplicated_columns.join(', ')}`);
+        toast.success(`Columna duplicada: ${columnName} → ${response.duplicated_columns.join(', ')}`);
         await refreshData();
       } else {
-        setError(response.error_message || 'Error al duplicar columna');
+        toast.error(response.error_message || 'Error al duplicar columna');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      toast.error(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
       setOperationLoading(false);
     }
@@ -447,7 +548,6 @@ const DatasetInfoViewer: React.FC = () => {
 
     try {
       setOperationLoading(true);
-      setError(null);
 
       const response = await window.grpc.deleteFileColumns({
         file_id: fileId,
@@ -455,14 +555,14 @@ const DatasetInfoViewer: React.FC = () => {
       });
 
       if (response.success) {
-        showSuccess(`Columna eliminada: ${columnName}`);
+        toast.success(`Columna eliminada: ${columnName}`);
         await refreshData();
         await refreshDatasetMetadata(); // Refresh column list
       } else {
-        setError(response.error_message || 'Error al eliminar columna');
+        toast.error(response.error_message || 'Error al eliminar columna');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      toast.error(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
       setOperationLoading(false);
     }
@@ -479,7 +579,6 @@ const DatasetInfoViewer: React.FC = () => {
 
     try {
       setOperationLoading(true);
-      setError(null);
 
       const response = await window.grpc.replaceFileData({
         file_id: fileId,
@@ -488,13 +587,13 @@ const DatasetInfoViewer: React.FC = () => {
       });
 
       if (response.success) {
-        showSuccess(`Reemplazadas ${response.rows_affected} celdas`);
+        toast.success(`Reemplazadas ${response.rows_affected} celdas`);
         await refreshData();
       } else {
-        setError(response.error_message || 'Error al reemplazar');
+        toast.error(response.error_message || 'Error al reemplazar');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      toast.error(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
       setOperationLoading(false);
     }
@@ -574,7 +673,6 @@ const DatasetInfoViewer: React.FC = () => {
 
     try {
       setOperationLoading(true);
-      setError(null);
 
       const response = await window.grpc.deleteFilePoints({
         file_id: fileId,
@@ -582,14 +680,14 @@ const DatasetInfoViewer: React.FC = () => {
       });
 
       if (response.success) {
-        showSuccess(`${response.rows_deleted} fila(s) eliminada(s). ${response.rows_remaining} filas restantes`);
+        toast.success(`${response.rows_deleted} fila(s) eliminada(s). ${response.rows_remaining} filas restantes`);
         clearRowSelection();
         await refreshData();
       } else {
-        setError(response.error_message || 'Error al eliminar filas');
+        toast.error(response.error_message || 'Error al eliminar filas');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      toast.error(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
       setOperationLoading(false);
     }
@@ -608,7 +706,6 @@ const DatasetInfoViewer: React.FC = () => {
 
     try {
       setOperationLoading(true);
-      setError(null);
 
       const response = await window.grpc.deleteFilePoints({
         file_id: fileId,
@@ -616,13 +713,13 @@ const DatasetInfoViewer: React.FC = () => {
       });
 
       if (response.success) {
-        showSuccess(`Fila eliminada. ${response.rows_remaining} filas restantes`);
+        toast.success(`Fila eliminada. ${response.rows_remaining} filas restantes`);
         await refreshData();
       } else {
-        setError(response.error_message || 'Error al eliminar fila');
+        toast.error(response.error_message || 'Error al eliminar fila');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      toast.error(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
       setOperationLoading(false);
     }
@@ -634,7 +731,7 @@ const DatasetInfoViewer: React.FC = () => {
 
     const validReplacements = replacements.filter(r => r.from);
     if (validReplacements.length === 0) {
-      setError('Proporciona al menos un reemplazo');
+      toast.error('Proporciona al menos un reemplazo');
       return;
     }
 
@@ -642,7 +739,6 @@ const DatasetInfoViewer: React.FC = () => {
 
     try {
       setOperationLoading(true);
-      setError(null);
 
       const response = await window.grpc.replaceFileData({
         file_id: fileId,
@@ -651,15 +747,15 @@ const DatasetInfoViewer: React.FC = () => {
       });
 
       if (response.success) {
-        showSuccess(`Reemplazadas ${response.rows_affected} celdas`);
+        toast.success(`Reemplazadas ${response.rows_affected} celdas`);
         await refreshData();
         setReplacements([{from: '', to: ''}]);
         setReplaceColumns([]);
       } else {
-        setError(response.error_message || 'Error al reemplazar');
+        toast.error(response.error_message || 'Error al reemplazar');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      toast.error(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
       setOperationLoading(false);
     }
@@ -668,17 +764,17 @@ const DatasetInfoViewer: React.FC = () => {
   // Advanced operations - Filter data
   const handleFilterData = async () => {
     if (!selectedDataset || !filterColumn || !filterValue) {
-      setError('Selecciona columna y valor para filtrar');
+      toast.error('Selecciona columna y valor para filtrar');
       return;
     }
 
     if (filterMode === 'add_column' && !newFilterColumnName) {
-      setError('Ingresa un nombre para la columna filtrada');
+      toast.error('Ingresa un nombre para la columna filtrada');
       return;
     }
 
     if (filterMode === 'new_file' && !newFilterFileName) {
-      setError('Ingresa un nombre para el archivo nuevo');
+      toast.error('Ingresa un nombre para el archivo nuevo');
       return;
     }
 
@@ -686,7 +782,6 @@ const DatasetInfoViewer: React.FC = () => {
 
     try {
       setOperationLoading(true);
-      setError(null);
 
       if (filterMode === 'add_column') {
         const response = await window.grpc.addFilteredColumn({
@@ -698,11 +793,11 @@ const DatasetInfoViewer: React.FC = () => {
         });
 
         if (response.success) {
-          showSuccess(`Columna filtrada creada: ${response.rows_with_values} coincidencias`);
+          toast.success(`Columna filtrada creada: ${response.rows_with_values} coincidencias`);
           await refreshData();
           setNewFilterColumnName('');
         } else {
-          setError(response.error_message || 'Error al filtrar');
+          toast.error(response.error_message || 'Error al filtrar');
         }
       } else {
         const response = await window.grpc.filterFileData({
@@ -715,17 +810,17 @@ const DatasetInfoViewer: React.FC = () => {
         });
 
         if (response.success) {
-          showSuccess(`Filtrado completado: ${response.total_rows} filas`);
+          toast.success(`Filtrado completado: ${response.total_rows} filas`);
           await refreshData();
           if (filterMode === 'new_file') {
             setNewFilterFileName('');
           }
         } else {
-          setError(response.error_message || 'Error al filtrar');
+          toast.error(response.error_message || 'Error al filtrar');
         }
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      toast.error(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
       setOperationLoading(false);
     }
@@ -734,7 +829,7 @@ const DatasetInfoViewer: React.FC = () => {
   // Advanced operations - Duplicate columns (bulk)
   const handleDuplicateColumns = async () => {
     if (!selectedDataset || columnsToDuplicate.length === 0) {
-      setError('Selecciona columnas para duplicar');
+      toast.error('Selecciona columnas para duplicar');
       return;
     }
 
@@ -742,7 +837,6 @@ const DatasetInfoViewer: React.FC = () => {
 
     try {
       setOperationLoading(true);
-      setError(null);
 
       const response = await window.grpc.duplicateFileColumns({
         file_id: fileId,
@@ -753,15 +847,15 @@ const DatasetInfoViewer: React.FC = () => {
       });
 
       if (response.success) {
-        showSuccess(`${response.duplicated_columns.length} columna(s) duplicada(s)`);
+        toast.success(`${response.duplicated_columns.length} columna(s) duplicada(s)`);
         await refreshData();
         await refreshDatasetMetadata(); // Refresh column list
         setColumnsToDuplicate([]);
       } else {
-        setError(response.error_message || 'Error al duplicar columnas');
+        toast.error(response.error_message || 'Error al duplicar columnas');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      toast.error(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
       setOperationLoading(false);
     }
@@ -770,7 +864,7 @@ const DatasetInfoViewer: React.FC = () => {
   // Advanced operations - Delete columns (bulk)
   const handleDeleteColumns = async () => {
     if (!selectedDataset || columnsToDelete.length === 0) {
-      setError('Selecciona columnas para eliminar');
+      toast.error('Selecciona columnas para eliminar');
       return;
     }
 
@@ -784,7 +878,6 @@ const DatasetInfoViewer: React.FC = () => {
 
     try {
       setOperationLoading(true);
-      setError(null);
 
       const response = await window.grpc.deleteFileColumns({
         file_id: fileId,
@@ -792,15 +885,15 @@ const DatasetInfoViewer: React.FC = () => {
       });
 
       if (response.success) {
-        showSuccess(`${response.deleted_columns.length} columna(s) eliminada(s)`);
+        toast.success(`${response.deleted_columns.length} columna(s) eliminada(s)`);
         await refreshData();
         await refreshDatasetMetadata(); // Refresh column list
         setColumnsToDelete([]);
       } else {
-        setError(response.error_message || 'Error al eliminar columnas');
+        toast.error(response.error_message || 'Error al eliminar columnas');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      toast.error(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
       setOperationLoading(false);
     }
@@ -986,11 +1079,6 @@ const DatasetInfoViewer: React.FC = () => {
         </p>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded p-3 flex-shrink-0">
-          <p className="text-sm text-red-800">{error}</p>
-        </div>
-      )}
 
       {/* Metadata and Column Statistics Card */}
       <Card className="flex-shrink-0">
@@ -1183,33 +1271,60 @@ const DatasetInfoViewer: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Success/Error Alerts */}
-      {success && (
-        <Alert className="flex-shrink-0 border-green-200 bg-green-50">
-          <CheckCircle className="h-4 w-4 text-green-600" />
-          <AlertDescription className="text-green-800">{success}</AlertDescription>
-        </Alert>
-      )}
-
       {/* Data Preview */}
       <Card className="flex-shrink-0 mt-3">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-base">Datos</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2">
+                Datos
+                {pendingEdits.length > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {pendingEdits.length} cambio(s) pendiente(s)
+                  </Badge>
+                )}
+              </CardTitle>
               <CardDescription className="text-xs">
                 Doble clic para editar, clic derecho para más opciones
               </CardDescription>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setAdvancedDialogOpen(true)}
-              disabled={operationLoading}
-            >
-              <Settings className="mr-2 h-4 w-4" />
-              Operaciones Avanzadas
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* Apply/Discard buttons - only show when there are pending edits */}
+              {pendingEdits.length > 0 && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={discardPendingEdits}
+                    disabled={isApplyingEdits}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Descartar
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={applyPendingEdits}
+                    disabled={isApplyingEdits}
+                  >
+                    {isApplyingEdits ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                    )}
+                    Aplicar ({pendingEdits.length})
+                  </Button>
+                </>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAdvancedDialogOpen(true)}
+                disabled={operationLoading}
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                Operaciones Avanzadas
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-3 pt-2">
@@ -1368,11 +1483,14 @@ const DatasetInfoViewer: React.FC = () => {
                                             editingCell.columnId === columnId;
                             const isSelectColumn = columnId === 'select';
                             const isRowNumberColumn = columnId === 'rowNumber';
+                            const isPending = hasPendingEdit(rowIndex, columnId);
                             
                             return (
                               <td 
                                 key={cell.id} 
-                                className="px-6 py-3 cursor-pointer hover:bg-accent/50"
+                                className={`px-6 py-3 cursor-pointer hover:bg-accent/50 ${
+                                  isPending ? 'bg-yellow-100 dark:bg-yellow-900/30 border-l-2 border-yellow-500' : ''
+                                }`}
                                 style={{ 
                                   width: isSelectColumn ? '40px' : isRowNumberColumn ? '100px' : 'auto',
                                   minWidth: isSelectColumn ? '40px' : isRowNumberColumn ? '100px' : '180px'
@@ -1393,6 +1511,7 @@ const DatasetInfoViewer: React.FC = () => {
                                     });
                                   }
                                 }}
+                                title={isPending ? 'Cambio pendiente (no guardado)' : undefined}
                               >
                                 {isEditing ? (
                                   <Input
