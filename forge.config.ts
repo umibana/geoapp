@@ -1,8 +1,7 @@
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
-import { MakerDeb } from "@electron-forge/maker-deb";
-import { MakerRpm } from "@electron-forge/maker-rpm";
+import MakerAppImage from "@reforged/maker-appimage";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
@@ -24,17 +23,12 @@ const config: ForgeConfig = {
     // macOS: ZIP for both x64 and arm64
     new MakerZIP({}, ["darwin"]),
 
-    // Linux: DEB and RPM packages
-    new MakerDeb({
+    // Linux: AppImage
+    new MakerAppImage({
       options: {
-        bin: "geoapp",
+        name: "geoapp",
       },
-    }, ["linux"]),
-    new MakerRpm({
-      options: {
-        bin: "geoapp",
-      },
-    }, ["linux"]),
+    }),
   ],
   plugins: [
     new VitePlugin({

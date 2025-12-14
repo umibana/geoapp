@@ -231,7 +231,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y rpm fakeroot dpkg
+          sudo apt-get install -y fuse libfuse2
 
       - name: Install Node dependencies
         run: npm ci
@@ -270,9 +270,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: geoapp-linux
-          path: |
-            out/make/**/*.deb
-            out/make/**/*.rpm
+          path: out/make/**/*.AppImage
           retention-days: 7
 
   # ====================
@@ -349,8 +347,7 @@ jobs:
             artifacts/geoapp-macos-x64/**/*.zip
             artifacts/geoapp-macos-arm64/**/*.zip
             artifacts/geoapp-windows/**/*.exe
-            artifacts/geoapp-linux/**/*.deb
-            artifacts/geoapp-linux/**/*.rpm
+            artifacts/geoapp-linux/**/*.AppImage
           draft: false
           prerelease: false
         env:
