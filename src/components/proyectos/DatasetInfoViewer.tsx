@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Database, Info, Grid3x3, Calendar, Settings, Edit2, Copy, Trash2, RefreshCw, Filter, Plus, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { Database, Grid3x3, Calendar, Settings, Edit2, Copy, Trash2, RefreshCw, Filter, Plus, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { useBrushStore } from '@/stores/brushStore';
 import {
   useReactTable,
@@ -938,10 +938,6 @@ const DatasetInfoViewer: React.FC = () => {
       <div className="space-y-1 flex-shrink-0">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold tracking-tight truncate">{selectedDataset.file_name}</h2>
-          <Badge variant="default" className="px-3 py-1 text-sm">
-            <Database className="mr-1.5 h-4 w-4" />
-            {selectedDataset.total_rows.toLocaleString()}
-          </Badge>
         </div>
         <p className="text-sm text-muted-foreground">
           Información y vista previa del dataset
@@ -954,77 +950,66 @@ const DatasetInfoViewer: React.FC = () => {
         </div>
       )}
 
-      {/* Metadata and Columns in a single row card */}
+      {/* Metadata and Column Statistics Card */}
       <Card className="flex-shrink-0">
-        <CardContent className="pt-4">
-          <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
-            {/* Dataset Metadata */}
-            <div className="space-y-2">
-                <h3 className="text-sm font-semibold flex items-center mb-3">
-                  <Info className="mr-1.5 h-4 w-4" />
-                  Metadatos
-                </h3>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Archivo original</p>
-                  <p className="text-sm truncate">{selectedDataset.original_filename}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Total de filas</p>
-                  <p className="text-sm">{selectedDataset.total_rows.toLocaleString()}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Fecha de creación</p>
-                  <p className="text-sm flex items-center">
-                    <Calendar className="mr-1.5 h-3.5 w-3.5" />
-                    {formatDate(selectedDataset.created_at)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">ID del Dataset</p>
-                  <p className="text-xs font-mono bg-muted px-2 py-1 rounded truncate">{selectedDataset.id}</p>
-                </div>
+        <CardContent className="pt-4 space-y-4">
+          {/* Dataset Metadata - Single Row */}
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">Archivo:</span>
+              <span className="font-medium truncate max-w-[200px]">{selectedDataset.original_filename}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">Creado:</span>
+              <span className="font-medium">{formatDate(selectedDataset.created_at)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">ID:</span>
+              <span className="font-mono text-xs bg-muted px-2 py-0.5 rounded truncate max-w-[180px]">{selectedDataset.id}</span>
+            </div>
+          </div>
 
-              </div>
+          <Separator />
 
-              {/* Column Selection and Statistics Display */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <Label htmlFor="column-select" className="text-sm font-semibold flex items-center whitespace-nowrap">
-                    <Grid3x3 className="mr-1.5 h-4 w-4" />
-                    Columnas ({selectedDataset.column_mappings?.length || 0})
-                  </Label>
-                  <Select
-                    value={selectedColumnName || ''}
-                    onValueChange={(value) => setSelectedColumnName(value)}
-                  >
-                    <SelectTrigger id="column-select" className="flex-1">
-                      <SelectValue placeholder="Seleccionar columna..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {selectedDataset.column_mappings?.map((mapping, index) => (
-                        <SelectItem key={index} value={mapping.column_name}>
-                          <div className="flex items-center gap-2">
-                            <span>{mapping.column_name}</span>
-                            {mapping.is_coordinate && (
-                              <Badge variant="secondary" className="text-xs px-1 py-0">
-                                {mapping.mapped_field?.toUpperCase()}
-                              </Badge>
-                            )}
-                            <Badge variant="outline" className="text-xs px-1 py-0">
-                              {String(mapping.column_type) === "COLUMN_TYPE_NUMERIC" ? 'Num' : String(mapping.column_type) === "COLUMN_TYPE_CATEGORICAL" ? 'Text' : 'Unused'}
-                            </Badge>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {loadingStatistics && (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground shrink-0" />
-                  )}
-                </div>
+          {/* Column Selection */}
+          <div className="flex items-center gap-3">
+            <Label htmlFor="column-select" className="text-sm font-semibold flex items-center whitespace-nowrap">
+              {/* <Grid3x3 className="mr-1.5 h-4 w-4" /> */}
+              Columnas ({selectedDataset.column_mappings?.length || 0})
+            </Label>
+            <Select
+              value={selectedColumnName || ''}
+              onValueChange={(value) => setSelectedColumnName(value)}
+            >
+              <SelectTrigger id="column-select" className="w-[280px]">
+                <SelectValue placeholder="Seleccionar columna..." />
+              </SelectTrigger>
+              <SelectContent>
+                {selectedDataset.column_mappings?.map((mapping, index) => (
+                  <SelectItem key={index} value={mapping.column_name}>
+                    <div className="flex items-center gap-2">
+                      <span>{mapping.column_name}</span>
+                      {mapping.is_coordinate && (
+                        <Badge variant="secondary" className="text-xs px-1 py-0">
+                          {mapping.mapped_field?.toUpperCase()}
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="text-xs px-1 py-0">
+                        {String(mapping.column_type) === "COLUMN_TYPE_NUMERIC" ? 'Num' : String(mapping.column_type) === "COLUMN_TYPE_CATEGORICAL" ? 'Text' : 'Unused'}
+                      </Badge>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {loadingStatistics && (
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground shrink-0" />
+            )}
+          </div>
 
-                {/* Selected Column Statistics */}
-                {selectedColumnName ? (
+          {/* Selected Column Statistics */}
+          {selectedColumnName ? (
                   (() => {
                     const columnStat = statistics.find(s => s.column_name === selectedColumnName);
                     const mapping = selectedDataset.column_mappings?.find(m => m.column_name === selectedColumnName);
@@ -1143,8 +1128,6 @@ const DatasetInfoViewer: React.FC = () => {
                     Selecciona una columna para ver sus estadísticas
                   </div>
                 )}
-            </div>
-          </div>
         </CardContent>
       </Card>
 
