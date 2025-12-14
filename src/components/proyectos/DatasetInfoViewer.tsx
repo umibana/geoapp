@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Database, Grid3x3, Calendar, Settings, Edit2, Copy, Trash2, RefreshCw, Filter, Plus, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { Database, Calendar, Settings, Edit2, Copy, Trash2, RefreshCw, Filter, Plus, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { useBrushStore } from '@/stores/brushStore';
 import {
   useReactTable,
@@ -801,6 +801,43 @@ const DatasetInfoViewer: React.FC = () => {
   };
 
 
+  // Copy column statistics to clipboard
+  const copyStatisticsToClipboard = (columnStat: typeof statistics[0]) => {
+    if (!selectedDataset || !columnStat) return;
+
+    let text = `Dataset: "${selectedDataset.file_name}"\n`;
+    text += `Columna: "${columnStat.column_name}"\n`;
+    text += `Tipo: ${columnStat.data_type === 'numeric' ? 'Numérica' : 'Categórica'}\n`;
+    text += `Valores: ${columnStat.count?.toLocaleString() ?? 'N/A'}\n`;
+    text += `Nulos: ${columnStat.null_count?.toLocaleString() ?? 'N/A'}\n`;
+    text += `Únicos: ${columnStat.unique_count?.toLocaleString() ?? 'N/A'}\n`;
+
+    if (columnStat.data_type === 'numeric') {
+      text += `Media: ${columnStat.mean?.toFixed(3) ?? 'N/A'}\n`;
+      text += `Desv. Est.: ${columnStat.std?.toFixed(3) ?? 'N/A'}\n`;
+      text += `Mínimo: ${columnStat.min?.toFixed(3) ?? 'N/A'}\n`;
+      text += `Q25: ${columnStat.q25?.toFixed(3) ?? 'N/A'}\n`;
+      text += `Mediana (Q50): ${columnStat.q50?.toFixed(3) ?? 'N/A'}\n`;
+      text += `Q75: ${columnStat.q75?.toFixed(3) ?? 'N/A'}\n`;
+      text += `Máximo: ${columnStat.max?.toFixed(3) ?? 'N/A'}\n`;
+    }
+
+    if (columnStat.data_type === 'categorical' && columnStat.top_values && columnStat.top_values.length > 0) {
+      text += `\n--- Valores Más Frecuentes ---\n`;
+      columnStat.top_values.slice(0, 5).forEach((value, i) => {
+        text += `${value}: ${columnStat.top_counts?.[i]?.toLocaleString() ?? 'N/A'}\n`;
+      });
+    }
+
+    navigator.clipboard.writeText(text).then(() => {
+      setSuccess('Estadísticas copiadas al portapapeles');
+      setTimeout(() => setSuccess(null), 2000);
+    }).catch((err) => {
+      console.error('Error copying to clipboard:', err);
+      setError('Error al copiar al portapapeles');
+    });
+  };
+
   // Load paginated data and statistics
   useEffect(() => {
     if (!selectedDataset) return;
@@ -1043,6 +1080,16 @@ const DatasetInfoViewer: React.FC = () => {
                             <Badge variant={columnStat.data_type === 'numeric' ? 'default' : 'secondary'}>
                               {columnStat.data_type === 'numeric' ? 'Numérica' : 'Categórica'}
                             </Badge>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => copyStatisticsToClipboard(columnStat)}
+                              title="Copiar estadísticas"
+                              aria-label="Copiar estadísticas al portapapeles"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
                           </div>
                         </div>
 
