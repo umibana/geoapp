@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Database, Info, Grid3x3, Calendar, Settings, Edit2, Copy, Trash2, RefreshCw, Filter, Plus, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { useBrushStore } from '@/stores/brushStore';
 import {
@@ -22,7 +21,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 
 /**
  * DatasetInfoViewer Component
@@ -122,11 +120,13 @@ const DatasetInfoViewer: React.FC = () => {
     q25?: number,
     q50?: number,
     q75?: number,
-    max_value?: number,
+    max?: number,
+    min?: number,
     top_values?: string[],
     top_counts?: number[]
   }>>([]);
   const [loadingStatistics, setLoadingStatistics] = useState(false);
+  const [selectedColumnName, setSelectedColumnName] = useState<string | null>(null);
 
   // Helper function to load statistics
   const loadStatistics = async () => {
@@ -815,6 +815,8 @@ const DatasetInfoViewer: React.FC = () => {
         return; // Let the pagination change trigger the fetch
       }
       lastFetchedDatasetRef.current = selectedDataset.id;
+      // Reset selected column when dataset changes
+      setSelectedColumnName(null);
       // Load statistics on dataset change
       loadStatistics();
     }
@@ -984,130 +986,163 @@ const DatasetInfoViewer: React.FC = () => {
 
               </div>
 
-              {/* Columns List with Statistics on Hover */}
-              <div className="space-y-2">
-                <h3 className="text-sm font-semibold flex items-center mb-3">
-                  <Grid3x3 className="mr-1.5 h-4 w-4" />
-                  Columnas ({selectedDataset.column_mappings?.length || 0})
-                  {loadingStatistics && (
-                    <Loader2 className="ml-2 h-3 w-3 animate-spin text-muted-foreground" />
-                  )}
-                </h3>
-                <ScrollArea className="h-[140px] pr-2">
-                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
-                    {selectedDataset.column_mappings?.map((mapping, index) => {
-                      // Find statistics for this column
-                      const columnStat = statistics.find(s => s.column_name === mapping.column_name);
-
-                      return (
-                        <HoverCard key={index} openDelay={200}>
-                          <HoverCardTrigger asChild>
-                            <div className="flex flex-col p-2 border rounded space-y-1 cursor-help hover:bg-muted/50 transition-colors">
-                              <div className="flex items-center space-x-1.5 flex-1 min-w-0">
-                                <span className="font-medium truncate text-sm">{mapping.column_name}</span>
-                                {mapping.is_coordinate && (
-                                  <Badge variant="secondary" className="text-xs px-1.5 py-0.5 shrink-0">
-                                    {mapping.mapped_field?.toUpperCase()}
-                                  </Badge>
-                                )}
-                              </div>
-                              <Badge variant="outline" className="text-xs px-1.5 py-0.5 w-fit">
-                                {String(mapping.column_type) === "COLUMN_TYPE_NUMERIC" ? 'Num' : String(mapping.column_type) === "COLUMN_TYPE_CATEGORICAL" ? 'Text' : 'Unused'}
+              {/* Column Selection and Statistics Display */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="column-select" className="text-sm font-semibold flex items-center whitespace-nowrap">
+                    <Grid3x3 className="mr-1.5 h-4 w-4" />
+                    Columnas ({selectedDataset.column_mappings?.length || 0})
+                  </Label>
+                  <Select
+                    value={selectedColumnName || ''}
+                    onValueChange={(value) => setSelectedColumnName(value)}
+                  >
+                    <SelectTrigger id="column-select" className="flex-1">
+                      <SelectValue placeholder="Seleccionar columna..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {selectedDataset.column_mappings?.map((mapping, index) => (
+                        <SelectItem key={index} value={mapping.column_name}>
+                          <div className="flex items-center gap-2">
+                            <span>{mapping.column_name}</span>
+                            {mapping.is_coordinate && (
+                              <Badge variant="secondary" className="text-xs px-1 py-0">
+                                {mapping.mapped_field?.toUpperCase()}
                               </Badge>
-                            </div>
-                          </HoverCardTrigger>
-                          <HoverCardContent className="w-80" side="right" align="start">
-                            {columnStat ? (
-                              <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <h4 className="font-semibold text-sm">{columnStat.column_name}</h4>
-                                  <Badge variant={columnStat.data_type === 'numeric' ? 'default' : 'secondary'} className="text-xs">
-                                    {columnStat.data_type === 'numeric' ? 'Numérica' : 'Categórica'}
-                                  </Badge>
-                                </div>
-
-                                <div className="grid grid-cols-3 gap-2 text-xs">
-                                  <div>
-                                    <p className="text-muted-foreground">Valores</p>
-                                    <p className="font-medium">{columnStat.count?.toLocaleString()}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-muted-foreground">Nulos</p>
-                                    <p className="font-medium">{columnStat.null_count?.toLocaleString()}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-muted-foreground">Únicos</p>
-                                    <p className="font-medium">{columnStat.unique_count?.toLocaleString()}</p>
-                                  </div>
-                                </div>
-
-                                {columnStat.data_type === 'numeric' && (
-                                  <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t">
-                                    <div>
-                                      <p className="text-muted-foreground">Media</p>
-                                      <p className="font-medium">{columnStat.mean?.toFixed(3)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-muted-foreground">Desv. Est.</p>
-                                      <p className="font-medium">{columnStat.std?.toFixed(3)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-muted-foreground">Mínimo</p>
-                                      <p className="font-medium">{columnStat.min_value?.toFixed(3)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-muted-foreground">Q25</p>
-                                      <p className="font-medium">{columnStat.q25?.toFixed(3)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-muted-foreground">Mediana (Q50)</p>
-                                      <p className="font-medium">{columnStat.q50?.toFixed(3)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-muted-foreground">Q75</p>
-                                      <p className="font-medium">{columnStat.q75?.toFixed(3)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-muted-foreground">Máximo</p>
-                                      <p className="font-medium">{columnStat.max_value?.toFixed(3)}</p>
-                                    </div>
-                                  </div>
-                                )}
-
-                                {columnStat.data_type === 'categorical' && columnStat.top_values && columnStat.top_values.length > 0 && (
-                                  <div className="text-xs pt-2 border-t">
-                                    <p className="text-muted-foreground mb-1">Valores más frecuentes</p>
-                                    <div className="space-y-1">
-                                      {columnStat.top_values.slice(0, 5).map((value, i) => (
-                                        <div key={i} className="flex justify-between items-center">
-                                          <span className="truncate max-w-[200px]">{value}</span>
-                                          <Badge variant="outline" className="text-xs">
-                                            {columnStat.top_counts?.[i]?.toLocaleString()}
-                                          </Badge>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="text-sm text-muted-foreground text-center py-4">
-                                {loadingStatistics ? (
-                                  <div className="flex items-center justify-center">
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Cargando estadísticas...
-                                  </div>
-                                ) : (
-                                  'No hay estadísticas disponibles'
-                                )}
-                              </div>
                             )}
-                          </HoverCardContent>
-                        </HoverCard>
+                            <Badge variant="outline" className="text-xs px-1 py-0">
+                              {String(mapping.column_type) === "COLUMN_TYPE_NUMERIC" ? 'Num' : String(mapping.column_type) === "COLUMN_TYPE_CATEGORICAL" ? 'Text' : 'Unused'}
+                            </Badge>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {loadingStatistics && (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground shrink-0" />
+                  )}
+                </div>
+
+                {/* Selected Column Statistics */}
+                {selectedColumnName ? (
+                  (() => {
+                    const columnStat = statistics.find(s => s.column_name === selectedColumnName);
+                    const mapping = selectedDataset.column_mappings?.find(m => m.column_name === selectedColumnName);
+                    
+                    if (!columnStat) {
+                      return (
+                        <div className="border rounded-lg p-4 text-center text-muted-foreground">
+                          {loadingStatistics ? (
+                            <div className="flex items-center justify-center">
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Cargando estadísticas...
+                            </div>
+                          ) : (
+                            'No hay estadísticas disponibles para esta columna'
+                          )}
+                        </div>
                       );
-                    })}
+                    }
+
+                    return (
+                      <div className="border rounded-lg p-4 space-y-3">
+                        {/* Column Header */}
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-semibold">{columnStat.column_name}</h4>
+                          <div className="flex items-center gap-2">
+                            {mapping?.is_coordinate && (
+                              <Badge variant="secondary" className="text-xs">
+                                Coordenada {mapping.mapped_field?.toUpperCase()}
+                              </Badge>
+                            )}
+                            <Badge variant={columnStat.data_type === 'numeric' ? 'default' : 'secondary'}>
+                              {columnStat.data_type === 'numeric' ? 'Numérica' : 'Categórica'}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        {/* Basic Stats */}
+                        <div className="grid grid-cols-3 gap-3 text-sm">
+                          <div className="bg-muted/50 rounded p-2">
+                            <p className="text-muted-foreground text-xs">Valores</p>
+                            <p className="font-medium">{columnStat.count?.toLocaleString()}</p>
+                          </div>
+                          <div className="bg-muted/50 rounded p-2">
+                            <p className="text-muted-foreground text-xs">Nulos</p>
+                            <p className="font-medium">{columnStat.null_count?.toLocaleString()}</p>
+                          </div>
+                          <div className="bg-muted/50 rounded p-2">
+                            <p className="text-muted-foreground text-xs">Únicos</p>
+                            <p className="font-medium">{columnStat.unique_count?.toLocaleString()}</p>
+                          </div>
+                        </div>
+
+                        {/* Numeric Stats */}
+                        {columnStat.data_type === 'numeric' && (
+                          <>
+                            <Separator />
+                            <div className="grid grid-cols-4 gap-3 text-sm">
+                              <div>
+                                <p className="text-muted-foreground text-xs">Media</p>
+                                <p className="font-medium font-mono">{columnStat.mean?.toFixed(3)}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground text-xs">Desv. Est.</p>
+                                <p className="font-medium font-mono">{columnStat.std?.toFixed(3)}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground text-xs">Mínimo</p>
+                                <p className="font-medium font-mono">{columnStat.min?.toFixed(3)}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground text-xs">Máximo</p>
+                                <p className="font-medium font-mono">{columnStat.max?.toFixed(3)}</p>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-3 text-sm">
+                              <div>
+                                <p className="text-muted-foreground text-xs">Q25</p>
+                                <p className="font-medium font-mono">{columnStat.q25?.toFixed(3)}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground text-xs">Mediana (Q50)</p>
+                                <p className="font-medium font-mono">{columnStat.q50?.toFixed(3)}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground text-xs">Q75</p>
+                                <p className="font-medium font-mono">{columnStat.q75?.toFixed(3)}</p>
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        {/* Categorical Stats */}
+                        {columnStat.data_type === 'categorical' && columnStat.top_values && columnStat.top_values.length > 0 && (
+                          <>
+                            <Separator />
+                            <div className="text-sm">
+                              <p className="text-muted-foreground text-xs mb-2">Valores más frecuentes</p>
+                              <div className="space-y-1.5">
+                                {columnStat.top_values.slice(0, 5).map((value, i) => (
+                                  <div key={i} className="flex justify-between items-center bg-muted/30 rounded px-2 py-1">
+                                    <span className="truncate max-w-[250px] font-mono text-xs">{value}</span>
+                                    <Badge variant="outline" className="text-xs shrink-0 ml-2">
+                                      {columnStat.top_counts?.[i]?.toLocaleString()}
+                                    </Badge>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <div className="border rounded-lg p-4 text-center text-muted-foreground text-sm">
+                    Selecciona una columna para ver sus estadísticas
                   </div>
-                </ScrollArea>
+                )}
             </div>
           </div>
         </CardContent>
