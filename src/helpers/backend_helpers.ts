@@ -48,7 +48,7 @@ class BackendManager {
     const start = Date.now();
     let delay = 150;
     const maxDelay = 1000;
-    const address = '127.0.0.1:50077';
+    const address = 'localhost:50077';
     const net = await import('net');
 
     while (Date.now() - start < timeoutMs) {
@@ -203,7 +203,7 @@ class BackendManager {
    */
   getBackendUrl(): string | null {
     if (this.config.isRunning) {
-      return 'grpc://127.0.0.1:50077';
+      return 'grpc://localhost:50077';
     }
     return null;
   }

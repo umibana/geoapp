@@ -359,7 +359,7 @@ def serve():
             reflection.SERVICE_NAME,
         )
         reflection.enable_server_reflection(SERVICE_NAMES, server)
-        listen_addr = f'127.0.0.1:{port}'
+        listen_addr = f'localhost:{port}'
         server.add_insecure_port(listen_addr)
         server.start()
         print(f"Server gRPC iniciado en {listen_addr}")

@@ -13,7 +13,7 @@ import { join } from 'path';
 
 const PROTO_DIR = 'protos';
 const MAIN_PROTO_FILE = 'protos/main_service.proto';
-const SERVER_ADDRESS = '127.0.0.1:50077';
+const SERVER_ADDRESS = 'localhost:50077';
 
 // ============================================================================
 // Byte Alignment Utilities
