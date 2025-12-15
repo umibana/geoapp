@@ -263,8 +263,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
       // Ensure coordinate mappings are up to date before processing
       updateCoordinateMappings(eastColumn, northColumn, elevationColumn);
 
-      console.log('🚀 [ProcessDataset] Sending column_mappings:', columnMappings);
-      console.log('🚀 [ProcessDataset] Sample mapping:', columnMappings[0]);
+
 
       // Start progress tracking in footer
       startOperationTracking();
@@ -322,14 +321,14 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Process CSV Dataset</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Procesar Dataset CSV</h2>
           <p className="text-muted-foreground">
-            Configure column types and coordinate mappings for {fileName}
+            Configura los tipos de columnas y los mapeos de coordenadas para {fileName}
           </p>
         </div>
         {onCancel && (
           <Button variant="outline" onClick={onCancel}>
-            Cancel
+            Cancelar
           </Button>
         )}
       </div>
@@ -337,10 +336,10 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
       {/* Progress Steps */}
       <div className="flex items-center space-x-4">
         {[
-          { key: 'analyzing', label: 'Analyzing' },
-          { key: 'configuring', label: 'Configure' },
-          { key: 'processing', label: 'Processing' },
-          { key: 'complete', label: 'Complete' }
+          { key: 'analyzing', label: 'Analizando' },
+          { key: 'configuring', label: 'Configurando' },
+          { key: 'processing', label: 'Procesando' },
+          { key: 'complete', label: 'Completado' }
         ].map((step, index) => (
           <div key={step.key} className="flex items-center space-x-2">
             <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${
@@ -391,19 +390,19 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
       {currentStep === 'analyzing' && (
         <Card>
           <CardHeader>
-            <CardTitle>Analyzing CSV File</CardTitle>
+            <CardTitle>Analizando Archivo CSV</CardTitle>
             <CardDescription>
-              Examining file structure and detecting column types...
+              Examinando la estructura del archivo y detectando los tipos de columnas...
             </CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                <span className="ml-3">Analyzing file...</span>
+                <span className="ml-3">Analizando archivo...</span>
               </div>
             ) : (
-              <p className="text-muted-foreground">Analysis complete. Proceeding to configuration...</p>
+              <p className="text-muted-foreground">Análisis completado. Procediendo a la configuración...</p>
             )}
           </CardContent>
         </Card>
@@ -414,20 +413,20 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
           {/* File Info */}
           <Card>
             <CardHeader>
-              <CardTitle>File Information</CardTitle>
+              <CardTitle>Información del Archivo</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <Label className="text-sm font-medium">File Name</Label>
+                  <Label className="text-sm font-medium">Nombre del Archivo</Label>
                   <p className="text-sm text-muted-foreground">{fileName}</p>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium">Total Rows</Label>
+                  <Label className="text-sm font-medium">Total de Filas</Label>
                   <p className="text-sm text-muted-foreground">{totalRows.toLocaleString()}</p>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium">Columns</Label>
+                  <Label className="text-sm font-medium">Columnas</Label>
                   <p className="text-sm text-muted-foreground">{headers.length}</p>
                 </div>
               </div>
@@ -437,8 +436,8 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
           {/* Data Preview */}
           <Card>
             <CardHeader>
-              <CardTitle>Data Preview</CardTitle>
-              <CardDescription>First 5 rows of your data</CardDescription>
+              <CardTitle>Vista Previa de Datos</CardTitle>
+              <CardDescription>Primeras 20 filas de tus datos</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -473,13 +472,13 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
             <CardHeader>
               <CardTitle>Coordinate Mapping</CardTitle>
               <CardDescription>
-                Select which columns represent spatial coordinates
+                Selecciona las columnas que representan las coordenadas espaciales
               </CardDescription>
             </CardHeader>
             <CardContent key={selectRefreshKey}>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <Label htmlFor="east-column">East (X / Longitude)</Label>
+                  <Label htmlFor="east-column">Este (X / Longitud)</Label>
                   <Select 
                     value={eastColumn || undefined} 
                     onValueChange={handleEastChange}
@@ -500,7 +499,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
                 </div>
 
                 <div>
-                  <Label htmlFor="north-column">North (Y / Latitude)</Label>
+                  <Label htmlFor="north-column">Norte (Y / Latitud)</Label>
                   <Select 
                     value={northColumn || undefined} 
                     onValueChange={handleNorthChange}
@@ -521,7 +520,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
                 </div>
 
                 <div>
-                  <Label htmlFor="elevation-column">Elevation (Z / Depth)</Label>
+                  <Label htmlFor="elevation-column">Elevación (Z / Profundidad)</Label>
                   <Select 
                     value={elevationColumn || 'none'} 
                     onValueChange={handleElevationChange}
@@ -550,7 +549,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
             <CardHeader>
               <CardTitle>Column Configuration</CardTitle>
               <CardDescription>
-                Review and adjust column types (data types are auto-detected but can be changed)
+                Revisa y ajusta los tipos de columnas (los tipos de datos son auto-detectados pero pueden ser cambiados)
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -561,7 +560,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
                       <span className="font-medium min-w-[150px]">{mapping.column_name}</span>
                       {mapping.is_coordinate && (
                         <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">
-                          {mapping.mapped_field === 'x' ? 'East' : mapping.mapped_field === 'y' ? 'North' : 'Elevation'}
+                          {mapping.mapped_field === 'x' ? 'Este' : mapping.mapped_field === 'y' ? 'Norte' : 'Elevación'}
                         </Badge>
                       )}
                     </div>
@@ -571,12 +570,12 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
                         onValueChange={(value) => updateColumnType(index, parseInt(value) as ColumnType)}
                       >
                         <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Select type" />
+                          <SelectValue placeholder="Seleccionar tipo" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="1">Numeric</SelectItem>
-                          <SelectItem value="2">Categorical</SelectItem>
-                          <SelectItem value="3">Skip (Unused)</SelectItem>
+                          <SelectItem value="1">Numérico</SelectItem>
+                          <SelectItem value="2">Categórico</SelectItem>
+                          <SelectItem value="3">Omitir (No usado)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -586,13 +585,13 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
               
               <div className="flex justify-end space-x-2 mt-6">
                 <Button variant="outline" onClick={onCancel}>
-                  Cancel
+                  Cancelar
                 </Button>
                 <Button 
                   onClick={processDataset} 
                   disabled={loading || !eastColumn || !northColumn}
                 >
-                  Process Dataset
+                  Procesar Dataset
                 </Button>
               </div>
             </CardContent>
@@ -603,15 +602,15 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
       {currentStep === 'processing' && (
         <Card>
           <CardHeader>
-            <CardTitle>Processing Dataset</CardTitle>
+            <CardTitle>Procesando Dataset</CardTitle>
             <CardDescription>
-              Converting and storing your data with the specified configuration...
+              Convertiendo y almacenando tus datos con la configuración especificada...
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span className="ml-3">Processing dataset...</span>
+              <span className="ml-3">Procesando dataset...</span>
             </div>
           </CardContent>
         </Card>
@@ -622,26 +621,26 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <CheckCircle2 className="h-6 w-6 text-green-600" />
-              <span>Dataset Processed Successfully</span>
+              <span>Dataset Procesado Exitosamente</span>
             </CardTitle>
             <CardDescription>
-              Your dataset has been processed and is ready for analysis
+              Tu dataset ha sido procesado y está listo para análisis
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
-                <Label className="text-sm font-medium">Dataset ID</Label>
+                <Label className="text-sm font-medium">ID del Dataset</Label>
                 <p className="text-sm text-muted-foreground font-mono">{processedDataset.id}</p>
               </div>
               <div>
-                <Label className="text-sm font-medium">Processed Rows</Label>
+                <Label className="text-sm font-medium">Filas Procesadas</Label>
                 <p className="text-sm text-muted-foreground">{processedDataset.total_rows.toLocaleString()}</p>
               </div>
             </div>
             
             <div className="mt-4">
-              <Label className="text-sm font-medium">Column Mappings</Label>
+              <Label className="text-sm font-medium">Mapeos de Columnas</Label>
               <div className="mt-2 space-y-1">
                 {processedDataset.column_mappings
                   .filter((m: ColumnMapping) => m.column_type !== ColumnType.UNUSED)

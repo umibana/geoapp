@@ -13,6 +13,7 @@ import {
   type ActiveOperation
 } from "@/stores/operationsStore";
 import { OperationStatus } from "@/generated/projects";
+import React from "react";
 
 
 interface BackendStatusProps {

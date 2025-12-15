@@ -8,7 +8,7 @@ import DatasetViewer from '@/components/chart-components/DatasetViewer';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { BarChart3,  Grid3x3, Box, Database, Plus, RefreshCw, Settings2, X } from 'lucide-react';
+import { BarChart3,  Grid3x3, Box, Database, Plus, RefreshCw, Settings2, X, ChartSpline } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { useBrushStore } from '@/stores/brushStore';
@@ -44,9 +44,9 @@ const CHART_TYPES = {
   },
   'data-viewer': {
     type: 'data-viewer',
-    title: 'Dataset Viewer (con Brush)',
+    title: 'Scatter Plot',
     component: DatasetViewer,
-    icon: <Database className="h-4 w-4" />,
+    icon: <ChartSpline className="h-4 w-4" />,
   },
 } satisfies Record<string, ChartTypeDefinition>;
 
@@ -66,7 +66,7 @@ export default function EDA2D() {
     reopenChart,
     resetLayout,
     updateLayout,
-  } = useMosaicManager(CHART_TYPES);
+  } = useMosaicManager(CHART_TYPES, { initializeWithAll: false });
 
   // Get dataset and column selection from Zustand store
   const selectedDataset = useBrushStore((state) => state.selectedDataset);
@@ -338,7 +338,6 @@ export default function EDA2D() {
           value={currentLayout}
           onChange={(newLayout) => {
             updateLayout(newLayout);
-            console.log('Layout changed:', newLayout);
           }}
         />
       </div>

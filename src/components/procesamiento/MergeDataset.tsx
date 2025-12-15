@@ -15,7 +15,7 @@ export default function MergeDataset() {
     <div className="space-y-4">
       {/* Merge Option Section */}
       <div>
-        <h4 className="text-xs font-medium mb-3 text-muted-foreground">Merge option</h4>
+        <h4 className="text-xs font-medium mb-3 text-muted-foreground">Opción de Merge</h4>
         <div className="flex gap-2">
           <Button
             type="button"
@@ -24,7 +24,7 @@ export default function MergeDataset() {
             className="flex-1 text-xs"
             onClick={() => setMergeOption('columns')}
           >
-            By columns
+            Por columnas
           </Button>
           <Button
             type="button"
@@ -33,14 +33,14 @@ export default function MergeDataset() {
             className="flex-1 text-xs"
             onClick={() => setMergeOption('rows')}
           >
-            By rows
+            Por filas
           </Button>
         </div>
       </div>
 
       {/* First Dataset Section */}
       <div>
-        <h4 className="text-xs font-medium mb-3 text-muted-foreground">First dataset</h4>
+        <h4 className="text-xs font-medium mb-3 text-muted-foreground">Primer dataset</h4>
         <div className="space-y-3">
           <div>
             <Select value="" onValueChange={() => {}}>
@@ -54,7 +54,7 @@ export default function MergeDataset() {
           </div>
           
           <div>
-            <h5 className="text-xs font-medium mb-2 text-muted-foreground">Settings</h5>
+            <h5 className="text-xs font-medium mb-2 text-muted-foreground">Configuración</h5>
             <div className="flex items-center gap-2">
               <Checkbox
                 id="first-not-all"
@@ -62,7 +62,7 @@ export default function MergeDataset() {
                 onCheckedChange={(checked) => setFirstNotAllDataset(checked === true)}
               />
               <Label htmlFor="first-not-all" className="text-xs cursor-pointer">
-                Not all dataset
+                No todos los dataset
               </Label>
               <Button
                 variant="outline"
@@ -71,7 +71,7 @@ export default function MergeDataset() {
                 onClick={() => {}}
               >
                 <Search className="h-3 w-3 mr-1" />
-                Select Variables
+                Seleccionar Variables
               </Button>
             </div>
           </div>
@@ -80,7 +80,7 @@ export default function MergeDataset() {
 
       {/* Second Dataset Section */}
       <div>
-        <h4 className="text-xs font-medium mb-3 text-muted-foreground">Second dataset</h4>
+        <h4 className="text-xs font-medium mb-3 text-muted-foreground">Segundo dataset</h4>
         <div className="space-y-3">
           <div>
             <Select value="" onValueChange={() => {}}>
@@ -94,7 +94,7 @@ export default function MergeDataset() {
           </div>
           
           <div>
-            <h5 className="text-xs font-medium mb-2 text-muted-foreground">Settings</h5>
+            <h5 className="text-xs font-medium mb-2 text-muted-foreground">Configuración</h5>
             <div className="flex items-center gap-2">
               <Checkbox
                 id="second-not-all"
@@ -102,7 +102,7 @@ export default function MergeDataset() {
                 onCheckedChange={(checked) => setSecondNotAllDataset(checked === true)}
               />
               <Label htmlFor="second-not-all" className="text-xs cursor-pointer">
-                Not all dataset
+                No todos los dataset
               </Label>
               <Button
                 variant="outline"
@@ -111,7 +111,7 @@ export default function MergeDataset() {
                 onClick={() => {}}
               >
                 <Search className="h-3 w-3 mr-1" />
-                Select Variables
+                Seleccionar Variables
               </Button>
             </div>
           </div>
@@ -120,7 +120,7 @@ export default function MergeDataset() {
 
       {/* Output Dataset Section */}
       <div>
-        <h4 className="text-xs font-medium mb-3 text-muted-foreground">Output dataset</h4>
+        <h4 className="text-xs font-medium mb-3 text-muted-foreground">Dataset de salida</h4>
         <Input
           type="text"
           defaultValue="_Merged"
@@ -137,7 +137,7 @@ export default function MergeDataset() {
           onClick={() => {}}
         >
           <ArrowRight className="h-4 w-4 mr-2" />
-          Merge
+          Mergear
         </Button>
         <Button
           variant="outline"
@@ -146,7 +146,7 @@ export default function MergeDataset() {
           onClick={() => {}}
         >
           <Grid3x3 className="h-4 w-4 mr-2" />
-          Preview
+          Vista previa
         </Button>
         <Button
           variant="outline"
@@ -155,7 +155,7 @@ export default function MergeDataset() {
           onClick={() => {}}
         >
           <Settings className="h-4 w-4 mr-2" />
-          Load
+          Cargar
         </Button>
       </div>
     </div>

@@ -22,10 +22,10 @@ function IDWResultCard({ data }: { data: IDWResultData }) {
           <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold text-foreground">IDW Estimation Complete</h3>
+          <h3 className="text-lg font-semibold text-foreground">Estimación IDW Completada</h3>
           <p className="text-sm text-muted-foreground flex items-center gap-1">
             <Clock className="h-3 w-3" />
-            {formattedDate} at {formattedTime}
+            {formattedDate} a las {formattedTime}
           </p>
         </div>
       </div>
@@ -36,11 +36,11 @@ function IDWResultCard({ data }: { data: IDWResultData }) {
       <div className="mb-4">
         <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
           <Database className="h-4 w-4" />
-          Input Data
+          Datos de Entrada
         </h4>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="bg-muted/50 rounded-md p-3">
-            <span className="text-muted-foreground block text-xs">Block Model</span>
+            <span className="text-muted-foreground block text-xs">Modelo de Bloques</span>
             <span className="font-medium">{data.blockModelName}</span>
           </div>
           <div className="bg-muted/50 rounded-md p-3">
@@ -48,11 +48,11 @@ function IDWResultCard({ data }: { data: IDWResultData }) {
             <span className="font-medium">{data.drillHolesName}</span>
           </div>
           <div className="bg-muted/50 rounded-md p-3">
-            <span className="text-muted-foreground block text-xs">Variable</span>
+            <span className="text-muted-foreground block text-xs">Variable a Interpolar</span>
             <span className="font-medium font-mono">{data.variable}</span>
           </div>
           <div className="bg-muted/50 rounded-md p-3">
-            <span className="text-muted-foreground block text-xs">Output Column</span>
+            <span className="text-muted-foreground block text-xs">Columna de Salida</span>
             <span className="font-medium font-mono text-green-600 dark:text-green-400">{data.outputVariable}</span>
           </div>
         </div>
@@ -62,23 +62,23 @@ function IDWResultCard({ data }: { data: IDWResultData }) {
       <div className="mb-4">
         <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
           <Calculator className="h-4 w-4" />
-          Parameters
+          Parámetros
         </h4>
         <div className="flex gap-4 text-sm">
           <div className="bg-muted/50 rounded-md px-3 py-2">
-            <span className="text-muted-foreground text-xs">Power:</span>
+            <span className="text-muted-foreground text-xs">Potencia:</span>
             <span className="ml-1 font-medium">{data.power}</span>
           </div>
           <div className="bg-muted/50 rounded-md px-3 py-2">
-            <span className="text-muted-foreground text-xs">Samples:</span>
+            <span className="text-muted-foreground text-xs">Muestras:</span>
             <span className="ml-1 font-medium">{data.numSamples}</span>
           </div>
           <div className="bg-muted/50 rounded-md px-3 py-2">
-            <span className="text-muted-foreground text-xs">Blocks Estimated:</span>
+            <span className="text-muted-foreground text-xs">Bloques Estimados:</span>
             <span className="ml-1 font-medium">{data.blocksEstimated.toLocaleString()}</span>
           </div>
           <div className="bg-muted/50 rounded-md px-3 py-2">
-            <span className="text-muted-foreground text-xs">Samples Used:</span>
+            <span className="text-muted-foreground text-xs">Muestras Usadas:</span>
             <span className="ml-1 font-medium">{data.samplesUsed.toLocaleString()}</span>
           </div>
         </div>
@@ -88,7 +88,7 @@ function IDWResultCard({ data }: { data: IDWResultData }) {
       <div>
         <h4 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
           <BarChart3 className="h-4 w-4" />
-          Result Statistics
+          Estadísticas de Resultado
         </h4>
         <div className="grid grid-cols-4 gap-3 text-sm">
           <div className="bg-blue-50 dark:bg-blue-900/20 rounded-md p-3 text-center">
@@ -122,10 +122,10 @@ function EmptyState() {
       <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4">
         <Calculator className="h-8 w-8 text-muted-foreground" />
       </div>
-      <h3 className="text-lg font-medium text-foreground mb-2">No Processing Results</h3>
+      <h3 className="text-lg font-medium text-foreground mb-2">No hay resultados de procesamiento</h3>
       <p className="text-sm text-muted-foreground max-w-md">
-        Use the tools in the sidebar to run processing operations. 
-        Results will appear here when complete.
+        Utiliza las herramientas en la barra lateral para ejecutar operaciones de procesamiento. 
+        Los resultados aparecerán aquí cuando estén completos.
       </p>
     </div>
   );
@@ -144,7 +144,7 @@ export default function Procesamiento() {
               <AccordionTrigger className="text-sm font-medium">
                 <div className="flex items-center">
                   <Settings2 className="h-4 w-4 mr-2" />
-                  Estimaciones
+                  Estimaciones IDW
                 </div>
               </AccordionTrigger>
               <AccordionContent>

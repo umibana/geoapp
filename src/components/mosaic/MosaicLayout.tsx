@@ -115,7 +115,7 @@ export const MosaicLayout: React.FC<MosaicLayoutProps> = ({
     <div className="flex items-center justify-center h-full">
       <div className="text-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <p className="text-sm text-muted-foreground">Cargando...</p>
       </div>
     </div>
   );
@@ -135,7 +135,7 @@ export const MosaicLayout: React.FC<MosaicLayoutProps> = ({
             toolbarControls={[]}
           >
             <div className="flex items-center justify-center h-full text-muted-foreground">
-              Component &quot;{id}&quot; not found
+              Componente &quot;{id}&quot; no encontrado
             </div>
           </MosaicWindow>
         );
@@ -170,9 +170,9 @@ export const MosaicLayout: React.FC<MosaicLayoutProps> = ({
     <div className="mosaic-empty-state">
       <div className="text-center">
         <LayoutGrid className="mx-auto h-16 w-16 text-muted-foreground opacity-50 mb-4" />
-        <h3 className="text-xl font-semibold mb-2">No Windows Open</h3>
+        <h3 className="text-xl font-semibold mb-2">No hay ventanas abiertas</h3>
         <p className="text-sm text-muted-foreground">
-          All windows have been closed. Refresh to restore default layout.
+          Todas las ventanas han sido cerradas. Refresca para restaurar el layout por defecto.
         </p>
       </div>
     </div>

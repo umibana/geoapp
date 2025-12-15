@@ -12,7 +12,7 @@ export default function CrearGrilla() {
     <div className="space-y-4">
       {/* Grid Source Section */}
       <div>
-        <h4 className="text-xs font-medium mb-3 text-muted-foreground">Grid Source</h4>
+        <h4 className="text-xs font-medium mb-3 text-muted-foreground">Origen de la grilla</h4>
         <div className="flex gap-2">
           <Button
             type="button"
@@ -21,7 +21,7 @@ export default function CrearGrilla() {
             className="flex-1 text-xs"
             onClick={() => setGridSource('dataset')}
           >
-            Dataset/BoundingBox
+            Dataset/Bounding Box
           </Button>
           {/* <Button
             type="button"
@@ -40,7 +40,7 @@ export default function CrearGrilla() {
         <h4 className="text-xs font-medium mb-3 text-muted-foreground">Dataset</h4>
         <div className="space-y-3">
           <div>
-            <Label htmlFor="base-dataset" className="text-xs">Base dataset</Label>
+            <Label htmlFor="base-dataset" className="text-xs">Dataset base</Label>
             <Select value="" onValueChange={() => {}}>
               <SelectTrigger id="base-dataset" className="h-8 text-xs">
                 <SelectValue placeholder="Empty" />
@@ -52,7 +52,7 @@ export default function CrearGrilla() {
           </div>
           
           <div>
-            <Label htmlFor="output-dataset" className="text-xs">Output dataset</Label>
+            <Label htmlFor="output-dataset" className="text-xs">Dataset de salida</Label>
             <Input
               id="output-dataset"
               type="text"
@@ -65,18 +65,18 @@ export default function CrearGrilla() {
 
       {/* Grid parameters Section */}
       <div>
-        <h4 className="text-xs font-medium mb-3 text-muted-foreground">Grid parameters</h4>
+        <h4 className="text-xs font-medium mb-3 text-muted-foreground">Parámetros de la grilla</h4>
         <div className="space-y-3">
           {/* Column Headers */}
           <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground font-medium">
-            <div>East (x)</div>
-            <div>North (y)</div>
-            <div>Elevation (z)</div>
+            <div>Este (x)</div>
+            <div>Norte (y)</div>
+            <div>Elevación (z)</div>
           </div>
 
           {/* Origin Row */}
           <div>
-            <Label className="text-xs mb-2 block">Origin</Label>
+            <Label className="text-xs mb-2 block">Origen</Label>
             <div className="grid grid-cols-3 gap-2">
               <Input
                 type="number"
@@ -101,7 +101,7 @@ export default function CrearGrilla() {
 
           {/* Blocks Row */}
           <div>
-            <Label className="text-xs mb-2 block">Blocks</Label>
+            <Label className="text-xs mb-2 block">Bloques</Label>
             <div className="grid grid-cols-3 gap-2">
               <Input
                 type="number"
@@ -129,7 +129,7 @@ export default function CrearGrilla() {
 
           {/* Block size Row */}
           <div>
-            <Label className="text-xs mb-2 block">Block size</Label>
+            <Label className="text-xs mb-2 block">Tamaño de bloque</Label>
             <div className="grid grid-cols-3 gap-2">
               <Input
                 type="number"
@@ -163,7 +163,7 @@ export default function CrearGrilla() {
           onClick={() => {}}
         >
           <Settings className="h-4 w-4 mr-2" />
-          Generate grid
+          Generar grilla
         </Button>
       </div>
     </div>
