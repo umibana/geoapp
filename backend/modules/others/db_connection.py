@@ -1,7 +1,9 @@
 # Database connection utilities
 # Shared database connection and initialization functions
+import os
 import uuid
 import time
+from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 from sqlalchemy import Engine, create_engine, text
 from sqlmodel import SQLModel
@@ -96,7 +98,23 @@ def drop_table_if_exists(engine: Engine, table_name: str) -> bool:
 
 # ========== Database Engine ==========
 
-def get_db_engine(db_path: str = "geospatial.db") -> Engine:
+def get_app_data_dir() -> Path:
+    """
+    Get the application data directory using XDG Base Directory specification.
+    Creates the directory if it doesn't exist.
+    Returns:
+        Path to the application data directory (~/.local/share/geoapp)
+    """
+    # Use XDG_DATA_HOME if set, otherwise default to ~/.local/share
+    xdg_data = os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
+    app_data_dir = Path(xdg_data) / 'geoapp'
+
+    # Create directory if it doesn't exist
+    app_data_dir.mkdir(parents=True, exist_ok=True)
+
+    return app_data_dir
+
+def get_db_engine(db_path: str = None) -> Engine:
     """
     Create and return SQLAlchemy engine for DuckDB database
     
@@ -106,6 +124,11 @@ def get_db_engine(db_path: str = "geospatial.db") -> Engine:
     Returns:
         SQLAlchemy Engine instance
     """
+    if db_path is None:
+        # Use XDG data directory for AppImage compatibility
+        app_data_dir = get_app_data_dir()
+        db_path = str(app_data_dir / 'geospatial.db')
+
     db_url = f"duckdb:///{db_path}"
     return create_engine(db_url)
 

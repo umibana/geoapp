@@ -370,13 +370,16 @@ def serve():
             server.stop(grace=5)
     except Exception as e:
         print(f"[ERROR] Error al iniciar el servidor gRPC: {e}")
-        # Escribimos el error en un archivo para debugging
-        script_dir = Path(__file__).parent.absolute()
-        error_file = script_dir / 'grpc_error.txt'
-        with open(error_file, 'w') as f:
-            f.write(f"Error: {e}\n")
-            import traceback
-            f.write(traceback.format_exc())
+        try:
+            app_data_dir = db_connection.get_app_data_dir()
+            error_file = app_data_dir / 'grpc_error.txt'
+            with open(error_file, 'w') as f:
+                f.write(f"Error: {e}\n")
+                import traceback
+                f.write(traceback.format_exc())
+            print(f"[ERROR] Error details written to: {error_file}")
+        except Exception as write_error:
+            print(f"[ERROR] Could not write error file: {write_error}")
         sys.exit(1)
 if __name__ == '__main__':
     serve() 
