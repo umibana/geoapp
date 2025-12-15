@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { CheckCircle2, XCircle, AlertCircle, FileText, Settings, Database } from 'lucide-react';
 
 // Importar tipos generados
@@ -24,17 +25,17 @@ interface EnhancedCsvProcessorProps {
 
 
 const columnTypeLabels = {
-  [ColumnType.NUMERIC]: 'Numeric',
-  [ColumnType.CATEGORICAL]: 'Categorical',
-  [ColumnType.UNUSED]: 'Unused',
-  [ColumnType.UNSPECIFIED]: 'Unspecified'
+  [ColumnType.COLUMN_TYPE_NUMERIC]: 'Numeric',
+  [ColumnType.COLUMN_TYPE_CATEGORICAL]: 'Categorical',
+  [ColumnType.COLUMN_TYPE_UNUSED]: 'Unused',
+  [ColumnType.COLUMN_TYPE_UNSPECIFIED]: 'Unspecified'
 };
 
 const columnTypeBadgeColors = {
-  [ColumnType.NUMERIC]: 'bg-blue-100 text-blue-800',
-  [ColumnType.CATEGORICAL]: 'bg-green-100 text-green-800',
-  [ColumnType.UNUSED]: 'bg-gray-100 text-gray-800',
-  [ColumnType.UNSPECIFIED]: 'bg-yellow-100 text-yellow-800'
+  [ColumnType.COLUMN_TYPE_NUMERIC]: 'bg-blue-100 text-blue-800',
+  [ColumnType.COLUMN_TYPE_CATEGORICAL]: 'bg-green-100 text-green-800',
+  [ColumnType.COLUMN_TYPE_UNUSED]: 'bg-gray-100 text-gray-800',
+  [ColumnType.COLUMN_TYPE_UNSPECIFIED]: 'bg-yellow-100 text-yellow-800'
 };
 
 /**
@@ -166,7 +167,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
         
         console.log('📋 Column mappings with types:', mappingsWithCoordinates.map(m => ({
           name: m.column_name,
-          type: m.column_type === ColumnType.NUMERIC ? 'Numeric' : m.column_type === ColumnType.CATEGORICAL ? 'Categorical' : 'Unused',
+          type: m.column_type === ColumnType.COLUMN_TYPE_NUMERIC ? 'Numeric' : m.column_type === ColumnType.COLUMN_TYPE_CATEGORICAL ? 'Categorical' : 'Unused',
           isCoordinate: m.is_coordinate
         })));
         
@@ -194,7 +195,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
     
     // If changing from NUMERIC to something else, clear coordinate selections for this column
     const columnName = newMappings[index].column_name;
-    if (oldType === ColumnType.NUMERIC && columnType !== ColumnType.NUMERIC) {
+    if (oldType === ColumnType.COLUMN_TYPE_NUMERIC && columnType !== ColumnType.COLUMN_TYPE_NUMERIC) {
       if (eastColumn === columnName) {
         setEastColumn('');
         updateCoordinateMappings('', northColumn, elevationColumn);
@@ -208,8 +209,8 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
         updateCoordinateMappings(eastColumn, northColumn, '');
       }
     }
-    
-    console.log(`Column ${columnName} type changed to ${columnType === ColumnType.NUMERIC ? 'Numeric' : columnType === ColumnType.CATEGORICAL ? 'Categorical' : 'Unused'}`);
+
+    console.log(`Column ${columnName} type changed to ${columnType === ColumnType.COLUMN_TYPE_NUMERIC ? 'Numeric' : columnType === ColumnType.COLUMN_TYPE_CATEGORICAL ? 'Categorical' : 'Unused'}`);
   };
 
   // Update coordinate mappings when coordinate columns change
@@ -321,7 +322,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Procesar Dataset CSV</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Configurar Dataset cargado</h2>
           <p className="text-muted-foreground">
             Configura los tipos de columnas y los mapeos de coordenadas para {fileName}
           </p>
@@ -488,7 +489,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
                     </SelectTrigger>
                     <SelectContent>
                       {columnMappings
-                        .filter(m => m.column_type === ColumnType.NUMERIC || m.is_coordinate)
+                        .filter(m => m.column_type === ColumnType.COLUMN_TYPE_NUMERIC || m.is_coordinate)
                         .map(m => (
                           <SelectItem key={m.column_name} value={m.column_name}>
                             {m.column_name}
@@ -509,7 +510,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
                     </SelectTrigger>
                     <SelectContent>
                       {columnMappings
-                        .filter(m => m.column_type === ColumnType.NUMERIC || m.is_coordinate)
+                        .filter(m => m.column_type === ColumnType.COLUMN_TYPE_NUMERIC || m.is_coordinate)
                         .map(m => (
                           <SelectItem key={m.column_name} value={m.column_name}>
                             {m.column_name}
@@ -531,7 +532,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
                     <SelectContent>
                       <SelectItem value="none">None</SelectItem>
                       {columnMappings
-                        .filter(m => m.column_type === ColumnType.NUMERIC || m.is_coordinate)
+                        .filter(m => m.column_type === ColumnType.COLUMN_TYPE_NUMERIC || m.is_coordinate)
                         .map(m => (
                           <SelectItem key={m.column_name} value={m.column_name}>
                             {m.column_name}
@@ -591,7 +592,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
                   onClick={processDataset} 
                   disabled={loading || !eastColumn || !northColumn}
                 >
-                  Procesar Dataset
+                  Guardar Dataset
                 </Button>
               </div>
             </CardContent>
@@ -640,26 +641,20 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
             </div>
             
             <div className="mt-4">
-              <Label className="text-sm font-medium">Mapeos de Columnas</Label>
-              <div className="mt-2 space-y-1">
-                {processedDataset.column_mappings
-                  .filter((m: ColumnMapping) => m.column_type !== ColumnType.UNUSED)
-                  .map((mapping: ColumnMapping) => (
-                    <div key={mapping.column_name} className="flex items-center justify-between text-sm">
-                      <span>{mapping.column_name}</span>
-                      <div className="flex items-center space-x-2">
-                        <Badge className={columnTypeBadgeColors[mapping.column_type]}>
-                          {columnTypeLabels[mapping.column_type]}
-                        </Badge>
-                        {mapping.mapped_field && mapping.mapped_field !== 'none' && (
-                          <Badge variant="outline">
-                            {mapping.mapped_field.toUpperCase()}
-                          </Badge>
-                        )}
+              <Label className="text-sm font-medium">Columnas cargadas</Label>
+              <ScrollArea className="h-[300px] mt-2 rounded-md border p-2">
+                <div className="space-y-1">
+                  {processedDataset.column_mappings
+                    .filter((m: ColumnMapping) => m.column_type !== ColumnType.COLUMN_TYPE_UNUSED)
+                    .map((mapping: ColumnMapping) => (
+                      <div key={mapping.column_name} className="flex items-center justify-between text-sm">
+                        <span>{mapping.column_name}</span>
+                        <div className="flex items-center space-x-2">
+                        </div>
                       </div>
-                    </div>
-                  ))}
-              </div>
+                    ))}
+                </div>
+              </ScrollArea>
             </div>
             
             <div className="flex justify-end mt-6">

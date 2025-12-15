@@ -485,7 +485,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
   };
 
   const deleteProject = async (projectId: string) => {
-    if (!confirm('Are you sure you want to delete this project? This will also delete all associated files and datasets.')) {
+    if (!confirm('Esta seguro que desea eliminar este proyecto? Esto también eliminará todos los archivos y datasets asociados.')) {
       return;
     }
 
@@ -501,11 +501,11 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
         }
         await loadProjects();
       } else {
-        setError(response.error_message || 'Failed to delete project');
+        setError(response.error_message || 'Error al eliminar el proyecto');
       }
     } catch (err) {
       console.error('Error deleting project:', err);
-      setError('Failed to delete project');
+      setError('Error al eliminar el proyecto');
     } finally {
       setLoading(false);
     }
@@ -834,11 +834,31 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
                               ))}
                             </div>
                           )}
+
+                          {/* Add File Button */}
+                          <div className="p-2">
+                            <Button
+                              variant="outline"
+                              className="w-full h-10 gap-2 border-dashed hover:bg-accent/50"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onNavigateToUpload) {
+                                  onNavigateToUpload(project.id, project.name);
+                                }
+                              }}
+                            >
+                              <Plus className="h-4 w-4" />
+                              <span className="text-sm font-medium">Cargar archivo</span>
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </div>
+
                   );
+                  
                 })}
+
               </div>
             )}
             </div>

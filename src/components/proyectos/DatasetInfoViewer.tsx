@@ -108,6 +108,7 @@ const DatasetInfoViewer: React.FC = () => {
     pageSize: ROWS_PER_PAGE,
   });
   const tableContainerRef = React.useRef<HTMLDivElement>(null);
+  const topScrollbarRef = React.useRef<HTMLDivElement>(null);
   const lastFetchedDatasetRef = React.useRef<string | null>(null);
   
   // Inline editing state
@@ -146,6 +147,9 @@ const DatasetInfoViewer: React.FC = () => {
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
+
+  // Track table scroll width for top scrollbar
+  const [tableScrollWidth, setTableScrollWidth] = useState<number>(0);
 
   // Statistics state
   const [statistics, setStatistics] = useState<Array<{
@@ -834,6 +838,43 @@ const DatasetInfoViewer: React.FC = () => {
     document.addEventListener('mouseup', handleMouseUp);
     return () => document.removeEventListener('mouseup', handleMouseUp);
   }, [isSelecting]);
+
+  // Synchronize horizontal scrollbars (top and table container)
+  useEffect(() => {
+    const tableContainer = tableContainerRef.current;
+    const topScrollbar = topScrollbarRef.current;
+
+    if (!tableContainer || !topScrollbar) return;
+
+    // Update scroll width whenever it changes
+    const updateScrollWidth = () => {
+      setTableScrollWidth(tableContainer.scrollWidth);
+    };
+
+    const handleTableScroll = () => {
+      topScrollbar.scrollLeft = tableContainer.scrollLeft;
+    };
+
+    const handleTopScroll = () => {
+      tableContainer.scrollLeft = topScrollbar.scrollLeft;
+    };
+
+    // Set initial scroll width
+    updateScrollWidth();
+
+    tableContainer.addEventListener('scroll', handleTableScroll);
+    topScrollbar.addEventListener('scroll', handleTopScroll);
+
+    // Use ResizeObserver to detect table width changes
+    const resizeObserver = new ResizeObserver(updateScrollWidth);
+    resizeObserver.observe(tableContainer);
+
+    return () => {
+      tableContainer.removeEventListener('scroll', handleTableScroll);
+      topScrollbar.removeEventListener('scroll', handleTopScroll);
+      resizeObserver.disconnect();
+    };
+  }, [previewData, previewColumns]);
 
   // Delete selected rows
   const handleDeleteSelectedRows = async () => {
@@ -1524,11 +1565,22 @@ const DatasetInfoViewer: React.FC = () => {
               No se pudo cargar la vista previa
             </div>
           ) : (
-            <div
-              ref={tableContainerRef}
-              className="h-[500px] overflow-auto border rounded relative"
-              style={{ userSelect: isSelecting ? 'none' : 'auto' }}
-            >
+            <>
+              {/* Top horizontal scrollbar */}
+              <div
+                ref={topScrollbarRef}
+                className="overflow-x-auto overflow-y-hidden border-t border-x rounded-t"
+                style={{ height: '17px' }}
+              >
+                <div style={{ width: `${tableScrollWidth}px`, height: '1px' }} />
+              </div>
+
+              {/* Table container */}
+              <div
+                ref={tableContainerRef}
+                className="h-[500px] overflow-auto border rounded-b border-t-0"
+                style={{ userSelect: isSelecting ? 'none' : 'auto' }}
+              >
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-muted z-10">
                   {table.getHeaderGroups().map(headerGroup => (
@@ -1694,7 +1746,8 @@ const DatasetInfoViewer: React.FC = () => {
                   )}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
           {/* Pagination Controls */}
           {(previewData.length > 0 || loading) && (

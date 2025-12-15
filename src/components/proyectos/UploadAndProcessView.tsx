@@ -75,7 +75,7 @@ const UploadAndProcessView: React.FC<UploadAndProcessViewProps> = ({
                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-6">
                    <Upload className="h-8 w-8 text-muted-foreground/50" />
                  </div>
-                 <h3 className="text-xl font-semibold text-foreground">Listo para procesar</h3>
+                 <h3 className="text-xl font-semibold text-foreground">Listo para cargar</h3>
                  <p className="text-sm leading-relaxed">
                    Seleccione un archivo en el panel izquierdo para comenzar. 
                    El asistente de configuración aparecerá aquí automáticamente una vez cargado el archivo.
