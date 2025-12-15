@@ -5,19 +5,84 @@ File parsers module for handling different file formats (CSV, GSLIB)
 import io
 import os
 import tempfile
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import pandas as pd
 from sqlalchemy import Engine, text
+
+try:
+    import chardet
+    HAS_CHARDET = True
+except ImportError:
+    HAS_CHARDET = False
 
 
 class FileParser:
     """
     Unified file parser for CSV and GSLIB formats.
-    
+
     Handles parsing of different geospatial data file formats into pandas DataFrames,
     with preprocessing options for skipping rows/columns and value replacements.
     """
-    
+
+    @staticmethod
+    def detect_encoding(content: bytes) -> Tuple[str, float]:
+        """
+        Detect the encoding of file content.
+
+        Args:
+            content: Raw file bytes
+
+        Returns:
+            Tuple of (encoding_name, confidence)
+        """
+        # Try chardet if available
+        if HAS_CHARDET:
+            result = chardet.detect(content)
+            encoding = result.get('encoding', 'utf-8')
+            confidence = result.get('confidence', 0.0)
+
+            # If confidence is low, fall back to common encodings
+            if confidence < 0.7:
+                return FileParser._try_common_encodings(content)
+
+            return encoding, confidence
+        else:
+            # Fall back to trying common encodings
+            return FileParser._try_common_encodings(content)
+
+    @staticmethod
+    def _try_common_encodings(content: bytes) -> Tuple[str, float]:
+        """
+        Try common encodings to find one that works.
+
+        Args:
+            content: Raw file bytes
+
+        Returns:
+            Tuple of (encoding_name, confidence)
+        """
+        # Common encodings to try, in order of priority
+        encodings = [
+            'utf-8',
+            'windows-1252',  # Common on Windows
+            'latin-1',       # ISO-8859-1
+            'cp1252',        # Windows Western Europe
+            'iso-8859-1',
+            'utf-16',
+            'utf-16-le',
+            'utf-16-be',
+        ]
+
+        for encoding in encodings:
+            try:
+                content.decode(encoding)
+                return encoding, 1.0
+            except (UnicodeDecodeError, AttributeError):
+                continue
+
+        # If all fail, use utf-8 with error replacement
+        return 'utf-8', 0.0
+
     @staticmethod
     def parse_to_dataframe(
         content: bytes, 
@@ -53,22 +118,39 @@ class FileParser:
     @staticmethod
     def _parse_csv(content: bytes, skip_rows: int = 0) -> pd.DataFrame:
         """
-        Parse CSV content to DataFrame.
-        
+        Parse CSV content to DataFrame with automatic encoding detection.
+
         Args:
             content: Raw CSV bytes
             skip_rows: Number of rows to skip
-            
+
         Returns:
             pandas DataFrame
         """
-        return pd.read_csv(
-            io.BytesIO(content),
-            skiprows=skip_rows,
-            low_memory=False,
-            na_values=['', ' ', 'NA', 'N/A', 'null', 'NULL', 'None', '-'],
-            keep_default_na=True
-        )
+        # Detect encoding
+        encoding, confidence = FileParser.detect_encoding(content)
+
+        try:
+            # Try with detected encoding
+            return pd.read_csv(
+                io.BytesIO(content),
+                encoding=encoding,
+                skiprows=skip_rows,
+                low_memory=False,
+                na_values=['', ' ', 'NA', 'N/A', 'null', 'NULL', 'None', '-'],
+                keep_default_na=True
+            )
+        except (UnicodeDecodeError, pd.errors.ParserError):
+            # If detection failed, try with error replacement
+            return pd.read_csv(
+                io.BytesIO(content),
+                encoding='utf-8',
+                encoding_errors='replace',  # Replace invalid characters
+                skiprows=skip_rows,
+                low_memory=False,
+                na_values=['', ' ', 'NA', 'N/A', 'null', 'NULL', 'None', '-'],
+                keep_default_na=True
+            )
     
     @staticmethod
     def _parse_gslib(content: bytes) -> pd.DataFrame:
@@ -234,26 +316,29 @@ class DuckDBImporter:
     def import_dataframe(self, df: pd.DataFrame, table_name: str) -> bool:
         """
         Import a pandas DataFrame into a DuckDB table.
-        
+
         Args:
             df: DataFrame to import
             table_name: Target table name
-            
+
         Returns:
             True if successful
         """
-        # Write to temporary CSV file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, newline='') as temp_file:
-            df.to_csv(temp_file, index=False)
+        # Write to temporary CSV file with explicit UTF-8 encoding
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, newline='', encoding='utf-8') as temp_file:
+            df.to_csv(temp_file, index=False, encoding='utf-8')
             temp_csv_path = temp_file.name
-        
+
         try:
+            # Use forward slashes for path (works on both Windows and Unix)
+            temp_csv_path_normalized = temp_csv_path.replace('\\', '/')
+
             with self.engine.connect() as conn:
                 with conn.begin():
                     conn.execute(text(f"""
-                        CREATE OR REPLACE TABLE {table_name} AS 
+                        CREATE OR REPLACE TABLE {table_name} AS
                         SELECT * FROM read_csv_auto(
-                            '{temp_csv_path}',
+                            '{temp_csv_path_normalized}',
                             nullstr = '',
                             sample_size = -1,
                             ignore_errors = false
