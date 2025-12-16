@@ -544,7 +544,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
   const handleDeleteDataset = async (datasetId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent dataset click
 
-    if (!confirm('Are you sure you want to delete this dataset? This action cannot be undone.')) {
+    if (!confirm('¿Estás seguro de querer eliminar este dataset? Esta acción no puede ser deshecha.')) {
       return;
     }
 
@@ -899,28 +899,28 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Project</DialogTitle>
+            <DialogTitle>Editar Proyecto</DialogTitle>
             <DialogDescription>
-              Update the project information.
+              Actualiza la información del proyecto.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="edit-name">Project Name</Label>
+              <Label htmlFor="edit-name">Nombre del Proyecto</Label>
               <Input
                 id="edit-name"
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
-                placeholder="Enter project name"
+                placeholder="Ingresa el nombre del proyecto"
               />
             </div>
             <div>
-              <Label htmlFor="edit-description">Description</Label>
+              <Label htmlFor="edit-description">Descripción</Label>
               <Textarea
                 id="edit-description"
                 value={projectDescription}
                 onChange={(e) => setProjectDescription(e.target.value)}
-                placeholder="Enter project description (optional)"
+                placeholder="Ingresa una descripción para el proyecto (opcional)"
               />
             </div>
           </div>
@@ -929,7 +929,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
               onClick={updateProject}
               disabled={loading || !projectName.trim()}
             >
-              Update Project
+              Actualizar Proyecto
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -941,7 +941,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({ onNavigateToUpload }) =
           <DialogHeader>
             <DialogTitle>Cambiar de proyecto</DialogTitle>
             <DialogDescription>
-              Tienes un dataset seleccionado en el proyecto actual. ¿Deseas cambiar al proyecto &ldquo;{pendingProject?.name}&rdquo;? 
+              Tienes un dataset seleccionado en el proyecto actual. ¿Deseas cambiar al proyecto &quot;{pendingProject?.name}&quot;? 
               Esto deseleccionará el dataset actual.
             </DialogDescription>
           </DialogHeader>

@@ -14,12 +14,13 @@ from modules.others import models, db_connection
 from modules.others.decorators import grpc_response
 from modules.others.file_parsers import FileParser, DuckDBImporter
 from modules.others.column_mappings import (
-    ColumnMappingsService, 
-    build_column_mappings_list, 
+    ColumnMappingsService,
+    build_column_mappings_list,
     populate_response_mappings
 )
 from modules.others.statistics_service import StatisticsService
 from modules.others.progress_tracker import progress_tracker
+from modules.others.file_cache import file_cache
 
 
 class ProjectManager:
@@ -152,19 +153,22 @@ class ProjectManager:
     def create_file(self, request: projects_pb2.CreateFileRequest) -> projects_pb2.CreateFileResponse:
         """
         Create a new file - unified handler for SAMPLE and BLOCK types.
-        
+
+        Now stores file in memory cache instead of importing to DuckDB immediately.
+        DuckDB import happens during process_dataset when user clicks "Guardar Dataset".
+
         Drill holes require CreateMultiFileRequest.
         """
         # Start progress tracking
         op_id = progress_tracker.start("create_file", "Initializing file import...")
-        
+
         try:
             # Extract preprocessing options
-            progress_tracker.update(op_id, 5, "Parsing request options...")
+            progress_tracker.update(op_id, 20, "Parsing request options...")
             skip_rows = request.skip_rows if request.HasField('skip_rows') else 0
             skip_columns = list(request.skip_columns) if request.skip_columns else []
             replace_data = [{'from': r.from_value, 'to': r.to_value} for r in request.replace_data] if request.replace_data else []
-            
+
             # Validate dataset type
             if request.dataset_type == projects_pb2.DATASET_TYPE_DRILL_HOLES:
                 progress_tracker.fail(op_id, "DRILL_HOLES requires CreateMultiFileRequest")
@@ -172,52 +176,46 @@ class ProjectManager:
                 response.success = False
                 response.error_message = "DRILL_HOLES requires CreateMultiFileRequest"
                 return response
-            
+
             # Check cancellation
             if progress_tracker.is_cancelled(op_id):
                 response = projects_pb2.CreateFileResponse()
                 response.success = False
                 response.error_message = "Operation cancelled"
                 return response
-            
-            # Generate IDs
-            progress_tracker.update(op_id, 10, "Generating file identifiers...")
+
+            # Generate file ID
+            progress_tracker.update(op_id, 40, "Generating file identifier...")
             file_id = db_connection.generate_id()
-            table_name = db_connection.get_table_name(file_id)
-            
-            # Import file to DuckDB (handles CSV and GSLIB automatically)
-            progress_tracker.update(op_id, 20, "Parsing and importing file to database...")
-            self.importer.import_file(
-                request.file_content,
-                request.original_filename,
-                table_name,
-                skip_rows=skip_rows,
-                skip_columns=skip_columns,
-                replace_data=replace_data
-            )
-            
-            # Check cancellation after import
-            if progress_tracker.is_cancelled(op_id):
-                # Clean up partially created table
-                db_connection.drop_table_if_exists(self.engine, table_name)
-                response = projects_pb2.CreateFileResponse()
-                response.success = False
-                response.error_message = "Operation cancelled"
-                return response
-            
-            # Verify table creation
-            progress_tracker.update(op_id, 70, "Verifying table creation...")
-            if not db_connection.check_duckdb_table_exists(self.engine, table_name):
-                progress_tracker.fail(op_id, f"Failed to create table '{table_name}'")
-                raise Exception(f"Failed to create table '{table_name}'")
-            
+
             # Build metadata based on dataset type
-            progress_tracker.update(op_id, 80, "Building file metadata...")
-            metadata = self._build_file_metadata(request)
-            
-            # Create file record
-            progress_tracker.update(op_id, 90, "Saving file record...")
-            file = models.File(
+            progress_tracker.update(op_id, 60, "Building file metadata...")
+            extra_metadata = self._build_file_metadata(request)
+
+            # Store file in memory cache (NOT in database yet)
+            progress_tracker.update(op_id, 80, "Storing file in cache...")
+            file_cache.store(
+                file_id=file_id,
+                file_content=bytes(request.file_content),
+                original_filename=request.original_filename,
+                preprocessing={
+                    'skip_rows': skip_rows,
+                    'skip_columns': skip_columns,
+                    'replace_data': replace_data
+                },
+                metadata={
+                    'project_id': request.project_id,
+                    'name': request.name,
+                    'dataset_type': int(request.dataset_type),
+                    'file_size': len(request.file_content),
+                    'extra_metadata': extra_metadata
+                }
+            )
+
+            progress_tracker.complete(op_id)
+
+            # Create a temporary File object for response population
+            temp_file = models.File(
                 id=file_id,
                 project_id=request.project_id,
                 name=request.name,
@@ -225,42 +223,40 @@ class ProjectManager:
                 original_filename=request.original_filename,
                 file_size=len(request.file_content),
                 created_at=db_connection.get_timestamp(),
-                extra_metadata=metadata
+                extra_metadata=extra_metadata
             )
-            
-            with Session(self.engine) as session:
-                session.add(file)
-                session.commit()
-                session.refresh(file)
-            
-            progress_tracker.complete(op_id)
-            
+
             response = projects_pb2.CreateFileResponse()
             response.success = True
-            self._populate_file_response(response.file, file)
+            self._populate_file_response(response.file, temp_file)
             return response
-            
+
         except Exception as e:
             progress_tracker.fail(op_id, str(e))
             raise
     
     @grpc_response(projects_pb2.CreateMultiFileResponse)
     def create_multi_file(self, request: projects_pb2.CreateMultiFileRequest) -> projects_pb2.CreateMultiFileResponse:
-        """Create multiple files for DRILL_HOLES dataset type."""
+        """
+        Create multiple files for DRILL_HOLES dataset type.
+
+        Now stores files in memory cache instead of importing to DuckDB immediately.
+        DuckDB import happens during process_dataset when user clicks "Guardar Dataset".
+        """
         if request.dataset_type != projects_pb2.DATASET_TYPE_DRILL_HOLES:
             response = projects_pb2.CreateMultiFileResponse()
             response.success = False
             response.error_message = "CreateMultiFileRequest is only for DRILL_HOLES"
             return response
-        
+
         # Extract preprocessing options
         skip_rows = request.skip_rows if request.HasField('skip_rows') else 0
         skip_columns = list(request.skip_columns) if request.skip_columns else []
         replace_data = [{'from': r.from_value, 'to': r.to_value} for r in request.replace_data] if request.replace_data else []
-        
+
         # Generate group ID
         group_id = db_connection.generate_id()
-        
+
         # Build drill hole metadata
         drill_hole_metadata = {
             'group_id': group_id,
@@ -272,30 +268,36 @@ class ProjectManager:
             'composite_data': request.composite_data if request.HasField('composite_data') else False,
             'composite_distance': request.composite_distance if request.HasField('composite_distance') else None
         }
-        
-        created_files = []
-        
+
+        mock_files = []
+
         for file_upload in request.files:
             file_id = db_connection.generate_id()
-            table_name = db_connection.get_table_name(file_id)
-            
-            # Import to DuckDB
-            self.importer.import_file(
-                file_upload.file_content,
-                file_upload.original_filename,
-                table_name,
-                skip_rows=skip_rows,
-                skip_columns=skip_columns,
-                replace_data=replace_data
-            )
-            
-            if not db_connection.check_duckdb_table_exists(self.engine, table_name):
-                raise Exception(f"Failed to create table for {file_upload.file_role}")
-            
+
             # Create file-specific metadata
             file_metadata = {**drill_hole_metadata, 'file_role': file_upload.file_role}
-            
-            file = models.File(
+
+            # Store file in memory cache (NOT in database yet)
+            file_cache.store(
+                file_id=file_id,
+                file_content=bytes(file_upload.file_content),
+                original_filename=file_upload.original_filename,
+                preprocessing={
+                    'skip_rows': skip_rows,
+                    'skip_columns': skip_columns,
+                    'replace_data': replace_data
+                },
+                metadata={
+                    'project_id': request.project_id,
+                    'name': file_upload.name,
+                    'dataset_type': int(request.dataset_type),
+                    'file_size': len(file_upload.file_content),
+                    'extra_metadata': json.dumps(file_metadata)
+                }
+            )
+
+            # Create temporary File object for response
+            temp_file = models.File(
                 id=file_id,
                 project_id=request.project_id,
                 name=file_upload.name,
@@ -305,17 +307,11 @@ class ProjectManager:
                 created_at=db_connection.get_timestamp(),
                 extra_metadata=json.dumps(file_metadata)
             )
-            
-            with Session(self.engine) as session:
-                session.add(file)
-                session.commit()
-                session.refresh(file)
-            
-            created_files.append(file)
-        
+            mock_files.append(temp_file)
+
         response = projects_pb2.CreateMultiFileResponse()
         response.success = True
-        for f in created_files:
+        for f in mock_files:
             self._populate_file_response(response.files.add(), f)
         return response
     
@@ -488,88 +484,241 @@ class ProjectManager:
     
     @grpc_response(projects_pb2.AnalyzeCsvForProjectResponse)
     def analyze_csv_for_project(self, request: projects_pb2.AnalyzeCsvForProjectRequest) -> projects_pb2.AnalyzeCsvForProjectResponse:
-        """Analyze CSV file with column type detection."""
+        """
+        Analyze CSV file with column type detection.
+
+        Now checks file_cache first (for newly uploaded files), then falls back to DuckDB
+        (for backwards compatibility with existing datasets).
+        """
         if not request.file_id:
             response = projects_pb2.AnalyzeCsvForProjectResponse()
             response.success = False
             response.error_message = "file_id is required"
             return response
-        
-        # Check file exists and validate drill hole role
-        with Session(self.engine) as session:
-            file = session.get(models.File, request.file_id)
-            if not file:
-                response = projects_pb2.AnalyzeCsvForProjectResponse()
-                response.success = False
-                response.error_message = "File not found"
-                return response
-            
+
+        # Check if file is in cache (newly uploaded, not yet processed)
+        cached_file = file_cache.get(request.file_id)
+
+        if cached_file:
+            # File is in cache - parse directly from bytes
+            metadata = cached_file['metadata']
+
             # For drill holes, only analyze assay files
-            if file.dataset_type == projects_pb2.DATASET_TYPE_DRILL_HOLES and file.extra_metadata:
-                metadata = json.loads(file.extra_metadata)
-                if metadata.get('file_role') != 'assay':
+            if metadata['dataset_type'] == projects_pb2.DATASET_TYPE_DRILL_HOLES:
+                extra_meta = json.loads(metadata['extra_metadata']) if metadata.get('extra_metadata') else {}
+                if extra_meta.get('file_role') != 'assay':
                     response = projects_pb2.AnalyzeCsvForProjectResponse()
                     response.success = False
-                    response.error_message = f"Cannot analyze {metadata.get('file_role')} file. Analyze the assay file."
+                    response.error_message = f"Cannot analyze {extra_meta.get('file_role')} file. Analyze the assay file."
                     return response
-        
-        table_name = db_connection.get_table_name(request.file_id)
-        
-        if not db_connection.check_duckdb_table_exists(self.engine, table_name):
-            response = projects_pb2.AnalyzeCsvForProjectResponse()
-            response.success = False
-            response.error_message = "Table does not exist. Re-upload the file."
-            return response
-        
-        # Get schema and preview
-        schema = db_connection.get_table_schema(self.engine, table_name)
-        headers = [col for col, _ in schema]
-        
-        with self.engine.connect() as conn:
-            preview_result = conn.execute(text(f"SELECT * FROM {table_name} LIMIT 20"))
-            preview_data = [list(row) for row in preview_result]
-            
-            count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
-            row_count = int(count_result[0])
-        
-        # Determine column types from DuckDB schema
-        numeric_keywords = ['INT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'NUMERIC', 'REAL', 'BIGINT', 'SMALLINT', 'TINYINT']
-        
-        suggested_types = []
-        suggested_mappings = {}
-        
-        for col_name, col_type in schema:
-            is_numeric = any(kw in col_type.upper() for kw in numeric_keywords)
-            
-            if is_numeric:
-                suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)
-                # Suggest coordinate mappings
-                col_lower = col_name.lower()
-                if any(k in col_lower for k in ['x', 'east', 'longitude', 'lon']):
-                    suggested_mappings[col_name] = "x"
-                elif any(k in col_lower for k in ['y', 'north', 'latitude', 'lat']):
-                    suggested_mappings[col_name] = "y"
-                elif any(k in col_lower for k in ['z', 'elevation', 'height', 'depth']):
-                    suggested_mappings[col_name] = "z"
+
+            # Parse CSV from bytes using DuckDB (much faster than pandas!)
+            import tempfile
+            import os
+
+            preprocessing = cached_file['preprocessing']
+            file_content = cached_file['file_content']
+            original_filename = cached_file['original_filename']
+
+            try:
+                # For GSLIB files, still use FileParser as DuckDB doesn't support that format
+                is_gslib = original_filename.lower().endswith('.out')
+
+                if is_gslib:
+                    # Use FileParser for GSLIB format
+                    import pandas as pd
+                    df = FileParser.parse_to_dataframe(
+                        content=file_content,
+                        filename=original_filename,
+                        skip_rows=preprocessing.get('skip_rows', 0),
+                        skip_columns=preprocessing.get('skip_columns', []),
+                        replace_data=preprocessing.get('replace_data', [])
+                    )
+
+                    # Get headers and preview
+                    headers = df.columns.tolist()
+                    preview_data = df.head(20).values.tolist()
+                    row_count = len(df)
+
+                    # Build schema info from pandas dtypes
+                    schema = [(col, str(df[col].dtype)) for col in df.columns]
+
                 else:
+                    # Use DuckDB for CSV (much faster!)
+                    # Write to temporary file
+                    with tempfile.NamedTemporaryFile(mode='wb', suffix='.csv', delete=False) as temp_file:
+                        temp_file.write(file_content)
+                        temp_csv_path = temp_file.name
+
+                    try:
+                        skip_rows = preprocessing.get('skip_rows', 0)
+
+                        with self.engine.connect() as conn:
+                            # Read CSV with DuckDB
+                            query = f"""
+                                SELECT * FROM read_csv_auto(
+                                    '{temp_csv_path}',
+                                    skip={skip_rows},
+                                    sample_size=-1
+                                )
+                            """
+
+                            # Get schema
+                            schema_result = conn.execute(text(f"""
+                                DESCRIBE {query}
+                            """))
+                            schema = [(row[0], row[1]) for row in schema_result]
+                            headers = [col for col, _ in schema]
+
+                            # Apply column skipping if needed
+                            skip_columns = preprocessing.get('skip_columns', [])
+                            if skip_columns:
+                                headers = [h for h in headers if h not in skip_columns]
+                                selected_cols = ', '.join([f'"{h}"' for h in headers])
+                                query = f"""
+                                    SELECT {selected_cols} FROM read_csv_auto(
+                                        '{temp_csv_path}',
+                                        skip={skip_rows},
+                                        sample_size=-1
+                                    )
+                                """
+                                # Re-get schema for selected columns
+                                schema_result = conn.execute(text(f"DESCRIBE {query}"))
+                                schema = [(row[0], row[1]) for row in schema_result]
+
+                            # Get preview (first 20 rows)
+                            preview_result = conn.execute(text(f"{query} LIMIT 20"))
+                            preview_data = [list(row) for row in preview_result]
+
+                            # Get total count
+                            count_result = conn.execute(text(f"SELECT COUNT(*) FROM ({query}) t"))
+                            row_count = int(count_result.fetchone()[0])
+
+                    finally:
+                        os.unlink(temp_csv_path)
+
+                # Determine column types from schema and suggest mappings
+                numeric_keywords = ['INT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'NUMERIC', 'REAL', 'BIGINT', 'SMALLINT', 'TINYINT']
+
+                suggested_types = []
+                suggested_mappings = {}
+
+                for col_name, col_type in schema:
+                    is_numeric = any(kw in col_type.upper() for kw in numeric_keywords)
+
+                    if is_numeric:
+                        suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)
+                        # Suggest coordinate mappings
+                        col_lower = col_name.lower()
+                        if any(k in col_lower for k in ['x', 'east', 'longitude', 'lon']):
+                            suggested_mappings[col_name] = "x"
+                        elif any(k in col_lower for k in ['y', 'north', 'latitude', 'lat']):
+                            suggested_mappings[col_name] = "y"
+                        elif any(k in col_lower for k in ['z', 'elevation', 'height', 'depth']):
+                            suggested_mappings[col_name] = "z"
+                        else:
+                            suggested_mappings[col_name] = ""
+                    else:
+                        suggested_types.append(projects_pb2.COLUMN_TYPE_CATEGORICAL)
+                        suggested_mappings[col_name] = ""
+
+                # Build response
+                response = projects_pb2.AnalyzeCsvForProjectResponse()
+                response.success = True
+                response.headers.extend(headers)
+                response.suggested_types.extend(suggested_types)
+                response.suggested_mappings.update(suggested_mappings)
+                response.total_rows = row_count
+
+                for row in preview_data:
+                    preview_row = projects_pb2.PreviewRow()
+                    preview_row.values.extend([str(v) for v in row])
+                    response.preview_rows.append(preview_row)
+
+                return response
+
+            except Exception as e:
+                response = projects_pb2.AnalyzeCsvForProjectResponse()
+                response.success = False
+                response.error_message = f"Error parsing file: {str(e)}"
+                return response
+
+        else:
+            # File not in cache - check database (backwards compatibility)
+            with Session(self.engine) as session:
+                file = session.get(models.File, request.file_id)
+                if not file:
+                    response = projects_pb2.AnalyzeCsvForProjectResponse()
+                    response.success = False
+                    response.error_message = "File not found"
+                    return response
+
+                # For drill holes, only analyze assay files
+                if file.dataset_type == projects_pb2.DATASET_TYPE_DRILL_HOLES and file.extra_metadata:
+                    metadata = json.loads(file.extra_metadata)
+                    if metadata.get('file_role') != 'assay':
+                        response = projects_pb2.AnalyzeCsvForProjectResponse()
+                        response.success = False
+                        response.error_message = f"Cannot analyze {metadata.get('file_role')} file. Analyze the assay file."
+                        return response
+
+            table_name = db_connection.get_table_name(request.file_id)
+
+            if not db_connection.check_duckdb_table_exists(self.engine, table_name):
+                response = projects_pb2.AnalyzeCsvForProjectResponse()
+                response.success = False
+                response.error_message = "Table does not exist. Re-upload the file."
+                return response
+
+            # Get schema and preview from DuckDB
+            schema = db_connection.get_table_schema(self.engine, table_name)
+            headers = [col for col, _ in schema]
+
+            with self.engine.connect() as conn:
+                preview_result = conn.execute(text(f"SELECT * FROM {table_name} LIMIT 20"))
+                preview_data = [list(row) for row in preview_result]
+
+                count_result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).fetchone()
+                row_count = int(count_result[0])
+
+            # Determine column types from DuckDB schema
+            numeric_keywords = ['INT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'NUMERIC', 'REAL', 'BIGINT', 'SMALLINT', 'TINYINT']
+
+            suggested_types = []
+            suggested_mappings = {}
+
+            for col_name, col_type in schema:
+                is_numeric = any(kw in col_type.upper() for kw in numeric_keywords)
+
+                if is_numeric:
+                    suggested_types.append(projects_pb2.COLUMN_TYPE_NUMERIC)
+                    # Suggest coordinate mappings
+                    col_lower = col_name.lower()
+                    if any(k in col_lower for k in ['x', 'east', 'longitude', 'lon']):
+                        suggested_mappings[col_name] = "x"
+                    elif any(k in col_lower for k in ['y', 'north', 'latitude', 'lat']):
+                        suggested_mappings[col_name] = "y"
+                    elif any(k in col_lower for k in ['z', 'elevation', 'height', 'depth']):
+                        suggested_mappings[col_name] = "z"
+                    else:
+                        suggested_mappings[col_name] = ""
+                else:
+                    suggested_types.append(projects_pb2.COLUMN_TYPE_CATEGORICAL)
                     suggested_mappings[col_name] = ""
-            else:
-                suggested_types.append(projects_pb2.COLUMN_TYPE_CATEGORICAL)
-                suggested_mappings[col_name] = ""
-        
-        response = projects_pb2.AnalyzeCsvForProjectResponse()
-        response.success = True
-        response.headers.extend(headers)
-        response.suggested_types.extend(suggested_types)
-        response.suggested_mappings.update(suggested_mappings)
-        response.total_rows = row_count
-        
-        for row in preview_data:
-            preview_row = projects_pb2.PreviewRow()
-            preview_row.values.extend([str(v) for v in row])
-            response.preview_rows.append(preview_row)
-        
-        return response
+
+            response = projects_pb2.AnalyzeCsvForProjectResponse()
+            response.success = True
+            response.headers.extend(headers)
+            response.suggested_types.extend(suggested_types)
+            response.suggested_mappings.update(suggested_mappings)
+            response.total_rows = row_count
+
+            for row in preview_data:
+                preview_row = projects_pb2.PreviewRow()
+                preview_row.values.extend([str(v) for v in row])
+                response.preview_rows.append(preview_row)
+
+            return response
     
     # ========== Dataset Processing (Unified) ==========
     
@@ -577,72 +726,150 @@ class ProjectManager:
     def process_dataset(self, request: projects_pb2.ProcessDatasetRequest) -> projects_pb2.ProcessDatasetResponse:
         """
         Process dataset with column mappings - unified handler for all types.
+
+        Now imports from file_cache to DuckDB if file was newly uploaded.
+        This is when the actual DuckDB table creation happens (on "Guardar Dataset" click).
         """
         # Start progress tracking
         op_id = progress_tracker.start("process_dataset", "Initializing dataset processing...")
-        
+
         try:
-            # Get file
-            progress_tracker.update(op_id, 5, "Loading file information...")
-            with Session(self.engine) as session:
-                file = session.get(models.File, request.file_id)
-                if not file:
-                    progress_tracker.fail(op_id, "File not found")
+            # Check if file is in cache (newly uploaded, not yet in database)
+            cached_file = file_cache.get(request.file_id)
+
+            if cached_file:
+                # File is in cache - import to DuckDB NOW and create File record
+                progress_tracker.update(op_id, 5, "Importing file to database...")
+
+                metadata = cached_file['metadata']
+                preprocessing = cached_file['preprocessing']
+                file_content = cached_file['file_content']
+                original_filename = cached_file['original_filename']
+
+                # For drill holes, validate it's an assay file
+                if metadata['dataset_type'] == projects_pb2.DATASET_TYPE_DRILL_HOLES:
+                    extra_meta = json.loads(metadata.get('extra_metadata', '{}'))
+                    if extra_meta.get('file_role') != 'assay':
+                        error_msg = f"Can only process assay files. This is a {extra_meta.get('file_role')} file."
+                        progress_tracker.fail(op_id, error_msg)
+                        response = projects_pb2.ProcessDatasetResponse()
+                        response.success = False
+                        response.error_message = error_msg
+                        return response
+
+                # Check cancellation
+                if progress_tracker.is_cancelled(op_id):
+                    file_cache.delete(request.file_id)
                     response = projects_pb2.ProcessDatasetResponse()
                     response.success = False
-                    response.error_message = "File not found"
+                    response.error_message = "Operation cancelled"
                     return response
-            
-            # For drill holes, validate it's an assay file
-            if file.dataset_type == projects_pb2.DATASET_TYPE_DRILL_HOLES:
-                if not file.extra_metadata:
-                    progress_tracker.fail(op_id, "Drill hole file missing metadata")
+
+                # Generate table name and import to DuckDB
+                progress_tracker.update(op_id, 15, "Creating database table...")
+                table_name = db_connection.get_table_name(request.file_id)
+
+                self.importer.import_file(
+                    file_content,
+                    original_filename,
+                    table_name,
+                    skip_rows=preprocessing.get('skip_rows', 0),
+                    skip_columns=preprocessing.get('skip_columns', []),
+                    replace_data=preprocessing.get('replace_data', [])
+                )
+
+                # Verify table creation
+                if not db_connection.check_duckdb_table_exists(self.engine, table_name):
+                    file_cache.delete(request.file_id)
+                    progress_tracker.fail(op_id, f"Failed to create table '{table_name}'")
+                    raise Exception(f"Failed to create table '{table_name}'")
+
+                progress_tracker.update(op_id, 25, "Counting rows...")
+                total_rows = db_connection.get_table_row_count(self.engine, table_name)
+
+                # Create File record in database NOW
+                progress_tracker.update(op_id, 30, "Saving file record...")
+                file = models.File(
+                    id=request.file_id,
+                    project_id=metadata['project_id'],
+                    name=metadata['name'],
+                    dataset_type=metadata['dataset_type'],
+                    original_filename=original_filename,
+                    file_size=metadata['file_size'],
+                    created_at=db_connection.get_timestamp(),
+                    extra_metadata=metadata.get('extra_metadata')
+                )
+
+                with Session(self.engine) as session:
+                    session.add(file)
+                    session.commit()
+                    session.refresh(file)
+
+                # Delete from cache after successful import
+                file_cache.delete(request.file_id)
+
+            else:
+                # File not in cache - check database (backwards compatibility)
+                progress_tracker.update(op_id, 5, "Loading file information...")
+                with Session(self.engine) as session:
+                    file = session.get(models.File, request.file_id)
+                    if not file:
+                        progress_tracker.fail(op_id, "File not found")
+                        response = projects_pb2.ProcessDatasetResponse()
+                        response.success = False
+                        response.error_message = "File not found"
+                        return response
+
+                # For drill holes, validate it's an assay file
+                if file.dataset_type == projects_pb2.DATASET_TYPE_DRILL_HOLES:
+                    if not file.extra_metadata:
+                        progress_tracker.fail(op_id, "Drill hole file missing metadata")
+                        response = projects_pb2.ProcessDatasetResponse()
+                        response.success = False
+                        response.error_message = "Drill hole file missing metadata"
+                        return response
+
+                    metadata = json.loads(file.extra_metadata)
+                    if metadata.get('file_role') != 'assay':
+                        error_msg = f"Can only process assay files. This is a {metadata.get('file_role')} file."
+                        progress_tracker.fail(op_id, error_msg)
+                        response = projects_pb2.ProcessDatasetResponse()
+                        response.success = False
+                        response.error_message = error_msg
+                        return response
+
+                # Check cancellation
+                if progress_tracker.is_cancelled(op_id):
                     response = projects_pb2.ProcessDatasetResponse()
                     response.success = False
-                    response.error_message = "Drill hole file missing metadata"
+                    response.error_message = "Operation cancelled"
                     return response
-                
-                metadata = json.loads(file.extra_metadata)
-                if metadata.get('file_role') != 'assay':
-                    error_msg = f"Can only process assay files. This is a {metadata.get('file_role')} file."
-                    progress_tracker.fail(op_id, error_msg)
+
+                # Get table info
+                progress_tracker.update(op_id, 15, "Validating database table...")
+                table_name = db_connection.get_table_name(request.file_id)
+
+                if not db_connection.check_duckdb_table_exists(self.engine, table_name):
+                    progress_tracker.fail(op_id, f"Table {table_name} not found")
                     response = projects_pb2.ProcessDatasetResponse()
                     response.success = False
-                    response.error_message = error_msg
+                    response.error_message = f"Table {table_name} not found"
                     return response
-            
+
+                progress_tracker.update(op_id, 25, "Counting rows...")
+                total_rows = db_connection.get_table_row_count(self.engine, table_name)
+
             # Check cancellation
             if progress_tracker.is_cancelled(op_id):
                 response = projects_pb2.ProcessDatasetResponse()
                 response.success = False
                 response.error_message = "Operation cancelled"
                 return response
-            
-            # Get table info
-            progress_tracker.update(op_id, 15, "Validating database table...")
-            table_name = db_connection.get_table_name(request.file_id)
-            
-            if not db_connection.check_duckdb_table_exists(self.engine, table_name):
-                progress_tracker.fail(op_id, f"Table {table_name} not found")
-                response = projects_pb2.ProcessDatasetResponse()
-                response.success = False
-                response.error_message = f"Table {table_name} not found"
-                return response
-            
-            progress_tracker.update(op_id, 25, "Counting rows...")
-            total_rows = db_connection.get_table_row_count(self.engine, table_name)
-            
-            # Check cancellation
-            if progress_tracker.is_cancelled(op_id):
-                response = projects_pb2.ProcessDatasetResponse()
-                response.success = False
-                response.error_message = "Operation cancelled"
-                return response
-            
+
             # Build column mappings
             progress_tracker.update(op_id, 35, "Building column mappings...")
             column_mappings_list = build_column_mappings_list(request.column_mappings)
-            
+
             # Build dataset metadata based on type
             progress_tracker.update(op_id, 45, "Building dataset metadata...")
             extra_metadata = self._build_dataset_metadata(file)

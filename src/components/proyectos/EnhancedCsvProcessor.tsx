@@ -659,7 +659,7 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
             
             <div className="flex justify-end mt-6">
               <Button onClick={onCancel}>
-                Done
+                Listo
               </Button>
             </div>
           </CardContent>
