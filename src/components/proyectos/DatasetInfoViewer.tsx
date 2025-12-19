@@ -1274,7 +1274,7 @@ const DatasetInfoViewer: React.FC = () => {
           <div className="flex items-center gap-3">
             <Label htmlFor="column-select" className="text-sm font-semibold flex items-center whitespace-nowrap">
               {/* <Grid3x3 className="mr-1.5 h-4 w-4" /> */}
-              Columnas ({selectedDataset.column_mappings?.length || 0})
+              Estadisticas por columna ({selectedDataset.column_mappings?.length || 0})
             </Label>
             <Select
               value={selectedColumnName || ''}
@@ -1374,7 +1374,7 @@ const DatasetInfoViewer: React.FC = () => {
                         {columnStat.data_type === 'numeric' && (
                           <>
                             <Separator />
-                            <div className="grid grid-cols-4 gap-3 text-sm">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 text-sm">
                               <div>
                                 <p className="text-muted-foreground text-xs">Media</p>
                                 <p className="font-medium font-mono">{columnStat.mean?.toFixed(3)}</p>
@@ -1391,8 +1391,6 @@ const DatasetInfoViewer: React.FC = () => {
                                 <p className="text-muted-foreground text-xs">Máximo</p>
                                 <p className="font-medium font-mono">{columnStat.max?.toFixed(3)}</p>
                               </div>
-                            </div>
-                            <div className="grid grid-cols-3 gap-3 text-sm">
                               <div>
                                 <p className="text-muted-foreground text-xs">Q25</p>
                                 <p className="font-medium font-mono">{columnStat.q25?.toFixed(3)}</p>

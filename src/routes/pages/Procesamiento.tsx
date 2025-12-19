@@ -152,7 +152,7 @@ export default function Procesamiento() {
               </AccordionContent>
             </AccordionItem>
 
-            <AccordionItem value="crear-grilla">
+            {/* <AccordionItem value="crear-grilla">
               <AccordionTrigger className="text-sm font-medium">
                 <div className="flex items-center">
                   <Grid3x3 className="h-4 w-4 mr-2" />
@@ -174,7 +174,7 @@ export default function Procesamiento() {
               <AccordionContent>
                 <MergeDataset />
               </AccordionContent>
-            </AccordionItem>
+            </AccordionItem> */}
           </Accordion>
         </div>
       </div>

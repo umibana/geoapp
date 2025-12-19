@@ -173,22 +173,22 @@ export default function Estimaciones() {
     );
     
     if (!blockModelDataset) {
-      toast.error('Please select a block model');
+      toast.error('Por favor seleccione un modelo de bloques');
       return;
     }
     
     if (!formState.drillHolesFileId) {
-      toast.error('Please select drill holes dataset');
+      toast.error('Por favor seleccione un dataset de pozos');
       return;
     }
     
     if (!formState.variable) {
-      toast.error('Please select a variable to estimate');
+      toast.error('Por favor seleccione una variable para estimar');
       return;
     }
     
     if (!formState.outputVariable.trim()) {
-      toast.error('Please enter an output variable name');
+      toast.error('Por favor ingrese un nombre para la variable de salida');
       return;
     }
     
@@ -270,13 +270,13 @@ export default function Estimaciones() {
           }
         }
         
-        toast.success(`IDW calculation complete! Estimated ${response.blocks_estimated} blocks.`);
+        toast.success(`Estimación IDW completada! Estimados ${response.blocks_estimated} bloques.`);
       } else {
         toast.error(response.error_message || 'IDW calculation failed');
       }
     } catch (err) {
       console.error('IDW calculation error:', err);
-      toast.error('Failed to calculate IDW. Check console for details.');
+      toast.error('Error al calcular la estimación IDW. Verifique la consola para más detalles.');
     } finally {
       setIsCalculating(false);
     }
@@ -311,7 +311,7 @@ export default function Estimaciones() {
       <div className="space-y-4 p-2">
         <div className="flex items-center gap-2 text-muted-foreground text-xs">
           <AlertCircle className="h-4 w-4" />
-          <span>Select a project first</span>
+          <span>Seleccione un proyecto primero</span>
         </div>
       </div>
     );
@@ -339,7 +339,7 @@ export default function Estimaciones() {
               <SelectContent>
                 {blockModelDatasets.length === 0 ? (
                   <SelectItem value="_empty" disabled>
-                    No block models available
+                    No hay modelos de bloques disponibles
                   </SelectItem>
                 ) : (
                   blockModelDatasets.map((dataset: DatasetData) => (
@@ -368,7 +368,7 @@ export default function Estimaciones() {
               <SelectContent>
                 {drillHolesDatasets.length === 0 ? (
                   <SelectItem value="_empty" disabled>
-                    No drill holes available
+                    No hay drill holes disponibles
                   </SelectItem>
                 ) : (
                   drillHolesDatasets.map((dataset: DatasetData) => (
@@ -391,14 +391,14 @@ export default function Estimaciones() {
               <SelectTrigger
                 id="variable"
                 className="h-8 text-xs"
-                aria-label="Select variable to estimate"
+                aria-label="Seleccionar variable para estimar"
               >
-                <SelectValue placeholder={loadingColumns ? 'Loading...' : 'Seleccionar Variable'} />
+                <SelectValue placeholder={loadingColumns ? 'Cargando...' : 'Seleccionar Variable'} />
               </SelectTrigger>
               <SelectContent>
                 {drillHolesColumns.length === 0 ? (
                   <SelectItem value="_empty" disabled>
-                    {loadingColumns ? 'Loading columns...' : 'No numeric columns available'}
+                    {loadingColumns ? 'Cargando columnas...' : 'No hay columnas numéricas disponibles'}
                   </SelectItem>
                 ) : (
                   drillHolesColumns.map((column: string) => (
@@ -412,20 +412,20 @@ export default function Estimaciones() {
           </div>
           
           <div>
-            <Label htmlFor="output-variable" className="text-xs">Output variable</Label>
+            <Label htmlFor="output-variable" className="text-xs">Variable de salida</Label>
             <Input
               id="output-variable"
               type="text"
-              placeholder="x_est"
+              placeholder="variable_est"
               value={formState.outputVariable}
               onChange={handleOutputVariableChange}
               className="h-8 text-xs"
-              aria-label="Output variable name"
+              aria-label="Nombre de la variable de salida"
             />
           </div>
           
           <div>
-            <Label htmlFor="power" className="text-xs">Power</Label>
+            <Label htmlFor="power" className="text-xs">Potencia</Label>
             <Input
               id="power"
               type="number"
@@ -434,12 +434,12 @@ export default function Estimaciones() {
               min={0.1}
               step={0.1}
               className="h-8 text-xs"
-              aria-label="IDW power parameter"
+              aria-label="Parámetro de potencia de IDW"
             />
           </div>
           
           <div>
-            <Label htmlFor="number-of-samples" className="text-xs">Number of samples</Label>
+            <Label htmlFor="number-of-samples" className="text-xs">Número de muestras</Label>
             <Input
               id="number-of-samples"
               type="number"
@@ -448,7 +448,7 @@ export default function Estimaciones() {
               min={1}
               step={1}
               className="h-8 text-xs"
-              aria-label="Number of nearest samples"
+              aria-label="Número de muestras más cercanas"
             />
           </div>
         </div>
@@ -462,31 +462,31 @@ export default function Estimaciones() {
           <div className="bg-muted/50 rounded-md p-3 space-y-2">
             <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
               <CheckCircle2 className="h-4 w-4" />
-              <span className="text-xs font-medium">Calculation Complete</span>
+              <span className="text-xs font-medium">Estimación Completada</span>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div>
-                <span className="text-muted-foreground">Output:</span>
+                <span className="text-muted-foreground">Salida:</span>
                 <span className="ml-1 font-mono">{result.outputVariable}</span>
               </div>
               <div>
-                <span className="text-muted-foreground">Blocks:</span>
+                <span className="text-muted-foreground">Bloques:</span>
                 <span className="ml-1">{result.blocksEstimated.toLocaleString()}</span>
               </div>
               <div>
-                <span className="text-muted-foreground">Samples:</span>
+                <span className="text-muted-foreground">Muestras:</span>
                 <span className="ml-1">{result.samplesUsed.toLocaleString()}</span>
               </div>
               <div>
-                <span className="text-muted-foreground">Mean:</span>
+                <span className="text-muted-foreground">Media:</span>
                 <span className="ml-1">{result.meanValue.toFixed(4)}</span>
               </div>
               <div>
-                <span className="text-muted-foreground">Min:</span>
+                <span className="text-muted-foreground">Mínimo:</span>
                 <span className="ml-1">{result.minValue.toFixed(4)}</span>
               </div>
               <div>
-                <span className="text-muted-foreground">Max:</span>
+                <span className="text-muted-foreground">Máximo:</span>
                 <span className="ml-1">{result.maxValue.toFixed(4)}</span>
               </div>
             </div>
@@ -508,12 +508,12 @@ export default function Estimaciones() {
           {isCalculating ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Calculating...
+              Calculando...
             </>
           ) : (
             <>
               <Calculator className="h-4 w-4 mr-2" />
-              Calculate IDW
+              Calcular IDW
             </>
           )}
         </Button>
@@ -526,7 +526,7 @@ export default function Estimaciones() {
           aria-label="Clear form"
         >
           <X className="h-4 w-4 mr-2" />
-          Clear
+          Limpiar
         </Button>
       </div>
     </div>

@@ -299,26 +299,29 @@ export function useMosaicManager<T extends Record<string, ChartTypeDefinition>>(
   }, [components, chartTypeDefinitions]);
 
   /**
-   * Reset to initial layout with one of each chart
+   * Reset to initial layout (empty or one of each chart based on initializeWithAll option)
    */
   const resetLayout = useCallback(() => {
-    // Re-initialize with one instance of each
+    // Re-initialize based on the initializeWithAll option
     const initialComponents: Record<string, MosaicComponentConfig> = {};
-    Object.values(chartTypeDefinitions).forEach((config) => {
-      const instanceId = `${config.type}-${uuidv4()}`;
-      initialComponents[instanceId] = {
-        id: instanceId,
-        title: `${config.title} #1`,
-        component: config.component,
-      };
-    });
+
+    if (initializeWithAll) {
+      Object.values(chartTypeDefinitions).forEach((config) => {
+        const instanceId = `${config.type}-${uuidv4()}`;
+        initialComponents[instanceId] = {
+          id: instanceId,
+          title: `${config.title} #1`,
+          component: config.component,
+        };
+      });
+    }
 
     setComponents(initialComponents);
 
-    // Reset counters to 1
+    // Reset counters
     const resetCounters: Record<string, number> = {};
     Object.keys(chartTypeDefinitions).forEach((type) => {
-      resetCounters[type] = 1;
+      resetCounters[type] = initializeWithAll ? 1 : 0;
     });
     setInstanceCounters(resetCounters);
 
@@ -334,7 +337,7 @@ export function useMosaicManager<T extends Record<string, ChartTypeDefinition>>(
 
     // Clear last opened
     setLastOpenedChart(null);
-  }, [chartTypeDefinitions]);
+  }, [chartTypeDefinitions, initializeWithAll]);
 
   /**
    * Update the layout (called by MosaicLayout onChange)

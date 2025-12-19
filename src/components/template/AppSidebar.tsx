@@ -24,7 +24,7 @@ interface WindowItem {
 // Navigation items
 const navigationItems = [
   {
-    title: "Projects",
+    title: "Proyectos",
     url: "/",
     icon: FolderOpen,
   },
