@@ -297,6 +297,39 @@ const DatasetInfoViewer: React.FC = () => {
   // ========== Pending Edits Queue Functions ==========
 
   /**
+   * Check if a column is numeric based on column mappings.
+   */
+  const isColumnNumeric = (columnId: string): boolean => {
+    if (!selectedDataset?.column_mappings) return false;
+    const mapping = selectedDataset.column_mappings.find(m => m.column_name === columnId);
+    return mapping?.column_type === ColumnType.COLUMN_TYPE_NUMERIC;
+  };
+
+  /**
+   * Validate a value for a specific column type.
+   * Returns { valid: boolean, error?: string }
+   */
+  const validateValueForColumn = (columnId: string, value: string): { valid: boolean; error?: string } => {
+    const trimmed = value.trim();
+    const upper = trimmed.toUpperCase();
+
+    // NULL/NaN/empty are always valid (they become NULL in the database)
+    if (upper === 'NULL' || upper === 'NAN' || trimmed === '') {
+      return { valid: true };
+    }
+
+    // For numeric columns, validate that the value is a valid number
+    if (isColumnNumeric(columnId)) {
+      const parsed = parseFloat(trimmed);
+      if (isNaN(parsed)) {
+        return { valid: false, error: `La columna "${columnId}" es numérica. Ingresa un número válido o "NULL".` };
+      }
+    }
+
+    return { valid: true };
+  };
+
+  /**
    * Parse a value for display in the table.
    * Handles NULL/NaN values and numeric parsing.
    */
@@ -627,6 +660,13 @@ const DatasetInfoViewer: React.FC = () => {
     if (oldValue === newValue) {
       setEditingCell(null);
       return;
+    }
+
+    // Validate the value based on column type
+    const validation = validateValueForColumn(editingCell.columnId, newValue);
+    if (!validation.valid) {
+      toast.error(validation.error);
+      return; // Don't close the editor, let user fix the value
     }
 
     // Queue the edit instead of applying immediately

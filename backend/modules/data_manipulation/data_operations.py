@@ -107,7 +107,31 @@ class DataManipulationManager:
         response.rows_affected = total_cells_affected
         return response
     
-    def _parse_cell_value(self, value: str) -> str:
+    def _is_numeric_column(self, table_name: str, column_name: str) -> bool:
+        """
+        Check if a column is numeric based on its DuckDB type.
+
+        Args:
+            table_name: Name of the table
+            column_name: Name of the column
+
+        Returns:
+            True if the column is numeric, False otherwise
+        """
+        schema = db_connection.get_table_schema(self.engine, table_name)
+        for col_name, col_type in schema:
+            if col_name == column_name:
+                col_type_upper = col_type.upper()
+                # DuckDB numeric types
+                numeric_types = (
+                    'INTEGER', 'INT', 'BIGINT', 'SMALLINT', 'TINYINT',
+                    'DOUBLE', 'FLOAT', 'REAL', 'DECIMAL', 'NUMERIC',
+                    'HUGEINT', 'UBIGINT', 'UINTEGER', 'USMALLINT', 'UTINYINT'
+                )
+                return any(nt in col_type_upper for nt in numeric_types)
+        return False
+
+    def _parse_cell_value(self, value: str, is_numeric_column: bool = False) -> tuple[str, Optional[str]]:
         """
         Parse a cell value and return the appropriate SQL representation.
 
@@ -116,8 +140,12 @@ class DataManipulationManager:
         - Numeric values: integers and decimals (e.g., "1", "1.2", "-3.14")
         - String values: quoted with escaped single quotes
 
+        Args:
+            value: The string value to parse
+            is_numeric_column: Whether the target column is numeric
+
         Returns:
-            SQL representation of the value (e.g., "NULL", "1.2", "'some text'")
+            Tuple of (SQL representation, error message or None)
         """
         import math
 
@@ -126,7 +154,7 @@ class DataManipulationManager:
         value_upper = value_stripped.upper()
 
         if value_upper in ("NULL", "NAN", "") or value_stripped == "":
-            return "NULL"
+            return "NULL", None
 
         # Try to parse as a numeric value (int or float)
         try:
@@ -135,15 +163,20 @@ class DataManipulationManager:
 
             # Check for special float values that should be NULL
             if math.isnan(numeric_value) or math.isinf(numeric_value):
-                return "NULL"
+                return "NULL", None
 
             # Return the numeric value directly (no quotes)
             # This preserves decimals correctly (e.g., 1.2 stays as 1.2)
-            return value_stripped
+            return value_stripped, None
         except (ValueError, TypeError):
-            # Not a number, treat as string
+            # Not a number
+            if is_numeric_column:
+                # Numeric column cannot accept non-numeric string values
+                return "", f"Column is numeric. Value '{value}' is not a valid number."
+
+            # For non-numeric columns, treat as string
             escaped_value = value.replace("'", "''")
-            return f"'{escaped_value}'"
+            return f"'{escaped_value}'", None
 
     @grpc_response(projects_pb2.UpdateCellResponse)
     def update_cell(self, request: projects_pb2.UpdateCellRequest) -> projects_pb2.UpdateCellResponse:
@@ -160,6 +193,17 @@ class DataManipulationManager:
         column_name = request.column_name
         new_value = request.new_value
 
+        # Check if the column is numeric for validation
+        is_numeric = self._is_numeric_column(table_name, column_name)
+
+        # Parse the new value and validate based on column type
+        update_value, error = self._parse_cell_value(new_value, is_numeric)
+        if error:
+            response = projects_pb2.UpdateCellResponse()
+            response.success = False
+            response.error_message = error
+            return response
+
         with self.engine.connect() as conn:
             with conn.begin():
                 # Get the old value first (for undo functionality)
@@ -175,10 +219,6 @@ class DataManipulationManager:
                     return response
 
                 old_value = str(old_value_result[0]) if old_value_result[0] is not None else ""
-
-                # Parse the new value to get proper SQL representation
-                # This handles decimals correctly and supports NULL/NaN values
-                update_value = self._parse_cell_value(new_value)
 
                 # Use a subquery approach with ROW_NUMBER to identify the specific row
                 # This creates a temporary table with row numbers, then updates based on that
