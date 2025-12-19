@@ -194,13 +194,46 @@ class EDAManager:
 
         min_val = float(np.min(data))
         max_val = float(np.max(data))
-        counts, bin_edges = np.histogram(data, bins=num_bins, range=(min_val, max_val))
+
+        # Handle edge case: all values are the same or range is too small for bins
+        if min_val == max_val:
+            # All values are identical - create a single bin
+            return {
+                'bin_ranges': [f"{min_val:.2f}"],
+                'bin_counts': [len(data)],
+                'bin_edges': [min_val, min_val],
+                'num_bins': 1,
+                'min_value': min_val,
+                'max_value': max_val,
+                'total_count': len(data)
+            }
+
+        # Limit bins to avoid "too many bins" error for small ranges
+        # Use fewer bins if we have fewer unique values or small range
+        unique_count = len(np.unique(data))
+        actual_bins = min(num_bins, unique_count, len(data))
+        if actual_bins < 1:
+            actual_bins = 1
+
+        try:
+            counts, bin_edges = np.histogram(data, bins=actual_bins, range=(min_val, max_val))
+        except ValueError:
+            # Fallback: if histogram still fails, use a single bin
+            return {
+                'bin_ranges': [f"{min_val:.2f} - {max_val:.2f}"],
+                'bin_counts': [len(data)],
+                'bin_edges': [min_val, max_val],
+                'num_bins': 1,
+                'min_value': min_val,
+                'max_value': max_val,
+                'total_count': len(data)
+            }
 
         return {
             'bin_ranges': [f"{bin_edges[i]:.2f} - {bin_edges[i+1]:.2f}" for i in range(len(counts))],
             'bin_counts': counts.astype(int).tolist(),
             'bin_edges': bin_edges.tolist(),
-            'num_bins': num_bins,
+            'num_bins': actual_bins,
             'min_value': min_val,
             'max_value': max_val,
             'total_count': len(data)
@@ -507,7 +540,7 @@ class EDAManager:
             if all_numeric_columns:
                 all_data, all_boundaries = self.get_dataset_data_and_stats_combined(
                     request.dataset_id, all_numeric_columns,
-                    bounding_box=bounding_box, filter_columns=viz_columns
+                    bounding_box=bounding_box, filter_columns=filter_columns
                 )
             else:
                 all_data = np.array([], dtype=np.float32)

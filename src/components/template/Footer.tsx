@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
@@ -7,62 +7,42 @@ import langs from "@/localization/langs";
 import { setAppLanguage } from "@/helpers/language_helpers";
 import { Languages, Moon, X, Loader2 } from "lucide-react";
 import { toggleTheme } from "@/helpers/theme_helpers";
-import { 
-  useOperationsStore, 
+import {
+  useOperationsStore,
   getOperationTypeLabel,
   type ActiveOperation
 } from "@/stores/operationsStore";
 import { OperationStatus } from "@/generated/projects";
 import React from "react";
+import { useBackendHealthStore } from "@/stores/backendHealthStore";
 
 
 interface BackendStatusProps {
   className?: string;
 }
 
-interface HealthStatus {
-  healthy: boolean;
-  version: string;
-  status: Record<string, string>;
-  timestamp?: number;
-  error?: string;
-}
-
 function BackendStatusContent(){
   const [backendUrl, setBackendUrl] = useState<string | null>(null);
-  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const { healthStatus, loading, checkBackendStatus } = useBackendHealthStore();
+  const [isRestarting, setIsRestarting] = useState<boolean>(false);
 
-  const checkBackendStatus = async () => {
-    try {
-      const url = await window.electronBackend.getBackendUrl();
-      setBackendUrl(url);
-      const healthData = await window.grpc.healthCheck({});
-
-      setHealthStatus({
-        ...healthData,
-        timestamp: Date.now(),
-      });
-
-      console.log("gRPC health status:", healthData);
-    } catch (error) {
-      console.error("Failed to check gRPC status:", error);
-      setBackendUrl(null);
-      setHealthStatus({
-        healthy: false,
-        version: "1.0.0",
-        status: { error: "gRPC connection failed" },
-        timestamp: Date.now(),
-        error: error instanceof Error ? error.message : "Connection failed",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Fetch backend URL when component mounts
+  React.useEffect(() => {
+    const getUrl = async () => {
+      try {
+        const url = await window.electronBackend.getBackendUrl();
+        setBackendUrl(url);
+      } catch (error) {
+        console.error("Failed to get backend URL:", error);
+        setBackendUrl(null);
+      }
+    };
+    getUrl();
+  }, []);
 
   const handleRestartBackend = async () => {
     try {
-      setLoading(true);
+      setIsRestarting(true);
       const result = await window.electronBackend.restartBackend();
       console.log("gRPC backend restarted:", result);
       // Wait a moment for the backend to start
@@ -71,7 +51,7 @@ function BackendStatusContent(){
     } catch (error) {
       console.error("Failed to restart gRPC backend:", error);
     } finally {
-      setLoading(false);
+      setIsRestarting(false);
     }
   };
 
@@ -89,18 +69,6 @@ function BackendStatusContent(){
       alert("Failed to connect to gRPC API");
     }
   };
-
-  useEffect(() => {
-    checkBackendStatus();
-    // Check status every 30 seconds
-    let interval: NodeJS.Timeout;
-    if (healthStatus?.healthy === true) {
-    interval = setInterval(checkBackendStatus, 30000);
-    } else {
-      interval = setInterval(checkBackendStatus, 1000);
-    }
-    return () => clearInterval(interval);
-  }, []);
 
   if (loading) {
     return (
@@ -159,7 +127,7 @@ function BackendStatusContent(){
             size="sm"
             onClick={checkBackendStatus}
             variant="outline"
-            disabled={loading}
+            disabled={loading || isRestarting}
           >
             Refrescar
           </Button>
@@ -168,9 +136,9 @@ function BackendStatusContent(){
             size="sm"
             onClick={handleRestartBackend}
             variant="outline"
-            disabled={loading}
+            disabled={loading || isRestarting}
           >
-            Reiniciar
+            {isRestarting ? "Reiniciando..." : "Reiniciar"}
           </Button>
 
           {isHealthy && (
@@ -178,7 +146,7 @@ function BackendStatusContent(){
               size="sm"
               onClick={testGrpcAPI}
               variant="outline"
-              disabled={loading}
+              disabled={loading || isRestarting}
             >
               Probar Conexión
             </Button>
@@ -192,40 +160,7 @@ function BackendStatusContent(){
 }
 
 function BackendStatus({ className = "" }: BackendStatusProps) {
-  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-
-  const checkBackendStatus = async () => {
-    try {
-
-      const healthData = await window.grpc.healthCheck({});
-
-      setHealthStatus({
-        ...healthData,
-        timestamp: Date.now(),
-      });
-
-      console.log("gRPC health status:", healthData);
-    } catch (error) {
-      console.error("Failed to check gRPC status:", error);
-      setHealthStatus({
-        healthy: false,
-        version: "1.0.0",
-        status: { error: "gRPC connection failed" },
-        timestamp: Date.now(),
-        error: error instanceof Error ? error.message : "Connection failed",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    checkBackendStatus();
-    // Check status every 30 seconds
-    const interval = setInterval(checkBackendStatus, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  const { healthStatus, loading } = useBackendHealthStore();
 
   if (loading) {
     return (

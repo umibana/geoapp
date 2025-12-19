@@ -57,18 +57,19 @@ class DataManipulationManager:
     
     # ========== Replace Operations ==========
 
-    def _build_where_condition(self, column: str, value: str) -> str:
+    def _build_where_condition(self, column: str, value: str, is_numeric_column: bool) -> str:
         """
         Build a WHERE condition for matching a value.
 
         Handles:
         - NULL values: "NULL", "null", "NaN", "nan", "" -> uses IS NULL
-        - Numeric values: uses numeric comparison (no quotes)
-        - String values: uses quoted comparison
+        - For numeric columns: numeric comparison without quotes
+        - For string columns: always quoted (even if value looks numeric)
 
         Args:
             column: Column name (will be quoted)
             value: Value to match
+            is_numeric_column: Whether the column is numeric type
 
         Returns:
             SQL WHERE condition (e.g., '"col" IS NULL' or '"col" = 1.5')
@@ -76,31 +77,36 @@ class DataManipulationManager:
         value_stripped = value.strip()
         value_upper = value_stripped.upper()
 
-        # Handle NULL/NaN cases
+        # Handle NULL/NaN cases - same for all column types
         if value_upper in ("NULL", "NAN", "") or value_stripped == "":
             return f'"{column}" IS NULL'
 
-        # Try to parse as numeric
-        try:
-            float(value_stripped)
-            # It's a number, use without quotes
-            return f'"{column}" = {value_stripped}'
-        except (ValueError, TypeError):
-            # It's a string, escape and quote
+        # For string columns, always quote the value (even if it looks like a number)
+        if not is_numeric_column:
             escaped = value.replace("'", "''")
             return f'"{column}" = \'{escaped}\''
 
-    def _build_set_value(self, value: str) -> str:
+        # For numeric columns, try to use numeric comparison
+        try:
+            float(value_stripped)
+            return f'"{column}" = {value_stripped}'
+        except (ValueError, TypeError):
+            # Not a valid number for a numeric column - quote it anyway
+            escaped = value.replace("'", "''")
+            return f'"{column}" = \'{escaped}\''
+
+    def _build_set_value(self, value: str, is_numeric_column: bool) -> str:
         """
         Build a SET value for UPDATE statement.
 
         Handles:
         - NULL values: "NULL", "null", "NaN", "nan", "" -> returns NULL
-        - Numeric values: returns without quotes (preserves decimals)
-        - String values: returns quoted with escaped single quotes
+        - For numeric columns: numeric value without quotes (preserves decimals)
+        - For string columns: always quoted
 
         Args:
             value: Value to set
+            is_numeric_column: Whether the column is numeric type
 
         Returns:
             SQL value (e.g., "NULL", "1.5", "'some text'")
@@ -110,19 +116,23 @@ class DataManipulationManager:
         value_stripped = value.strip()
         value_upper = value_stripped.upper()
 
-        # Handle NULL/NaN cases
+        # Handle NULL/NaN cases - same for all column types
         if value_upper in ("NULL", "NAN", "") or value_stripped == "":
             return "NULL"
 
-        # Try to parse as numeric
+        # For string columns, always quote (even if value looks like a number)
+        if not is_numeric_column:
+            escaped = value.replace("'", "''")
+            return f"'{escaped}'"
+
+        # For numeric columns, try to use numeric value
         try:
             numeric_value = float(value_stripped)
             if math.isnan(numeric_value) or math.isinf(numeric_value):
                 return "NULL"
-            # Return as-is to preserve decimals
             return value_stripped
         except (ValueError, TypeError):
-            # It's a string, escape and quote
+            # Not a valid number - quote it
             escaped = value.replace("'", "''")
             return f"'{escaped}'"
 
@@ -149,9 +159,12 @@ class DataManipulationManager:
                     columns = db_connection.get_table_columns(self.engine, table_name)
 
                 for col in columns:
+                    # Check if column is numeric to determine quoting strategy
+                    is_numeric = self._is_numeric_column(table_name, col)
+
                     for from_val, to_val in replacements:
-                        # Build WHERE condition (handles NULL and numeric values)
-                        where_condition = self._build_where_condition(col, from_val)
+                        # Build WHERE condition (respects column type)
+                        where_condition = self._build_where_condition(col, from_val, is_numeric)
 
                         # Count matching rows
                         count_result = conn.execute(text(
@@ -160,8 +173,8 @@ class DataManipulationManager:
                         matching = int(count_result[0]) if count_result else 0
 
                         if matching > 0:
-                            # Build SET value (handles NULL and numeric values)
-                            set_value = self._build_set_value(to_val)
+                            # Build SET value (respects column type)
+                            set_value = self._build_set_value(to_val, is_numeric)
 
                             conn.execute(text(
                                 f'UPDATE {table_name} SET "{col}" = {set_value} WHERE {where_condition}'
