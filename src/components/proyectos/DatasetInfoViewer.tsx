@@ -297,16 +297,34 @@ const DatasetInfoViewer: React.FC = () => {
   // ========== Pending Edits Queue Functions ==========
 
   /**
+   * Parse a value for display in the table.
+   * Handles NULL/NaN values and numeric parsing.
+   */
+  const parseValueForDisplay = (value: string): number | null => {
+    const trimmed = value.trim();
+    const upper = trimmed.toUpperCase();
+
+    // Handle NULL/NaN values
+    if (upper === 'NULL' || upper === 'NAN' || trimmed === '') {
+      return NaN; // NaN will be displayed as "—" in the table
+    }
+
+    // Try to parse as number
+    const parsed = parseFloat(trimmed);
+    return isNaN(parsed) ? NaN : parsed;
+  };
+
+  /**
    * Queue a cell edit (doesn't apply immediately)
    */
   const queueCellEdit = (rowIndex: number, columnId: string, oldValue: string, newValue: string) => {
     const actualRowIndex = pagination.pageIndex * pagination.pageSize + rowIndex;
-    
+
     // Check if there's already a pending edit for this cell
     const existingEditIndex = pendingEdits.findIndex(
       e => e.rowIndex === rowIndex && e.columnId === columnId
     );
-    
+
     const newEdit: PendingEdit = {
       id: `${rowIndex}-${columnId}-${Date.now()}`,
       rowIndex,
@@ -316,7 +334,7 @@ const DatasetInfoViewer: React.FC = () => {
       newValue,
       timestamp: Date.now()
     };
-    
+
     if (existingEditIndex >= 0) {
       // Update existing edit
       setPendingEdits(prev => {
@@ -333,12 +351,13 @@ const DatasetInfoViewer: React.FC = () => {
       // Add new edit
       setPendingEdits(prev => [...prev, newEdit]);
     }
-    
+
     // Update local preview data immediately for visual feedback
+    // Handle NULL/NaN values properly for display
     setPreviewData(prev => {
       const updated = [...prev];
       if (updated[rowIndex]) {
-        updated[rowIndex] = { ...updated[rowIndex], [columnId]: parseFloat(newValue) || 0 };
+        updated[rowIndex] = { ...updated[rowIndex], [columnId]: parseValueForDisplay(newValue) as number };
       }
       return updated;
     });
@@ -1451,7 +1470,7 @@ const DatasetInfoViewer: React.FC = () => {
                 )}
               </CardTitle>
               <CardDescription className="text-xs">
-                Doble clic para editar, clic derecho para más opciones
+                Doble clic para editar, clic derecho para más opciones. Escribe "NULL" o "NaN" para vaciar una celda.
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">

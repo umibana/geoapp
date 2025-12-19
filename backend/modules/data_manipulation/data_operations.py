@@ -107,21 +107,59 @@ class DataManipulationManager:
         response.rows_affected = total_cells_affected
         return response
     
+    def _parse_cell_value(self, value: str) -> str:
+        """
+        Parse a cell value and return the appropriate SQL representation.
+
+        Handles:
+        - NULL values: "NULL", "null", "NaN", "nan", "", etc.
+        - Numeric values: integers and decimals (e.g., "1", "1.2", "-3.14")
+        - String values: quoted with escaped single quotes
+
+        Returns:
+            SQL representation of the value (e.g., "NULL", "1.2", "'some text'")
+        """
+        import math
+
+        # Handle NULL/NaN cases
+        value_stripped = value.strip()
+        value_upper = value_stripped.upper()
+
+        if value_upper in ("NULL", "NAN", "") or value_stripped == "":
+            return "NULL"
+
+        # Try to parse as a numeric value (int or float)
+        try:
+            # First try float to handle both integers and decimals
+            numeric_value = float(value_stripped)
+
+            # Check for special float values that should be NULL
+            if math.isnan(numeric_value) or math.isinf(numeric_value):
+                return "NULL"
+
+            # Return the numeric value directly (no quotes)
+            # This preserves decimals correctly (e.g., 1.2 stays as 1.2)
+            return value_stripped
+        except (ValueError, TypeError):
+            # Not a number, treat as string
+            escaped_value = value.replace("'", "''")
+            return f"'{escaped_value}'"
+
     @grpc_response(projects_pb2.UpdateCellResponse)
     def update_cell(self, request: projects_pb2.UpdateCellRequest) -> projects_pb2.UpdateCellResponse:
         """Update a single cell by row index."""
         table_name = self._get_table_name(request.file_id)
-        
+
         if not self._ensure_table_exists(table_name):
             response = projects_pb2.UpdateCellResponse()
             response.success = False
             response.error_message = f"Table {table_name} does not exist"
             return response
-        
+
         row_index = request.row_index
         column_name = request.column_name
         new_value = request.new_value
-        
+
         with self.engine.connect() as conn:
             with conn.begin():
                 # Get the old value first (for undo functionality)
@@ -129,28 +167,19 @@ class DataManipulationManager:
                 old_value_result = conn.execute(text(
                     f'SELECT "{column_name}" FROM {table_name} LIMIT 1 OFFSET {row_index}'
                 )).fetchone()
-                
+
                 if not old_value_result:
                     response = projects_pb2.UpdateCellResponse()
                     response.success = False
                     response.error_message = f"Row at index {row_index} not found"
                     return response
-                
+
                 old_value = str(old_value_result[0]) if old_value_result[0] is not None else ""
-                
-                # DuckDB doesn't have a built-in rowid, so we need to use a subquery with ROW_NUMBER
-                # First, get all column names to create a unique identifier
-                columns = db_connection.get_table_columns(self.engine, table_name)
-                
-                # Create a CTE with row numbers and update the specific row
-                # Handle NULL replacements
-                if new_value.upper() == "NULL" or new_value == "":
-                    update_value = "NULL"
-                else:
-                    # Escape single quotes in the value
-                    escaped_value = new_value.replace("'", "''")
-                    update_value = f"'{escaped_value}'"
-                
+
+                # Parse the new value to get proper SQL representation
+                # This handles decimals correctly and supports NULL/NaN values
+                update_value = self._parse_cell_value(new_value)
+
                 # Use a subquery approach with ROW_NUMBER to identify the specific row
                 # This creates a temporary table with row numbers, then updates based on that
                 update_sql = f'''
@@ -164,19 +193,19 @@ class DataManipulationManager:
                         WHERE rn = {row_index}
                     )
                 '''
-                
+
                 result = conn.execute(text(update_sql))
                 rows_affected = result.rowcount
-                
+
                 if rows_affected == 0:
                     response = projects_pb2.UpdateCellResponse()
                     response.success = False
                     response.error_message = f"Failed to update row at index {row_index}"
                     return response
-        
+
         # Recalculate statistics after update
         self._recalculate_statistics(request.file_id)
-        
+
         response = projects_pb2.UpdateCellResponse()
         response.success = True
         response.old_value = old_value
