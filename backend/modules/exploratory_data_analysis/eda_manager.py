@@ -504,10 +504,11 @@ class EDAManager:
             )
 
             # Get all numeric columns data for statistics
+            # Use viz_columns for filtering since bounding_box is in viz_columns coordinate space
             if all_numeric_columns:
                 all_data, all_boundaries = self.get_dataset_data_and_stats_combined(
                     request.dataset_id, all_numeric_columns,
-                    bounding_box=bounding_box, filter_columns=filter_columns
+                    bounding_box=bounding_box, filter_columns=viz_columns
                 )
             else:
                 all_data = np.array([], dtype=np.float32)
