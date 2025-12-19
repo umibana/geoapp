@@ -1148,12 +1148,10 @@ const DatasetInfoViewer: React.FC = () => {
             />
           </div>
         ),
-        size: 40,
       },
       {
         accessorKey: 'rowNumber',
         header: '#',
-        size: 60,
         cell: info => <span className="font-medium">{info.getValue() as number}</span>,
       },
     ];
@@ -1582,19 +1580,25 @@ const DatasetInfoViewer: React.FC = () => {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-muted z-10">
                   {table.getHeaderGroups().map(headerGroup => (
-                    <tr key={headerGroup.id}>
+                    <tr key={headerGroup.id} style={{ display: 'flex' }}>
                       {headerGroup.headers.map((header) => {
                         const isEditing = editingColumnHeader === header.column.id;
                         const isSelectColumn = header.column.id === 'select';
                         const isRowNumberColumn = header.column.id === 'rowNumber';
-                        
+
+                        // Get explicit width for alignment with virtualized rows
+                        const width = isSelectColumn ? 50 : isRowNumberColumn ? 80 : 200;
+
                         return (
                           <th
                             key={header.id}
                             className="px-6 py-3 text-left text-sm font-medium text-muted-foreground border-b whitespace-nowrap cursor-pointer hover:bg-accent"
-                            style={{ 
-                              width: isSelectColumn ? '40px' : isRowNumberColumn ? '100px' : 'auto',
-                              minWidth: isSelectColumn ? '40px' : isRowNumberColumn ? '100px' : '180px'
+                            style={{
+                              display: 'flex',
+                              width: `${width}px`,
+                              minWidth: `${width}px`,
+                              maxWidth: `${width}px`,
+                              alignItems: 'center'
                             }}
                             onDoubleClick={() => {
                               if (!isSelectColumn && !isRowNumberColumn) {
@@ -1643,6 +1647,7 @@ const DatasetInfoViewer: React.FC = () => {
                         key={`skeleton-${index}`}
                         className="border-b"
                         style={{
+                          display: 'flex',
                           position: 'absolute',
                           top: 0,
                           left: 0,
@@ -1651,17 +1656,27 @@ const DatasetInfoViewer: React.FC = () => {
                           transform: `translateY(${index * 48}px)`,
                         }}
                       >
-                        <td className="px-6 py-3" style={{ width: '40px', minWidth: '40px' }}>
-                          <Skeleton className="h-4 w-4" />
-                        </td>
-                        <td className="px-6 py-3" style={{ width: '100px', minWidth: '100px' }}>
-                          <Skeleton className="h-4 w-14" />
-                        </td>
-                        {previewColumns.map((col, colIdx) => (
-                          <td key={`skeleton-col-${colIdx}`} className="px-6 py-3" style={{ minWidth: '180px' }}>
-                            <Skeleton className="h-4 w-32" />
-                          </td>
-                        ))}
+                        {table.getAllColumns().map((column) => {
+                          const isSelectColumn = column.id === 'select';
+                          const isRowNumberColumn = column.id === 'rowNumber';
+                          const width = isSelectColumn ? 50 : isRowNumberColumn ? 80 : 200;
+
+                          return (
+                            <td
+                              key={column.id}
+                              className="px-6 py-3"
+                              style={{
+                                display: 'flex',
+                                width: `${width}px`,
+                                minWidth: `${width}px`,
+                                maxWidth: `${width}px`,
+                                alignItems: 'center'
+                              }}
+                            >
+                              <Skeleton className="h-4 w-3/4" />
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))
                   ) : (
@@ -1673,6 +1688,7 @@ const DatasetInfoViewer: React.FC = () => {
                           key={row.id}
                           className="border-b hover:bg-muted/50"
                           style={{
+                            display: 'flex',
                             position: 'absolute',
                             top: 0,
                             left: 0,
@@ -1685,22 +1701,28 @@ const DatasetInfoViewer: React.FC = () => {
                             const columnId = cell.column.id;
                             const rowIndex = virtualRow.index;
                             const cellValue = cell.getValue();
-                            const isEditing = editingCell && 
-                                            editingCell.rowIndex === rowIndex && 
+                            const isEditing = editingCell &&
+                                            editingCell.rowIndex === rowIndex &&
                                             editingCell.columnId === columnId;
                             const isSelectColumn = columnId === 'select';
                             const isRowNumberColumn = columnId === 'rowNumber';
                             const isPending = hasPendingEdit(rowIndex, columnId);
-                            
+
+                            // Match header widths exactly
+                            const width = isSelectColumn ? 50 : isRowNumberColumn ? 80 : 200;
+
                             return (
-                              <td 
-                                key={cell.id} 
+                              <td
+                                key={cell.id}
                                 className={`px-6 py-3 cursor-pointer hover:bg-accent/50 ${
                                   isPending ? 'bg-yellow-100 dark:bg-yellow-900/30 border-l-2 border-yellow-500' : ''
                                 }`}
-                                style={{ 
-                                  width: isSelectColumn ? '40px' : isRowNumberColumn ? '100px' : 'auto',
-                                  minWidth: isSelectColumn ? '40px' : isRowNumberColumn ? '100px' : '180px'
+                                style={{
+                                  display: 'flex',
+                                  width: `${width}px`,
+                                  minWidth: `${width}px`,
+                                  maxWidth: `${width}px`,
+                                  alignItems: 'center'
                                 }}
                                 onDoubleClick={() => {
                                   if (!isSelectColumn && !isRowNumberColumn) {
