@@ -86,13 +86,96 @@ export default function EDA2D() {
       .map(m => m.column_name);
   }, [selectedDataset]);
 
-  // Handle column change
-  const handleColumnChange = (axis: 'xAxis' | 'yAxis' | 'value', columnName: string) => {
-    if (!globalColumns) return;
-    setGlobalColumns({
+  // Handle column change - refetch dataset with new columns and recreate brush selection
+  const handleColumnChange = async (axis: 'xAxis' | 'yAxis' | 'value', columnName: string) => {
+    if (!globalColumns || !selectedDataset) return;
+
+    const newColumns = {
       ...globalColumns,
       [axis]: columnName
-    });
+    };
+
+    // Update global columns first
+    setGlobalColumns(newColumns);
+
+    // Refetch full dataset with new columns and recreate initial brush selection
+    try {
+
+      const response = await window.grpc.getDatasetData({
+        dataset_id: selectedDataset.id,
+        columns: [newColumns.xAxis, newColumns.yAxis, newColumns.value]
+      });
+
+      // Update the dataset data in store
+      setSelectedDataset(selectedDataset, response, newColumns);
+
+      // Check if there's an existing brush filter to preserve
+      const { getBrushSelection } = useBrushStore.getState();
+      const existingBrush = getBrushSelection(selectedDataset.id);
+
+      // Determine if we should preserve the existing brush filter
+      const shouldPreserveBrush = existingBrush &&
+        existingBrush.selectedIndices.length < selectedDataset.total_rows;
+
+      if (shouldPreserveBrush) {
+        // Don't overwrite - user has an active filter they want to keep
+      } else {
+        // No filter exists OR it's showing full dataset - safe to update
+        // Recreate initial "full dataset" brush selection with statistics
+        if (response.binary_data && response.data_length > 0) {
+          const fullData = new Float32Array(
+            response.binary_data.buffer,
+            response.binary_data.byteOffset,
+            response.data_length
+          );
+
+          const xBoundary = response.data_boundaries?.find(b => b.column_name === newColumns.xAxis);
+          const yBoundary = response.data_boundaries?.find(b => b.column_name === newColumns.yAxis);
+
+          // Convert data_boundaries array to Record
+          const boundariesMap: Record<string, any> = {};
+          if (response.data_boundaries) {
+            response.data_boundaries.forEach(boundary => {
+              boundariesMap[boundary.column_name] = boundary;
+            });
+          }
+
+          const initialBrushSelection = {
+            datasetId: selectedDataset.id,
+            coordRange: {
+              x1: xBoundary?.min_value ?? 0,
+              x2: xBoundary?.max_value ?? 100,
+              y1: yBoundary?.min_value ?? 0,
+              y2: yBoundary?.max_value ?? 100
+            },
+            selectedIndices: Array.from({ length: response.total_count }, (_, i) => i),
+            selectedPoints: fullData,
+            columns: newColumns,
+            timestamp: Date.now(),
+            statistics: {
+              histograms: response.histograms || {},
+              boxPlots: response.box_plots || [],
+              heatmap: response.heatmap,
+              totalCount: response.total_count,
+              boundaries: boundariesMap
+            },
+            datasetInfo: {
+              id: selectedDataset.id,
+              name: selectedDataset.file_name,
+              totalRows: selectedDataset.total_rows,
+              fileId: selectedDataset.file_id
+            }
+          };
+
+          // Replace the brush selection with the full dataset
+          const { setBrushSelection } = useBrushStore.getState();
+          setBrushSelection(selectedDataset.id, initialBrushSelection);
+
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error refetching dataset with new columns:', error);
+    }
   };
 
   return (
@@ -178,7 +261,6 @@ export default function EDA2D() {
                     const { setBrushSelection } = useBrushStore.getState();
                     setBrushSelection(selectedDataset.id, initialBrushSelection);
                     
-                    console.log('✅ Reset to full dataset with statistics');
                   }
                 } catch (error) {
                   console.error('Error refetching full dataset:', error);

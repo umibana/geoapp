@@ -96,6 +96,7 @@ export const useBrushStore = create<BrushStore>((set, get) => ({
 
   // Set or update brush selection for a dataset
   setBrushSelection: (datasetId: string, selection: BrushSelection) => {
+
     set((state) => {
       const newSelections = new Map(state.selections);
       newSelections.set(datasetId, selection);

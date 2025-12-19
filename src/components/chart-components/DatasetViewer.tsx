@@ -247,7 +247,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       const newTimestamp = selection?.timestamp;
       
       if (currentTimestamp !== newTimestamp) {
-        console.log('🔍 Brush selection changed in store, updating ref');
         updateBrushInfoRef();
         setBrushAppliedTimestamp(Date.now());
         
@@ -382,7 +381,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
     // Don't re-apply a brush that we just applied ourselves
     if (selection.timestamp === lastAppliedBrushTimestamp.current) {
-      console.log('🔍 Skipping re-application of brush we just applied');
       return;
     }
 
@@ -408,7 +406,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         Math.abs(selection.coordRange.y2 - yBoundary.max_value) < 0.0001;
       
       if (isFullDatasetBrush) {
-        console.log('🔍 Skipping visual application of full dataset brush');
         return; // Don't apply full dataset brush visually
       }
     }
@@ -418,7 +415,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     // Small delay to ensure chart is fully rendered
     const timer = setTimeout(() => {
       try {
-        console.log('🔍 Applying brush selection from another source visually');
 
         // Set flag to prevent triggering brushSelected event
         isApplyingBrushProgrammatically.current = true;
@@ -503,7 +499,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
 
   const loadDataset = async () => {
     if (!datasetInfo) return;
-    
+
     try {
       // Use different loading state for refetches vs initial load
       if (dataset) {
@@ -522,7 +518,79 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       setTimetook((performance.now() - startTime));
 
       if (response.binary_data && response.data_length > 0) {
+
         setDataset(response);
+
+        // IMPORTANT: If we're in mosaic mode (no DatasetInfo prop), update the brush selection
+        // with the new statistics when columns change
+        if (!DatasetInfo && response.binary_data && response.data_length > 0) {
+          // Check if there's an existing brush selection
+          const { getBrushSelection } = useBrushStore.getState();
+          const existingBrush = getBrushSelection(datasetInfo.id);
+
+          // Determine if we should preserve the existing brush filter
+          const shouldPreserveBrush = existingBrush &&
+            existingBrush.selectedIndices.length < datasetInfo.total_rows;
+
+          if (shouldPreserveBrush) {
+            // Don't overwrite - user has an active filter they want to keep
+          } else {
+            // No filter exists OR it's showing full dataset - safe to update
+            const fullData = new Float32Array(
+              response.binary_data.buffer,
+              response.binary_data.byteOffset,
+              response.data_length
+            );
+
+            const xBoundary = response.data_boundaries?.find(b => b.column_name === selectedXAxis);
+            const yBoundary = response.data_boundaries?.find(b => b.column_name === selectedYAxis);
+
+            // Convert data_boundaries array to Record
+            const boundariesMap: Record<string, DataBoundaries> = {};
+            if (response.data_boundaries) {
+              response.data_boundaries.forEach(boundary => {
+                boundariesMap[boundary.column_name] = boundary;
+              });
+            }
+
+            // Create/update brush selection with new columns and statistics
+            const newBrushSelection = {
+              datasetId: datasetInfo.id,
+              coordRange: {
+                x1: xBoundary?.min_value ?? 0,
+                x2: xBoundary?.max_value ?? 100,
+                y1: yBoundary?.min_value ?? 0,
+                y2: yBoundary?.max_value ?? 100
+              },
+              selectedIndices: Array.from({ length: response.total_count }, (_, i) => i),
+              selectedPoints: fullData,
+              columns: {
+                xAxis: selectedXAxis,
+                yAxis: selectedYAxis,
+                value: selectedValueColumn
+              },
+              timestamp: Date.now(),
+              statistics: {
+                histograms: response.histograms || {},
+                boxPlots: response.box_plots || [],
+                heatmap: response.heatmap,
+                totalCount: response.total_count,
+                boundaries: boundariesMap
+              },
+              datasetInfo: {
+                id: datasetInfo.id,
+                name: datasetInfo.file_name,
+                totalRows: datasetInfo.total_rows,
+                fileId: datasetInfo.file_id
+              }
+            };
+
+            // Update Zustand store with new brush selection
+            const { setBrushSelection } = useBrushStore.getState();
+            setBrushSelection(datasetInfo.id, newBrushSelection);
+
+          }
+        }
       } else {
         console.error('❌ Error loading dataset: No data returned');
         setError('Error al cargar el dataset');
@@ -602,6 +670,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         bounding_box: [rect.x1, rect.x2, rect.y1, rect.y2]
       }) as GetDatasetDataResponse;
 
+
       if (response.binary_data && response.data_length > 0) {
 
         // Consigo la data filtrada como Float32Array
@@ -668,7 +737,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         // Clear the drawn rectangle since it's now applied
         currentBrushRectRef.current = null;
 
-        console.log('✅ Brush selection saved to store');
         setBrushAppliedTimestamp(Date.now()); // Trigger re-render of chartData
       }
     } catch (err) {
@@ -709,7 +777,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       link.click();
       document.body.removeChild(link);
       
-      console.log('✅ Chart saved as image:', fileName);
     } catch (error) {
       console.error('❌ Error saving chart as image:', error);
       setError('Error al guardar la imagen');
@@ -957,18 +1024,15 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           'brushSelected': (params: {batch?: {areas?: {coordRange?: number[][]}[], selected?: {dataIndex: number[]}[]}[]}) => {
             // Ignore brush events triggered by programmatic actions
             if (isApplyingBrushProgrammatically.current) {
-              console.log('🔍 Ignoring brush event - programmatic application in progress');
               return;
             }
 
             // Debounce brush updates to prevent rapid-fire events
             const now = Date.now();
             if (now - lastBrushUpdateTime.current < BRUSH_UPDATE_DEBOUNCE) {
-              console.log('🔍 Ignoring brush event - debounced');
               return;
             }
 
-            console.log('🔍 Processing brush event', params);
 
             if (params.batch && params.batch.length > 0) {
               const batch = params.batch[0];
@@ -989,7 +1053,6 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
                     y2: yRange[1]
                   };
 
-                  console.log('✅ Brush rectangle captured:', rectangle);
 
                   // Store rectangle - user will click "Apply Selection" button
                   currentBrushRectRef.current = rectangle;

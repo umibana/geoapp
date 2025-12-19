@@ -112,7 +112,6 @@ class EDAManager:
             return flat_numpy, boundaries
 
         except Exception as e:
-            print(f"[ERROR] Error in get_dataset_data_and_stats_combined: {e}")
             return np.array([], dtype=np.float32), {}
     
     def _apply_bbox_filter(
@@ -513,7 +512,7 @@ class EDAManager:
             # Get all numeric columns for statistics
             column_mappings = json.loads(dataset.column_mappings) if dataset.column_mappings else []
             all_numeric_columns = [
-                m['column_name'] for m in column_mappings 
+                m['column_name'] for m in column_mappings
                 if is_numeric_column_type(m.get('column_type'))
             ]
 
@@ -523,13 +522,21 @@ class EDAManager:
                 if m.get('is_coordinate') and m.get('mapped_field') in ['x', 'y', 'z']:
                     coord_columns[m['mapped_field']] = m['column_name']
 
-            filter_columns = [
-                coord_columns.get('x', viz_columns[0] if viz_columns else 'x'),
-                coord_columns.get('y', viz_columns[1] if len(viz_columns) > 1 else 'y'),
-                coord_columns.get('z', viz_columns[2] if len(viz_columns) > 2 else 'z')
-            ]
-
             bounding_box = list(request.bounding_box) if request.bounding_box else None
+
+            # CRITICAL: When a bounding box is provided (from brush selection),
+            # use the viz_columns for filtering because the bounding box coordinates
+            # are in viz_columns space (e.g., Ca_pct/Y), NOT coordinate columns space (X/Y)
+            if bounding_box:
+                # Bounding box exists - filter using viz_columns (the ones user is viewing)
+                filter_columns = viz_columns[:2]  # Use first 2 viz columns (x and y axes of the chart)
+            else:
+                # No bounding box - use actual coordinate columns for any other filtering
+                filter_columns = [
+                    coord_columns.get('x', 'X'),
+                    coord_columns.get('y', 'Y'),
+                    coord_columns.get('z', 'Z')
+                ]
 
             # Get visualization data
             data, boundaries = self.get_dataset_data_and_stats_combined(
@@ -562,12 +569,13 @@ class EDAManager:
             # Compute statistics if we have data
             if len(all_data) > 0 and len(all_numeric_columns) > 0:
                 self._compute_all_statistics(response, all_data, all_numeric_columns, viz_columns)
+            else:
+                print(f"⚠️ [Backend] No data or no numeric columns - skipping statistics")
 
             return response
 
         except Exception as e:
             import traceback
-            print(f"[ERROR] Error in get_dataset_data: {e}")
             traceback.print_exc()
             return projects_pb2.GetDatasetDataResponse()
     
@@ -614,15 +622,19 @@ class EDAManager:
 
         # Heatmap
         if len(viz_columns) >= 3:
+
             x_idx = all_numeric_columns.index(viz_columns[0]) if viz_columns[0] in all_numeric_columns else 0
             y_idx = all_numeric_columns.index(viz_columns[1]) if viz_columns[1] in all_numeric_columns else 1
             z_idx = all_numeric_columns.index(viz_columns[2]) if viz_columns[2] in all_numeric_columns else 2
+
 
             x_data = all_data[x_idx::num_cols]
             y_data = all_data[y_idx::num_cols]
             z_data = all_data[z_idx::num_cols]
 
+
             heatmap = self.compute_heatmap(x_data, y_data, z_data, viz_columns[0], viz_columns[1], viz_columns[2])
+
 
             if heatmap and heatmap.get('cells'):
                 hm = response.heatmap
