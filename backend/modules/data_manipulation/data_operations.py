@@ -56,72 +56,223 @@ class DataManipulationManager:
             return f'"{column}" {operation} \'{value}\''
     
     # ========== Replace Operations ==========
-    
+
+    def _build_where_condition(self, column: str, value: str) -> str:
+        """
+        Build a WHERE condition for matching a value.
+
+        Handles:
+        - NULL values: "NULL", "null", "NaN", "nan", "" -> uses IS NULL
+        - Numeric values: uses numeric comparison (no quotes)
+        - String values: uses quoted comparison
+
+        Args:
+            column: Column name (will be quoted)
+            value: Value to match
+
+        Returns:
+            SQL WHERE condition (e.g., '"col" IS NULL' or '"col" = 1.5')
+        """
+        value_stripped = value.strip()
+        value_upper = value_stripped.upper()
+
+        # Handle NULL/NaN cases
+        if value_upper in ("NULL", "NAN", "") or value_stripped == "":
+            return f'"{column}" IS NULL'
+
+        # Try to parse as numeric
+        try:
+            float(value_stripped)
+            # It's a number, use without quotes
+            return f'"{column}" = {value_stripped}'
+        except (ValueError, TypeError):
+            # It's a string, escape and quote
+            escaped = value.replace("'", "''")
+            return f'"{column}" = \'{escaped}\''
+
+    def _build_set_value(self, value: str) -> str:
+        """
+        Build a SET value for UPDATE statement.
+
+        Handles:
+        - NULL values: "NULL", "null", "NaN", "nan", "" -> returns NULL
+        - Numeric values: returns without quotes (preserves decimals)
+        - String values: returns quoted with escaped single quotes
+
+        Args:
+            value: Value to set
+
+        Returns:
+            SQL value (e.g., "NULL", "1.5", "'some text'")
+        """
+        import math
+
+        value_stripped = value.strip()
+        value_upper = value_stripped.upper()
+
+        # Handle NULL/NaN cases
+        if value_upper in ("NULL", "NAN", "") or value_stripped == "":
+            return "NULL"
+
+        # Try to parse as numeric
+        try:
+            numeric_value = float(value_stripped)
+            if math.isnan(numeric_value) or math.isinf(numeric_value):
+                return "NULL"
+            # Return as-is to preserve decimals
+            return value_stripped
+        except (ValueError, TypeError):
+            # It's a string, escape and quote
+            escaped = value.replace("'", "''")
+            return f"'{escaped}'"
+
     @grpc_response(projects_pb2.ReplaceFileDataResponse)
     def replace_file_data(self, request: projects_pb2.ReplaceFileDataRequest) -> projects_pb2.ReplaceFileDataResponse:
         """Replace values in file."""
         replacements = [(r.from_value, r.to_value) for r in request.replacements]
         columns = list(request.columns) if request.columns and len(request.columns) > 0 else None
-        
+
         table_name = self._get_table_name(request.file_id)
-        
+
         if not self._ensure_table_exists(table_name):
             response = projects_pb2.ReplaceFileDataResponse()
             response.success = False
             response.error_message = f"Table {table_name} does not exist"
             return response
-        
+
         total_cells_affected = 0
-        
+
         with self.engine.connect() as conn:
             with conn.begin():
                 # Get all columns if none specified
                 if not columns:
                     columns = db_connection.get_table_columns(self.engine, table_name)
-                
+
                 for col in columns:
                     for from_val, to_val in replacements:
+                        # Build WHERE condition (handles NULL and numeric values)
+                        where_condition = self._build_where_condition(col, from_val)
+
                         # Count matching rows
                         count_result = conn.execute(text(
-                            f'SELECT COUNT(*) FROM {table_name} WHERE "{col}" = \'{from_val}\''
+                            f'SELECT COUNT(*) FROM {table_name} WHERE {where_condition}'
                         )).fetchone()
                         matching = int(count_result[0]) if count_result else 0
-                        
+
                         if matching > 0:
-                            # Handle NULL replacements
-                            if to_val.upper() == "NULL" or to_val == "":
-                                conn.execute(text(
-                                    f'UPDATE {table_name} SET "{col}" = NULL WHERE "{col}" = \'{from_val}\''
-                                ))
-                            else:
-                                conn.execute(text(
-                                    f'UPDATE {table_name} SET "{col}" = \'{to_val}\' WHERE "{col}" = \'{from_val}\''
-                                ))
+                            # Build SET value (handles NULL and numeric values)
+                            set_value = self._build_set_value(to_val)
+
+                            conn.execute(text(
+                                f'UPDATE {table_name} SET "{col}" = {set_value} WHERE {where_condition}'
+                            ))
                             total_cells_affected += matching
-        
+
         if total_cells_affected > 0:
             self._recalculate_statistics(request.file_id)
-        
+
         response = projects_pb2.ReplaceFileDataResponse()
         response.success = True
         response.rows_affected = total_cells_affected
         return response
     
+    def _is_numeric_column(self, table_name: str, column_name: str) -> bool:
+        """
+        Check if a column is numeric based on its DuckDB type.
+
+        Args:
+            table_name: Name of the table
+            column_name: Name of the column
+
+        Returns:
+            True if the column is numeric, False otherwise
+        """
+        schema = db_connection.get_table_schema(self.engine, table_name)
+        for col_name, col_type in schema:
+            if col_name == column_name:
+                col_type_upper = col_type.upper()
+                # DuckDB numeric types
+                numeric_types = (
+                    'INTEGER', 'INT', 'BIGINT', 'SMALLINT', 'TINYINT',
+                    'DOUBLE', 'FLOAT', 'REAL', 'DECIMAL', 'NUMERIC',
+                    'HUGEINT', 'UBIGINT', 'UINTEGER', 'USMALLINT', 'UTINYINT'
+                )
+                return any(nt in col_type_upper for nt in numeric_types)
+        return False
+
+    def _parse_cell_value(self, value: str, is_numeric_column: bool = False) -> tuple[str, Optional[str]]:
+        """
+        Parse a cell value and return the appropriate SQL representation.
+
+        Handles:
+        - NULL values: "NULL", "null", "NaN", "nan", "", etc.
+        - Numeric values: integers and decimals (e.g., "1", "1.2", "-3.14")
+        - String values: quoted with escaped single quotes
+
+        Args:
+            value: The string value to parse
+            is_numeric_column: Whether the target column is numeric
+
+        Returns:
+            Tuple of (SQL representation, error message or None)
+        """
+        import math
+
+        # Handle NULL/NaN cases
+        value_stripped = value.strip()
+        value_upper = value_stripped.upper()
+
+        if value_upper in ("NULL", "NAN", "") or value_stripped == "":
+            return "NULL", None
+
+        # Try to parse as a numeric value (int or float)
+        try:
+            # First try float to handle both integers and decimals
+            numeric_value = float(value_stripped)
+
+            # Check for special float values that should be NULL
+            if math.isnan(numeric_value) or math.isinf(numeric_value):
+                return "NULL", None
+
+            # Return the numeric value directly (no quotes)
+            # This preserves decimals correctly (e.g., 1.2 stays as 1.2)
+            return value_stripped, None
+        except (ValueError, TypeError):
+            # Not a number
+            if is_numeric_column:
+                # Numeric column cannot accept non-numeric string values
+                return "", f"Column is numeric. Value '{value}' is not a valid number."
+
+            # For non-numeric columns, treat as string
+            escaped_value = value.replace("'", "''")
+            return f"'{escaped_value}'", None
+
     @grpc_response(projects_pb2.UpdateCellResponse)
     def update_cell(self, request: projects_pb2.UpdateCellRequest) -> projects_pb2.UpdateCellResponse:
         """Update a single cell by row index."""
         table_name = self._get_table_name(request.file_id)
-        
+
         if not self._ensure_table_exists(table_name):
             response = projects_pb2.UpdateCellResponse()
             response.success = False
             response.error_message = f"Table {table_name} does not exist"
             return response
-        
+
         row_index = request.row_index
         column_name = request.column_name
         new_value = request.new_value
-        
+
+        # Check if the column is numeric for validation
+        is_numeric = self._is_numeric_column(table_name, column_name)
+
+        # Parse the new value and validate based on column type
+        update_value, error = self._parse_cell_value(new_value, is_numeric)
+        if error:
+            response = projects_pb2.UpdateCellResponse()
+            response.success = False
+            response.error_message = error
+            return response
+
         with self.engine.connect() as conn:
             with conn.begin():
                 # Get the old value first (for undo functionality)
@@ -129,28 +280,15 @@ class DataManipulationManager:
                 old_value_result = conn.execute(text(
                     f'SELECT "{column_name}" FROM {table_name} LIMIT 1 OFFSET {row_index}'
                 )).fetchone()
-                
+
                 if not old_value_result:
                     response = projects_pb2.UpdateCellResponse()
                     response.success = False
                     response.error_message = f"Row at index {row_index} not found"
                     return response
-                
+
                 old_value = str(old_value_result[0]) if old_value_result[0] is not None else ""
-                
-                # DuckDB doesn't have a built-in rowid, so we need to use a subquery with ROW_NUMBER
-                # First, get all column names to create a unique identifier
-                columns = db_connection.get_table_columns(self.engine, table_name)
-                
-                # Create a CTE with row numbers and update the specific row
-                # Handle NULL replacements
-                if new_value.upper() == "NULL" or new_value == "":
-                    update_value = "NULL"
-                else:
-                    # Escape single quotes in the value
-                    escaped_value = new_value.replace("'", "''")
-                    update_value = f"'{escaped_value}'"
-                
+
                 # Use a subquery approach with ROW_NUMBER to identify the specific row
                 # This creates a temporary table with row numbers, then updates based on that
                 update_sql = f'''
@@ -164,19 +302,19 @@ class DataManipulationManager:
                         WHERE rn = {row_index}
                     )
                 '''
-                
+
                 result = conn.execute(text(update_sql))
                 rows_affected = result.rowcount
-                
+
                 if rows_affected == 0:
                     response = projects_pb2.UpdateCellResponse()
                     response.success = False
                     response.error_message = f"Failed to update row at index {row_index}"
                     return response
-        
+
         # Recalculate statistics after update
         self._recalculate_statistics(request.file_id)
-        
+
         response = projects_pb2.UpdateCellResponse()
         response.success = True
         response.old_value = old_value
