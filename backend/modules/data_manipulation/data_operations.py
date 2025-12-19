@@ -56,52 +56,121 @@ class DataManipulationManager:
             return f'"{column}" {operation} \'{value}\''
     
     # ========== Replace Operations ==========
-    
+
+    def _build_where_condition(self, column: str, value: str) -> str:
+        """
+        Build a WHERE condition for matching a value.
+
+        Handles:
+        - NULL values: "NULL", "null", "NaN", "nan", "" -> uses IS NULL
+        - Numeric values: uses numeric comparison (no quotes)
+        - String values: uses quoted comparison
+
+        Args:
+            column: Column name (will be quoted)
+            value: Value to match
+
+        Returns:
+            SQL WHERE condition (e.g., '"col" IS NULL' or '"col" = 1.5')
+        """
+        value_stripped = value.strip()
+        value_upper = value_stripped.upper()
+
+        # Handle NULL/NaN cases
+        if value_upper in ("NULL", "NAN", "") or value_stripped == "":
+            return f'"{column}" IS NULL'
+
+        # Try to parse as numeric
+        try:
+            float(value_stripped)
+            # It's a number, use without quotes
+            return f'"{column}" = {value_stripped}'
+        except (ValueError, TypeError):
+            # It's a string, escape and quote
+            escaped = value.replace("'", "''")
+            return f'"{column}" = \'{escaped}\''
+
+    def _build_set_value(self, value: str) -> str:
+        """
+        Build a SET value for UPDATE statement.
+
+        Handles:
+        - NULL values: "NULL", "null", "NaN", "nan", "" -> returns NULL
+        - Numeric values: returns without quotes (preserves decimals)
+        - String values: returns quoted with escaped single quotes
+
+        Args:
+            value: Value to set
+
+        Returns:
+            SQL value (e.g., "NULL", "1.5", "'some text'")
+        """
+        import math
+
+        value_stripped = value.strip()
+        value_upper = value_stripped.upper()
+
+        # Handle NULL/NaN cases
+        if value_upper in ("NULL", "NAN", "") or value_stripped == "":
+            return "NULL"
+
+        # Try to parse as numeric
+        try:
+            numeric_value = float(value_stripped)
+            if math.isnan(numeric_value) or math.isinf(numeric_value):
+                return "NULL"
+            # Return as-is to preserve decimals
+            return value_stripped
+        except (ValueError, TypeError):
+            # It's a string, escape and quote
+            escaped = value.replace("'", "''")
+            return f"'{escaped}'"
+
     @grpc_response(projects_pb2.ReplaceFileDataResponse)
     def replace_file_data(self, request: projects_pb2.ReplaceFileDataRequest) -> projects_pb2.ReplaceFileDataResponse:
         """Replace values in file."""
         replacements = [(r.from_value, r.to_value) for r in request.replacements]
         columns = list(request.columns) if request.columns and len(request.columns) > 0 else None
-        
+
         table_name = self._get_table_name(request.file_id)
-        
+
         if not self._ensure_table_exists(table_name):
             response = projects_pb2.ReplaceFileDataResponse()
             response.success = False
             response.error_message = f"Table {table_name} does not exist"
             return response
-        
+
         total_cells_affected = 0
-        
+
         with self.engine.connect() as conn:
             with conn.begin():
                 # Get all columns if none specified
                 if not columns:
                     columns = db_connection.get_table_columns(self.engine, table_name)
-                
+
                 for col in columns:
                     for from_val, to_val in replacements:
+                        # Build WHERE condition (handles NULL and numeric values)
+                        where_condition = self._build_where_condition(col, from_val)
+
                         # Count matching rows
                         count_result = conn.execute(text(
-                            f'SELECT COUNT(*) FROM {table_name} WHERE "{col}" = \'{from_val}\''
+                            f'SELECT COUNT(*) FROM {table_name} WHERE {where_condition}'
                         )).fetchone()
                         matching = int(count_result[0]) if count_result else 0
-                        
+
                         if matching > 0:
-                            # Handle NULL replacements
-                            if to_val.upper() == "NULL" or to_val == "":
-                                conn.execute(text(
-                                    f'UPDATE {table_name} SET "{col}" = NULL WHERE "{col}" = \'{from_val}\''
-                                ))
-                            else:
-                                conn.execute(text(
-                                    f'UPDATE {table_name} SET "{col}" = \'{to_val}\' WHERE "{col}" = \'{from_val}\''
-                                ))
+                            # Build SET value (handles NULL and numeric values)
+                            set_value = self._build_set_value(to_val)
+
+                            conn.execute(text(
+                                f'UPDATE {table_name} SET "{col}" = {set_value} WHERE {where_condition}'
+                            ))
                             total_cells_affected += matching
-        
+
         if total_cells_affected > 0:
             self._recalculate_statistics(request.file_id)
-        
+
         response = projects_pb2.ReplaceFileDataResponse()
         response.success = True
         response.rows_affected = total_cells_affected
