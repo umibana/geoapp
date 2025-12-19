@@ -507,7 +507,7 @@ class EDAManager:
             if all_numeric_columns:
                 all_data, all_boundaries = self.get_dataset_data_and_stats_combined(
                     request.dataset_id, all_numeric_columns,
-                    bounding_box=bounding_box, filter_columns=filter_columns
+                    bounding_box=bounding_box, filter_columns=viz_columns
                 )
             else:
                 all_data = np.array([], dtype=np.float32)
