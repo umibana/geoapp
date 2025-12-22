@@ -136,7 +136,7 @@ const DatasetInfoViewer: React.FC = () => {
   const [filterMode, setFilterMode] = useState<'add_column' | 'delete_rows' | 'new_file'>('add_column');
   const [newFilterColumnName, setNewFilterColumnName] = useState('');
   const [newFilterFileName, setNewFilterFileName] = useState('');
-  const [columnsToDuplicate, setColumnsToDuplicate] = useState<{sourceColumn: string, newName: string}[]>([]);
+  const [columnsToDuplicate, setColumnsToDuplicate] = useState<{sourceColumn: string, newName: string}[]>([{sourceColumn: '', newName: ''}]);
   const [columnsToDelete, setColumnsToDelete] = useState<string[]>([]);
   
   // Column header editing state
@@ -1091,7 +1091,7 @@ const DatasetInfoViewer: React.FC = () => {
       columns: columnsToDuplicate
     });
 
-    setColumnsToDuplicate([]);
+    setColumnsToDuplicate([{sourceColumn: '', newName: ''}]);
     setAdvancedDialogOpen(false);
   };
 
