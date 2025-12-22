@@ -251,12 +251,13 @@ class DuckDBImporter:
             with self.engine.connect() as conn:
                 with conn.begin():
                     conn.execute(text(f"""
-                        CREATE OR REPLACE TABLE {table_name} AS 
+                        CREATE OR REPLACE TABLE {table_name} AS
                         SELECT * FROM read_csv_auto(
                             '{temp_csv_path}',
                             nullstr = '',
                             sample_size = -1,
-                            ignore_errors = false
+                            ignore_errors = false,
+                            auto_type_candidates = ['NULL', 'BOOLEAN', 'TIME', 'DATE', 'TIMESTAMP', 'TIMESTAMPTZ', 'DOUBLE', 'VARCHAR']
                         )
                     """))
             return True
