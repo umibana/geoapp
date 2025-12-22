@@ -441,30 +441,32 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
               <CardDescription>Primeras 20 filas de tus datos</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {headers.map((header) => (
-                        <TableHead key={header} className="min-w-[100px]">
-                          {header}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {previewRows.map((row, rowIndex) => (
-                      <TableRow key={rowIndex}>
-                        {row.map((cell, cellIndex) => (
-                          <TableCell key={cellIndex} className="max-w-[150px] truncate">
-                            {cell}
-                          </TableCell>
+              <ScrollArea className="h-[400px]">
+                <div className="overflow-x-auto pr-4">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {headers.map((header) => (
+                          <TableHead key={header} className="min-w-[100px]">
+                            {header}
+                          </TableHead>
                         ))}
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {previewRows.map((row, rowIndex) => (
+                        <TableRow key={rowIndex}>
+                          {row.map((cell, cellIndex) => (
+                            <TableCell key={cellIndex} className="max-w-[150px] truncate">
+                              {cell}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </ScrollArea>
             </CardContent>
           </Card>
 
@@ -548,41 +550,43 @@ const EnhancedCsvProcessor: React.FC<EnhancedCsvProcessorProps> = ({
           {/* Column Configuration */}
           <Card>
             <CardHeader>
-              <CardTitle>Column Configuration</CardTitle>
+              <CardTitle>Configuración de columnas</CardTitle>
               <CardDescription>
                 Revisa y ajusta los tipos de columnas (los tipos de datos son auto-detectados pero pueden ser cambiados)
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {columnMappings.map((mapping, index) => (
-                  <div key={mapping.column_name} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center space-x-3 flex-1">
-                      <span className="font-medium min-w-[150px]">{mapping.column_name}</span>
-                      {mapping.is_coordinate && (
-                        <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">
-                          {mapping.mapped_field === 'x' ? 'Este' : mapping.mapped_field === 'y' ? 'Norte' : 'Elevación'}
-                        </Badge>
-                      )}
+              <ScrollArea className="h-[400px] pr-4">
+                <div className="space-y-2">
+                  {columnMappings.map((mapping, index) => (
+                    <div key={mapping.column_name} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex items-center space-x-3 flex-1">
+                        <span className="font-medium min-w-[150px]">{mapping.column_name}</span>
+                        {mapping.is_coordinate && (
+                          <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">
+                            {mapping.mapped_field === 'x' ? 'Este' : mapping.mapped_field === 'y' ? 'Norte' : 'Elevación'}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="w-[180px]">
+                        <Select
+                          value={mapping.column_type?.toString() || "1"}
+                          onValueChange={(value) => updateColumnType(index, parseInt(value) as ColumnType)}
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="Seleccionar tipo" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1">Numérico</SelectItem>
+                            <SelectItem value="2">Categórico</SelectItem>
+                            <SelectItem value="3">Omitir (No usado)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                    <div className="w-[180px]">
-                      <Select
-                        value={mapping.column_type?.toString() || "1"}
-                        onValueChange={(value) => updateColumnType(index, parseInt(value) as ColumnType)}
-                      >
-                        <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Seleccionar tipo" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">Numérico</SelectItem>
-                          <SelectItem value="2">Categórico</SelectItem>
-                          <SelectItem value="3">Omitir (No usado)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </ScrollArea>
               
               <div className="flex justify-end space-x-2 mt-6">
                 <Button variant="outline" onClick={onCancel}>
