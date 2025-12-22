@@ -1010,69 +1010,87 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     };
   }, [chartData, selectedXAxis, selectedYAxis, selectedValueColumn, dataset, datasetInfo, showRegressionLine, regressionLineData, showRMALine, rmaLineData, showEquations, olsRegression, rmaRegression]);
 
-  // Memoized chart component that only re-renders when chart props actually change
+  // Memoized event handlers to prevent chart recreation
+  const handleBrushSelected = useCallback((params: {batch?: {areas?: {coordRange?: number[][]}[], selected?: {dataIndex: number[]}[]}[]}) => {
+    // Ignore brush events triggered by programmatic actions
+    if (isApplyingBrushProgrammatically.current) {
+      return;
+    }
+
+    // Debounce brush updates to prevent rapid-fire events
+    const now = Date.now();
+    if (now - lastBrushUpdateTime.current < BRUSH_UPDATE_DEBOUNCE) {
+      return;
+    }
+
+
+    if (params.batch && params.batch.length > 0) {
+      const batch = params.batch[0];
+
+      // Extract coordinate bounds and selected data
+      if (batch.areas && batch.areas.length > 0) {
+        const area = batch.areas[0];
+
+        // Extract rectangle coordinates (available even in large mode)
+        if (area.coordRange && area.coordRange.length >= 2) {
+          const xRange = area.coordRange[0]; // [x1, x2] in data coordinates
+          const yRange = area.coordRange[1]; // [y1, y2] in data coordinates
+
+          const rectangle = {
+            x1: xRange[0],
+            x2: xRange[1],
+            y1: yRange[0],
+            y2: yRange[1]
+          };
+
+
+          // Store rectangle - user will click "Apply Selection" button
+          currentBrushRectRef.current = rectangle;
+
+          // Update last brush time
+          lastBrushUpdateTime.current = now;
+
+          // Trigger re-render to show "Apply Selection" button
+          setBrushAppliedTimestamp(Date.now());
+        }
+      }
+      // Note: We intentionally don't clear the brush from the store when
+      // batch.areas is empty, because zoom/pan operations trigger this.
+    }
+  }, []);
+
+  // Memoized event handlers object to prevent chart recreation
+  const chartEvents = useMemo(() => ({
+    'brushSelected': handleBrushSelected
+  }), [handleBrushSelected]);
+
+  // Show loading overlay when refetching, without recreating the chart
+  useEffect(() => {
+    if (chartRef.current) {
+      const chartInstance = chartRef.current.getEchartsInstance();
+      if (refetching) {
+        chartInstance.showLoading({ text: 'Cargando datos...' });
+      } else {
+        chartInstance.hideLoading();
+      }
+    }
+  }, [refetching]);
+
+  // Memoized chart component that only re-renders when chart options actually change
+  // IMPORTANT: Do NOT include refetching here - loading is handled separately via showLoading/hideLoading
   const MemoizedChart = useMemo(() => {
+    if (!chartOptions) return null;
     return (
       <ReactECharts
         ref={chartRef}
         option={chartOptions}
         style={{ height: '100%', width: '100%', minHeight: '400px' }}
-        showLoading={refetching}
-        loadingOption={{ text: 'Cargando datos...' }}
-        opts={{ renderer: 'canvas'}}
-        onEvents={{
-          'brushSelected': (params: {batch?: {areas?: {coordRange?: number[][]}[], selected?: {dataIndex: number[]}[]}[]}) => {
-            // Ignore brush events triggered by programmatic actions
-            if (isApplyingBrushProgrammatically.current) {
-              return;
-            }
-
-            // Debounce brush updates to prevent rapid-fire events
-            const now = Date.now();
-            if (now - lastBrushUpdateTime.current < BRUSH_UPDATE_DEBOUNCE) {
-              return;
-            }
-
-
-            if (params.batch && params.batch.length > 0) {
-              const batch = params.batch[0];
-
-              // Extract coordinate bounds and selected data
-              if (batch.areas && batch.areas.length > 0) {
-                const area = batch.areas[0];
-
-                // Extract rectangle coordinates (available even in large mode)
-                if (area.coordRange && area.coordRange.length >= 2) {
-                  const xRange = area.coordRange[0]; // [x1, x2] in data coordinates
-                  const yRange = area.coordRange[1]; // [y1, y2] in data coordinates
-
-                  const rectangle = {
-                    x1: xRange[0],
-                    x2: xRange[1],
-                    y1: yRange[0],
-                    y2: yRange[1]
-                  };
-
-
-                  // Store rectangle - user will click "Apply Selection" button
-                  currentBrushRectRef.current = rectangle;
-
-                  // Update last brush time
-                  lastBrushUpdateTime.current = now;
-
-                  // Trigger re-render to show "Apply Selection" button
-                  setBrushAppliedTimestamp(Date.now());
-                }
-              }
-              // Note: We intentionally don't clear the brush from the store when
-              // batch.areas is empty, because zoom/pan operations trigger this.
-            }
-          }
-        }}
+        opts={{ renderer: 'canvas' }}
+        onEvents={chartEvents}
         onChartReady={handleChartReady}
       />
     );
-  }, [chartOptions, refetching]); // Only re-create when chartOptions or refetching changes
+  }, [chartOptions, chartEvents, handleChartReady]); // Removed refetching - handled separately
 
   // Check if datasetInfo is available
   if (!datasetInfo) {
