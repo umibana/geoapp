@@ -899,21 +899,21 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           type: 'inside',
           xAxisIndex: 0,
           filterMode: 'none',  // Changed to 'none' so regression line stays visible
-          throttle: needsSmallOptimization ? 50 : 30, // Increase throttle for better performance
+          // throttle: needsSmallOptimization ? 50 : 30, // Increase throttle for better performance
           zoomLock: false,
-          moveOnMouseMove: false, // Disable for performance
+          // moveOnMouseMove: false, // Disable for performance
           zoomOnMouseWheel: true,
-          moveOnMouseWheel: false,
+          // moveOnMouseWheel: false,
         },
         {
           type: 'inside',
           yAxisIndex: 0,
           filterMode: 'none',  // Changed to 'none' so regression line stays visible
-          throttle: needsSmallOptimization ? 50 : 30, // Increase throttle for better performance
+          // throttle: needsSmallOptimization ? 50 : 30, // Increase throttle for better performance
           zoomLock: false,
-          moveOnMouseMove: false, // Disable for performance
+          // moveOnMouseMove: false, // Disable for performance
           zoomOnMouseWheel: true,
-          moveOnMouseWheel: false,
+          // moveOnMouseWheel: false,
         }
       ],
       // Toolbox disabled - using custom controls instead
@@ -974,12 +974,14 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
               opacity: 1.0
             }
           },
-          large: false, // User requires large: false
+          large: isLargeDataset, // Auto-enable for datasets > 20K points
+          largeThreshold: LARGE_THRESHOLD, // 20000 points
           // Performance optimizations for large:false mode
-          progressive: needsSmallOptimization ? 1000 : 0, // Progressive rendering
-          progressiveThreshold: needsSmallOptimization ? 1000 : 3000,
+          progressive: needsSmallOptimization && !isLargeDataset ? 1000 : 0, // Progressive rendering for medium datasets
+          progressiveThreshold: needsSmallOptimization && !isLargeDataset ? 1000 : 3000,
           progressiveChunkMode: 'sequential',
-          symbolSize: needsSmallOptimization ? 3 : 4, // Smaller symbols for better performance
+          symbolSize: isLargeDataset ? 2 : (needsSmallOptimization ? 3 : 4), // Smallest symbols for large datasets
+          // silent: needsSmallOptimization || isLargeDataset, // Disable mouse events for performance
           dimensions: [selectedXAxis, selectedYAxis, selectedValueColumn],
         },
         // Add OLS regression line series conditionally
