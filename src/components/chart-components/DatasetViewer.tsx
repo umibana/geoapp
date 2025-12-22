@@ -99,9 +99,17 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
   // Large dataset mode threshold
   const LARGE_THRESHOLD = 20000;
 
+  // Small dataset optimization threshold (when large: false is needed)
+  const SMALL_OPTIMIZATION_THRESHOLD = 5000;
+
   // Check if we're in large dataset mode
   const isLargeDataset = useMemo(() => {
     return (dataset?.total_count || 0) > LARGE_THRESHOLD;
+  }, [dataset?.total_count]);
+
+  // Check if we need small dataset optimizations
+  const needsSmallOptimization = useMemo(() => {
+    return (dataset?.total_count || 0) > SMALL_OPTIMIZATION_THRESHOLD;
   }, [dataset?.total_count]);
 
   // Track current brush rectangle for large dataset mode
@@ -467,12 +475,16 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     };
   }, []);
 
-  // Chart resize callback
+  // Chart resize callback - removed dependency on chartData to prevent re-creation
   const handleChartReady = useCallback((chartInstance: { resize: () => void }) => {
-    if (chartData) {
-      setTimeout(() => chartInstance.resize(), 100);
-    }
-  }, [chartData]);
+    setTimeout(() => {
+      try {
+        chartInstance.resize();
+      } catch {
+        // Ignore if instance was disposed
+      }
+    }, 100);
+  }, []); // Empty deps - only create once
 
   const loadLiveColumns = async () => {
     if (!datasetInfo) return;
@@ -838,7 +850,20 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           color: '#374151'
         }
       },
-      tooltip: {
+      tooltip: needsSmallOptimization ? {
+        // Optimized tooltip for medium-sized datasets
+        trigger: 'item',
+        axisPointer: {
+          type: 'cross'
+        },
+        confine: true,
+        renderMode: 'html',
+        // Use single-line formatter to reduce allocations
+        formatter: (params: {data: number[], dataIndex: number}) => {
+          return `<strong>Punto ${params.dataIndex + 1}</strong><br/>${selectedXAxis}: ${params.data[0].toFixed(4)}<br/>${selectedYAxis}: ${params.data[1].toFixed(4)}<br/>${selectedValueColumn}: ${params.data[2].toFixed(4)}`;
+        }
+      } : {
+        // Full tooltip for small datasets
         trigger: 'item',
         axisPointer: {
           type: 'cross'
@@ -874,13 +899,21 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
           type: 'inside',
           xAxisIndex: 0,
           filterMode: 'none',  // Changed to 'none' so regression line stays visible
-          throttle: 30,
+          throttle: needsSmallOptimization ? 50 : 30, // Increase throttle for better performance
+          zoomLock: false,
+          moveOnMouseMove: false, // Disable for performance
+          zoomOnMouseWheel: true,
+          moveOnMouseWheel: false,
         },
         {
           type: 'inside',
           yAxisIndex: 0,
           filterMode: 'none',  // Changed to 'none' so regression line stays visible
-          throttle: 30,
+          throttle: needsSmallOptimization ? 50 : 30, // Increase throttle for better performance
+          zoomLock: false,
+          moveOnMouseMove: false, // Disable for performance
+          zoomOnMouseWheel: true,
+          moveOnMouseWheel: false,
         }
       ],
       // Toolbox disabled - using custom controls instead
@@ -923,11 +956,15 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
             disabled: true
           },
           itemStyle: {
-            opacity: 0.8,
+            opacity: needsSmallOptimization ? 0.7 : 0.8,
             borderWidth: 0,
             animation: false
           },
-          emphasis: {
+          emphasis: needsSmallOptimization ? {
+            // Disable emphasis for performance when large:false with many points
+            disabled: true,
+            scale: false
+          } : {
             disabled: true,
             animation: false,
             itemStyle: {
@@ -937,11 +974,12 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
               opacity: 1.0
             }
           },
-          large: true,
-          largeThreshold: 20000,
-          progressive: 20000,
-          progressiveThreshold: 20000,
-          symbolSize: 4,
+          large: false, // User requires large: false
+          // Performance optimizations for large:false mode
+          progressive: needsSmallOptimization ? 1000 : 0, // Progressive rendering
+          progressiveThreshold: needsSmallOptimization ? 1000 : 3000,
+          progressiveChunkMode: 'sequential',
+          symbolSize: needsSmallOptimization ? 3 : 4, // Smaller symbols for better performance
           dimensions: [selectedXAxis, selectedYAxis, selectedValueColumn],
         },
         // Add OLS regression line series conditionally
@@ -1008,71 +1046,54 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         }] : [])
       ] : []
     };
-  }, [chartData, selectedXAxis, selectedYAxis, selectedValueColumn, dataset, datasetInfo, showRegressionLine, regressionLineData, showRMALine, rmaLineData, showEquations, olsRegression, rmaRegression]);
+  }, [chartData, selectedXAxis, selectedYAxis, selectedValueColumn, dataset, datasetInfo, showRegressionLine, regressionLineData, showRMALine, rmaLineData, showEquations, olsRegression, rmaRegression, needsSmallOptimization]);
 
-  // Memoized chart component that only re-renders when chart props actually change
-  const MemoizedChart = useMemo(() => {
-    return (
-      <ReactECharts
-        ref={chartRef}
-        option={chartOptions}
-        style={{ height: '100%', width: '100%', minHeight: '400px' }}
-        showLoading={refetching}
-        loadingOption={{ text: 'Cargando datos...' }}
-        opts={{ renderer: 'canvas'}}
-        onEvents={{
-          'brushSelected': (params: {batch?: {areas?: {coordRange?: number[][]}[], selected?: {dataIndex: number[]}[]}[]}) => {
-            // Ignore brush events triggered by programmatic actions
-            if (isApplyingBrushProgrammatically.current) {
-              return;
-            }
+  // Memoize brush event handler to prevent re-creating on every render
+  const handleBrushSelected = useCallback((params: {batch?: {areas?: {coordRange?: number[][]}[], selected?: {dataIndex: number[]}[]}[]}) => {
+    // Ignore brush events triggered by programmatic actions
+    if (isApplyingBrushProgrammatically.current) {
+      return;
+    }
 
-            // Debounce brush updates to prevent rapid-fire events
-            const now = Date.now();
-            if (now - lastBrushUpdateTime.current < BRUSH_UPDATE_DEBOUNCE) {
-              return;
-            }
+    // Debounce brush updates to prevent rapid-fire events
+    const now = Date.now();
+    if (now - lastBrushUpdateTime.current < BRUSH_UPDATE_DEBOUNCE) {
+      return;
+    }
 
+    if (params.batch && params.batch.length > 0) {
+      const batch = params.batch[0];
 
-            if (params.batch && params.batch.length > 0) {
-              const batch = params.batch[0];
+      // Extract coordinate bounds and selected data
+      if (batch.areas && batch.areas.length > 0) {
+        const area = batch.areas[0];
 
-              // Extract coordinate bounds and selected data
-              if (batch.areas && batch.areas.length > 0) {
-                const area = batch.areas[0];
+        // Extract rectangle coordinates (available even in large mode)
+        if (area.coordRange && area.coordRange.length >= 2) {
+          const xRange = area.coordRange[0]; // [x1, x2] in data coordinates
+          const yRange = area.coordRange[1]; // [y1, y2] in data coordinates
 
-                // Extract rectangle coordinates (available even in large mode)
-                if (area.coordRange && area.coordRange.length >= 2) {
-                  const xRange = area.coordRange[0]; // [x1, x2] in data coordinates
-                  const yRange = area.coordRange[1]; // [y1, y2] in data coordinates
+          const rectangle = {
+            x1: xRange[0],
+            x2: xRange[1],
+            y1: yRange[0],
+            y2: yRange[1]
+          };
 
-                  const rectangle = {
-                    x1: xRange[0],
-                    x2: xRange[1],
-                    y1: yRange[0],
-                    y2: yRange[1]
-                  };
+          // Store rectangle - user will click "Apply Selection" button
+          currentBrushRectRef.current = rectangle;
 
+          // Update last brush time
+          lastBrushUpdateTime.current = now;
 
-                  // Store rectangle - user will click "Apply Selection" button
-                  currentBrushRectRef.current = rectangle;
-
-                  // Update last brush time
-                  lastBrushUpdateTime.current = now;
-
-                  // Trigger re-render to show "Apply Selection" button
-                  setBrushAppliedTimestamp(Date.now());
-                }
-              }
-              // Note: We intentionally don't clear the brush from the store when
-              // batch.areas is empty, because zoom/pan operations trigger this.
-            }
-          }
-        }}
-        onChartReady={handleChartReady}
-      />
-    );
-  }, [chartOptions, refetching]); // Only re-create when chartOptions or refetching changes
+          // Trigger re-render to show "Apply Selection" button
+          setBrushAppliedTimestamp(Date.now());
+        }
+      }
+      // Note: We intentionally don't clear the brush from the store when
+      // batch.areas is empty, because zoom/pan operations trigger this.
+    }
+  }, []);
 
   // Check if datasetInfo is available
   if (!datasetInfo) {
@@ -1185,7 +1206,20 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
       <div className="flex-1 relative" style={{ minHeight: '300px' }}>
         {chartData && chartData.length > 0 && chartOptions ? (
           <>
-            {MemoizedChart}
+            <ReactECharts
+              ref={chartRef}
+              option={chartOptions}
+              style={{ height: '100%', width: '100%', minHeight: '400px' }}
+              showLoading={refetching}
+              loadingOption={{ text: 'Cargando datos...' }}
+              notMerge={false} // Merge with previous option for better performance (prevents full re-render)
+              lazyUpdate={true} // Update chart lazily for better performance
+              opts={{ renderer: 'canvas'}}
+              onEvents={{
+                'brushSelected': handleBrushSelected
+              }}
+              onChartReady={handleChartReady}
+            />
 
             {/* Chart Controls */}
             <div className="absolute top-2 right-2 z-10 flex flex-col gap-2">
