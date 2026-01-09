@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import Plot from 'react-plotly.js';
+import { Plot } from './PlotlyChart';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

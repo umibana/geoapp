@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import Plot from 'react-plotly.js';
+import { Plot, parseFloat32ToArrays, getOptimizedScatterTrace, useWebGLSupport, ScatterOptimizationOptions } from './PlotlyChart';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Activity, Brush, Database, X, Camera, TrendingUp, Split, Type } from 'lucide-react';
+import { ArrowLeft, Activity, Brush, Database, X, Camera, TrendingUp, Split, Type, Cpu, Layers } from 'lucide-react';
 import { GetDatasetDataResponse, DatasetInfo, DataBoundaries } from '@/generated/projects';
 import { useBrushStore, BrushSelection } from '@/stores/brushStore';
 
@@ -83,15 +83,31 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
   const [showRegressionLine, setShowRegressionLine] = useState(false);
   const [showRMALine, setShowRMALine] = useState(false);
   const [showEquations, setShowEquations] = useState(false);
+  const [forceSVG, setForceSVG] = useState(false);
+  const [decimationInfo, setDecimationInfo] = useState<{ original: number; displayed: number } | null>(null);
   const plotRef = useRef<any>(null);
+
+  // WebGL support detection
+  const webgl = useWebGLSupport();
 
   // Large dataset mode threshold
   const LARGE_THRESHOLD = 20000;
+  const DECIMATION_THRESHOLD = 50000;
+  const MAX_DISPLAY_POINTS = 30000;
 
   // Check if we're in large dataset mode
   const isLargeDataset = useMemo(() => {
     return (dataset?.total_count || 0) > LARGE_THRESHOLD;
   }, [dataset?.total_count]);
+
+  // Optimization options
+  const optimizationOptions = useMemo((): ScatterOptimizationOptions => ({
+    enableDecimation: (dataset?.total_count || 0) > DECIMATION_THRESHOLD,
+    maxDisplayPoints: MAX_DISPLAY_POINTS,
+    forceSVG: forceSVG || (webgl.checked && !webgl.supported),
+    markerSize: isLargeDataset ? 2 : 4,
+    markerOpacity: isLargeDataset ? 0.6 : 0.8
+  }), [dataset?.total_count, forceSVG, webgl.checked, webgl.supported, isLargeDataset]);
 
   // Track current brush rectangle for large dataset mode
   const currentBrushRectRef = useRef<{x1: number; x2: number; y1: number; y2: number} | null>(null);
@@ -523,21 +539,23 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
   const plotConfig = useMemo(() => {
     if (!chartData || chartData.length === 0 || !datasetInfo) return null;
 
-    // Parse Float32Array into separate arrays
-    const xData: number[] = [];
-    const yData: number[] = [];
-    const valueData: number[] = [];
+    // Parse Float32Array with optional decimation for large datasets
+    const { x: xData, y: yData, values: valueData, decimated, originalCount } = parseFloat32ToArrays(
+      chartData,
+      optimizationOptions
+    );
 
-    for (let i = 0; i < chartData.length; i += 3) {
-      xData.push(chartData[i]);
-      yData.push(chartData[i + 1]);
-      valueData.push(chartData[i + 2]);
+    // Update decimation info for display
+    if (decimated) {
+      setDecimationInfo({ original: originalCount, displayed: xData.length });
+    } else {
+      setDecimationInfo(null);
     }
 
     // Get boundaries for color scaling
     const getBoundaryForColumn = (columnName: string) => {
       if (!dataset?.data_boundaries) return null;
-      return dataset.data_boundaries.find(b => b.column_name === columnName);
+      return dataset.data_boundaries.find((b: { column_name: string }) => b.column_name === columnName);
     };
 
     const valueBoundary = getBoundaryForColumn(selectedValueColumn);
@@ -546,9 +564,13 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     const minVal = valueBoundary?.min_value ?? Math.min(...valueData);
     const maxVal = valueBoundary?.max_value ?? Math.max(...valueData);
 
-    // Main scatter trace - use scattergl for large datasets
+    // Determine trace type based on WebGL support and settings
+    const useWebGL = webgl.checked && webgl.supported && !optimizationOptions.forceSVG;
+    const traceType = useWebGL && isLargeDataset ? 'scattergl' : 'scatter';
+
+    // Main scatter trace with optimized settings
     const traces: Plotly.Data[] = [{
-      type: isLargeDataset ? 'scattergl' : 'scatter',
+      type: traceType,
       mode: 'markers',
       x: xData,
       y: yData,
@@ -568,8 +590,8 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
         ],
         cmin: minVal,
         cmax: maxVal,
-        size: isLargeDataset ? 2 : 4,
-        opacity: isLargeDataset ? 0.7 : 0.8,
+        size: optimizationOptions.markerSize || (isLargeDataset ? 2 : 4),
+        opacity: optimizationOptions.markerOpacity || (isLargeDataset ? 0.7 : 0.8),
         colorbar: {
           title: {
             text: selectedValueColumn,
@@ -714,7 +736,7 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     };
 
     return { data: traces, layout, config };
-  }, [chartData, selectedXAxis, selectedYAxis, selectedValueColumn, dataset, datasetInfo, showRegressionLine, olsRegression, showRMALine, rmaRegression, showEquations, isLargeDataset, isBrushMode]);
+  }, [chartData, selectedXAxis, selectedYAxis, selectedValueColumn, dataset, datasetInfo, showRegressionLine, olsRegression, showRMALine, rmaRegression, showEquations, isLargeDataset, isBrushMode, optimizationOptions, webgl.checked, webgl.supported]);
 
   // Check if datasetInfo is available
   if (!datasetInfo) {
@@ -884,6 +906,17 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
                 <Type className="h-3 w-3" />
               </Button>
 
+              {/* SVG/WebGL Toggle */}
+              <Button
+                variant={forceSVG ? "default" : "outline"}
+                size="sm"
+                onClick={() => setForceSVG(prev => !prev)}
+                title={forceSVG ? "Usar WebGL (si disponible)" : "Forzar SVG (más lento pero compatible)"}
+                className="shadow-lg h-8"
+              >
+                {forceSVG ? <Layers className="h-3 w-3" /> : <Cpu className="h-3 w-3" />}
+              </Button>
+
               {currentBrushRectRef.current && (
                 <>
                   <Button
@@ -905,6 +938,27 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
                     <X className="h-3 w-3" />
                   </Button>
                 </>
+              )}
+            </div>
+
+            {/* Status Indicators */}
+            <div className="absolute bottom-2 left-2 z-10 flex flex-col gap-1 text-xs">
+              {/* WebGL Status */}
+              <div className={`px-2 py-1 rounded shadow-sm ${
+                webgl.checked
+                  ? (webgl.supported && !forceSVG ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700')
+                  : 'bg-gray-100 text-gray-600'
+              }`}>
+                {!webgl.checked ? 'Detectando...' :
+                 forceSVG ? 'SVG (manual)' :
+                 webgl.supported ? 'WebGL activo' : 'SVG (fallback)'}
+              </div>
+
+              {/* Decimation Info */}
+              {decimationInfo && (
+                <div className="px-2 py-1 rounded shadow-sm bg-blue-100 text-blue-700">
+                  {decimationInfo.displayed.toLocaleString()} / {decimationInfo.original.toLocaleString()} pts
+                </div>
               )}
             </div>
           </>

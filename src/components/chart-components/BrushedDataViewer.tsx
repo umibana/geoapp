@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import Plot from 'react-plotly.js';
+import { Plot, useWebGLSupport } from './PlotlyChart';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Brush, AlertCircle } from 'lucide-react';
@@ -14,6 +14,7 @@ import { useBrushSelection } from '@/hooks/useBrushSelection';
  */
 const BrushedDataViewer: React.FC = () => {
   const activeBrushSelection = useBrushSelection();
+  const webgl = useWebGLSupport();
 
   // Generate chart data from brush data
   const plotData = useMemo(() => {
@@ -38,9 +39,10 @@ const BrushedDataViewer: React.FC = () => {
     const minVal = Math.min(...valueData);
     const maxVal = Math.max(...valueData);
 
-    // Use scattergl for better performance with large datasets
+    // Use scattergl only if WebGL is supported and dataset is large
+    const useWebGL = webgl.checked && webgl.supported && data.length > 6000;
     const trace: Plotly.Data = {
-      type: data.length > 6000 ? 'scattergl' : 'scatter',
+      type: useWebGL ? 'scattergl' : 'scatter',
       mode: 'markers',
       x: xData,
       y: yData,
@@ -125,7 +127,7 @@ const BrushedDataViewer: React.FC = () => {
     };
 
     return { data: [trace], layout, config };
-  }, [activeBrushSelection]);
+  }, [activeBrushSelection, webgl.checked, webgl.supported]);
 
   // If no brush selection, show a message
   if (!activeBrushSelection) {
