@@ -50,6 +50,7 @@ export const Plot: React.FC<PlotProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const plotCreated = useRef(false);
+  const lastTraceTypes = useRef<string>('');
 
   // Create/update the plot
   const updatePlot = useCallback(async () => {
@@ -70,6 +71,19 @@ export const Plot: React.FC<PlotProps> = ({
     const traceTypes = data.map(d => d.type).join(', ');
     console.log(`[Plotly Debug] Rendering traces: ${traceTypes}`);
     console.log(`[Plotly Debug] Data points per trace:`, data.map(d => (d as any).x?.length || 0));
+
+    // Check if trace types changed (e.g., scatter -> scattergl)
+    // This requires a full recreation of the plot
+    const traceTypesChanged = lastTraceTypes.current !== '' && lastTraceTypes.current !== traceTypes;
+    if (traceTypesChanged) {
+      console.log(`[Plotly Debug] Trace types changed from "${lastTraceTypes.current}" to "${traceTypes}" - forcing recreation`);
+      // Purge existing plot to force recreation
+      if (plotCreated.current) {
+        Plotly.purge(containerRef.current);
+        plotCreated.current = false;
+      }
+    }
+    lastTraceTypes.current = traceTypes;
 
     try {
       if (!plotCreated.current) {
