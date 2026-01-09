@@ -66,10 +66,17 @@ export const Plot: React.FC<PlotProps> = ({
       ...config
     };
 
+    // Debug: Log trace types being rendered
+    const traceTypes = data.map(d => d.type).join(', ');
+    console.log(`[Plotly Debug] Rendering traces: ${traceTypes}`);
+    console.log(`[Plotly Debug] Data points per trace:`, data.map(d => (d as any).x?.length || 0));
+
     try {
       if (!plotCreated.current) {
         // Create new plot
+        console.log('[Plotly Debug] Creating new plot...');
         await Plotly.newPlot(containerRef.current, data, finalLayout, finalConfig);
+        console.log('[Plotly Debug] Plot created successfully');
         plotCreated.current = true;
 
         // Attach event handlers
@@ -96,7 +103,12 @@ export const Plot: React.FC<PlotProps> = ({
         await Plotly.react(containerRef.current, data, finalLayout, finalConfig);
       }
     } catch (error) {
-      console.error('Plotly error:', error);
+      console.error('[Plotly Debug] ERROR during plot creation/update:', error);
+      // Log more details about the error
+      if (error instanceof Error) {
+        console.error('[Plotly Debug] Error message:', error.message);
+        console.error('[Plotly Debug] Error stack:', error.stack);
+      }
     }
   }, [data, layout, config, useResizeHandler, onSelected, onSelecting, onClick, onHover, onUnhover, onRelayout]);
 
@@ -251,27 +263,66 @@ export function parseFloat32ToArrays(
 /**
  * Hook to detect WebGL support
  */
-export function useWebGLSupport(): { supported: boolean; checked: boolean } {
-  const [state, setState] = useState({ supported: false, checked: false });
+export function useWebGLSupport(): { supported: boolean; checked: boolean; details: string } {
+  const [state, setState] = useState({ supported: false, checked: false, details: '' });
 
   useEffect(() => {
     const checkWebGL = () => {
+      const debugInfo: string[] = [];
+
       try {
         const canvas = document.createElement('canvas');
-        // Try WebGL 2 first, then WebGL 1
-        const gl = canvas.getContext('webgl2') ||
-                   canvas.getContext('webgl') ||
-                   canvas.getContext('experimental-webgl');
+        debugInfo.push(`Canvas created: ${!!canvas}`);
+
+        // Try WebGL 2 first
+        let gl = canvas.getContext('webgl2');
+        if (gl) {
+          debugInfo.push('WebGL2 context obtained');
+        } else {
+          // Try WebGL 1
+          gl = canvas.getContext('webgl') as WebGLRenderingContext | null;
+          if (gl) {
+            debugInfo.push('WebGL1 context obtained');
+          } else {
+            // Try experimental
+            gl = canvas.getContext('experimental-webgl') as WebGLRenderingContext | null;
+            if (gl) {
+              debugInfo.push('Experimental WebGL context obtained');
+            }
+          }
+        }
 
         if (gl) {
-          // Additional check: try to create a simple program
-          const supported = typeof (gl as WebGLRenderingContext).getParameter === 'function';
-          setState({ supported, checked: true });
+          const glContext = gl as WebGLRenderingContext;
+
+          // Get renderer info
+          const debugRendererInfo = glContext.getExtension('WEBGL_debug_renderer_info');
+          if (debugRendererInfo) {
+            const vendor = glContext.getParameter(debugRendererInfo.UNMASKED_VENDOR_WEBGL);
+            const renderer = glContext.getParameter(debugRendererInfo.UNMASKED_RENDERER_WEBGL);
+            debugInfo.push(`Vendor: ${vendor}`);
+            debugInfo.push(`Renderer: ${renderer}`);
+          }
+
+          // Check if getParameter works
+          const hasGetParameter = typeof glContext.getParameter === 'function';
+          debugInfo.push(`getParameter available: ${hasGetParameter}`);
+
+          // Get max texture size as additional check
+          const maxTextureSize = glContext.getParameter(glContext.MAX_TEXTURE_SIZE);
+          debugInfo.push(`Max texture size: ${maxTextureSize}`);
+
+          console.log('[WebGL Debug] SUCCESS:', debugInfo.join(' | '));
+          setState({ supported: true, checked: true, details: debugInfo.join(' | ') });
         } else {
-          setState({ supported: false, checked: true });
+          debugInfo.push('No WebGL context available');
+          console.log('[WebGL Debug] FAILED:', debugInfo.join(' | '));
+          setState({ supported: false, checked: true, details: debugInfo.join(' | ') });
         }
-      } catch {
-        setState({ supported: false, checked: true });
+      } catch (error) {
+        debugInfo.push(`Error: ${error}`);
+        console.error('[WebGL Debug] ERROR:', debugInfo.join(' | '), error);
+        setState({ supported: false, checked: true, details: debugInfo.join(' | ') });
       }
     };
 

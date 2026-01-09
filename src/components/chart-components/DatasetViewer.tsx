@@ -568,6 +568,18 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
     const useWebGL = webgl.checked && webgl.supported && !optimizationOptions.forceSVG;
     const traceType = useWebGL && isLargeDataset ? 'scattergl' : 'scatter';
 
+    // Debug logging
+    console.log('[DatasetViewer Debug] WebGL state:', {
+      checked: webgl.checked,
+      supported: webgl.supported,
+      details: webgl.details,
+      forceSVG: optimizationOptions.forceSVG,
+      isLargeDataset,
+      useWebGL,
+      traceType,
+      pointCount: xData.length
+    });
+
     // Main scatter trace with optimized settings
     const traces: Plotly.Data[] = [{
       type: traceType,
@@ -942,13 +954,17 @@ const DatasetViewer: React.FC<DatasetViewerProps> = ({ DatasetInfo, onBack }) =>
             </div>
 
             {/* Status Indicators */}
-            <div className="absolute bottom-2 left-2 z-10 flex flex-col gap-1 text-xs">
+            <div className="absolute bottom-2 left-2 z-10 flex flex-col gap-1 text-xs max-w-xs">
               {/* WebGL Status */}
-              <div className={`px-2 py-1 rounded shadow-sm ${
-                webgl.checked
-                  ? (webgl.supported && !forceSVG ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700')
-                  : 'bg-gray-100 text-gray-600'
-              }`}>
+              <div
+                className={`px-2 py-1 rounded shadow-sm cursor-help ${
+                  webgl.checked
+                    ? (webgl.supported && !forceSVG ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700')
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+                title={webgl.details || 'Checking WebGL...'}
+                onClick={() => console.log('[WebGL Details]', webgl)}
+              >
                 {!webgl.checked ? 'Detectando...' :
                  forceSVG ? 'SVG (manual)' :
                  webgl.supported ? 'WebGL activo' : 'SVG (fallback)'}
