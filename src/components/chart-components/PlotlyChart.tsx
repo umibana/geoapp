@@ -1,27 +1,145 @@
 /**
- * Custom Plotly Chart Component for Electron
+ * Custom Plotly Chart Component using Plotly.js directly
  *
- * This component fixes the WebGL detection issue in Electron by using
- * the pre-built Plotly distribution instead of the main entry point.
- *
- * It also provides optimizations for large datasets when WebGL is not available:
- * - Point decimation (sampling)
- * - Smaller markers
- * - Reduced opacity
- * - SVG optimization settings
+ * This component uses Plotly.js directly (not react-plotly.js) for better
+ * control over rendering in Electron, especially for WebGL support.
  */
 
-import React, { useMemo, useCallback, useState, useEffect } from 'react';
-import createPlotlyComponent from 'react-plotly.js/factory';
-// Use pre-built distribution for proper WebGL support in Electron
-// @ts-ignore - Plotly dist doesn't have proper types
-import Plotly from 'plotly.js/dist/plotly';
+import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import Plotly from 'plotly.js-dist';
 
-// Create the Plot component using the pre-built Plotly distribution
-const Plot = createPlotlyComponent(Plotly);
+// Re-export Plotly for direct access
+export { Plotly };
 
-// Re-export for convenience
-export { Plot, Plotly };
+/**
+ * Props for the Plot component
+ */
+export interface PlotProps {
+  data: Plotly.Data[];
+  layout?: Partial<Plotly.Layout>;
+  config?: Partial<Plotly.Config>;
+  style?: React.CSSProperties;
+  className?: string;
+  onSelected?: (event: Plotly.PlotSelectionEvent) => void;
+  onSelecting?: (event: Plotly.PlotSelectionEvent) => void;
+  onClick?: (event: Plotly.PlotMouseEvent) => void;
+  onHover?: (event: Plotly.PlotHoverEvent) => void;
+  onUnhover?: (event: Plotly.PlotMouseEvent) => void;
+  onRelayout?: (event: Plotly.PlotRelayoutEvent) => void;
+  useResizeHandler?: boolean;
+  revision?: number;
+}
+
+/**
+ * Plot component using Plotly.js directly
+ */
+export const Plot: React.FC<PlotProps> = ({
+  data,
+  layout = {},
+  config = {},
+  style,
+  className,
+  onSelected,
+  onSelecting,
+  onClick,
+  onHover,
+  onUnhover,
+  onRelayout,
+  useResizeHandler = true,
+  revision
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const plotCreated = useRef(false);
+
+  // Create/update the plot
+  const updatePlot = useCallback(async () => {
+    if (!containerRef.current) return;
+
+    const finalLayout: Partial<Plotly.Layout> = {
+      ...layout,
+      autosize: true
+    };
+
+    const finalConfig: Partial<Plotly.Config> = {
+      responsive: useResizeHandler,
+      displaylogo: false,
+      ...config
+    };
+
+    try {
+      if (!plotCreated.current) {
+        // Create new plot
+        await Plotly.newPlot(containerRef.current, data, finalLayout, finalConfig);
+        plotCreated.current = true;
+
+        // Attach event handlers
+        if (onSelected) {
+          containerRef.current.on('plotly_selected', onSelected);
+        }
+        if (onSelecting) {
+          containerRef.current.on('plotly_selecting', onSelecting);
+        }
+        if (onClick) {
+          containerRef.current.on('plotly_click', onClick);
+        }
+        if (onHover) {
+          containerRef.current.on('plotly_hover', onHover);
+        }
+        if (onUnhover) {
+          containerRef.current.on('plotly_unhover', onUnhover);
+        }
+        if (onRelayout) {
+          containerRef.current.on('plotly_relayout', onRelayout);
+        }
+      } else {
+        // Update existing plot - use react for efficient updates
+        await Plotly.react(containerRef.current, data, finalLayout, finalConfig);
+      }
+    } catch (error) {
+      console.error('Plotly error:', error);
+    }
+  }, [data, layout, config, useResizeHandler, onSelected, onSelecting, onClick, onHover, onUnhover, onRelayout]);
+
+  // Initial render and updates
+  useEffect(() => {
+    updatePlot();
+  }, [updatePlot, revision]);
+
+  // Handle resize
+  useEffect(() => {
+    if (!useResizeHandler || !containerRef.current) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (containerRef.current && plotCreated.current) {
+        Plotly.Plots.resize(containerRef.current);
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [useResizeHandler]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (containerRef.current && plotCreated.current) {
+        Plotly.purge(containerRef.current);
+        plotCreated.current = false;
+      }
+    };
+  }, []);
+
+  return (
+    <div
+      ref={containerRef}
+      style={style}
+      className={className}
+    />
+  );
+};
 
 /**
  * Optimization settings for large datasets
@@ -48,50 +166,6 @@ const DEFAULT_OPTIMIZATION: ScatterOptimizationOptions = {
 };
 
 /**
- * Decimate (downsample) data arrays by random sampling
- * Preserves the statistical distribution while reducing point count
- */
-export function decimateData<T>(
-  data: T[],
-  maxPoints: number,
-  seed?: number
-): { data: T[]; indices: number[] } {
-  if (data.length <= maxPoints) {
-    return { data, indices: Array.from({ length: data.length }, (_, i) => i) };
-  }
-
-  // Seeded random for reproducibility
-  const random = seed !== undefined
-    ? (() => {
-        let s = seed;
-        return () => {
-          s = (s * 1103515245 + 12345) & 0x7fffffff;
-          return s / 0x7fffffff;
-        };
-      })()
-    : Math.random;
-
-  // Reservoir sampling for uniform random selection
-  const indices: number[] = [];
-  const result: T[] = [];
-
-  for (let i = 0; i < maxPoints; i++) {
-    indices.push(i);
-    result.push(data[i]);
-  }
-
-  for (let i = maxPoints; i < data.length; i++) {
-    const j = Math.floor(random() * (i + 1));
-    if (j < maxPoints) {
-      indices[j] = i;
-      result[j] = data[i];
-    }
-  }
-
-  return { data: result, indices };
-}
-
-/**
  * Decimate Float32Array data in [x, y, v, x, y, v, ...] format
  */
 export function decimateFloat32Data(
@@ -108,25 +182,23 @@ export function decimateFloat32Data(
     };
   }
 
-  // Generate random indices to keep
+  // Generate indices using systematic sampling with jitter
   const step = totalPoints / maxPoints;
   const indices: number[] = [];
+  const usedIndices = new Set<number>();
 
-  // Systematic sampling with jitter for better distribution
   for (let i = 0; i < maxPoints; i++) {
     const baseIdx = Math.floor(i * step);
     const jitter = Math.floor(Math.random() * Math.min(step, totalPoints - baseIdx));
-    const idx = Math.min(baseIdx + jitter, totalPoints - 1);
-    if (!indices.includes(idx)) {
-      indices.push(idx);
-    }
-  }
+    let idx = Math.min(baseIdx + jitter, totalPoints - 1);
 
-  // Fill any missing slots
-  while (indices.length < maxPoints) {
-    const idx = Math.floor(Math.random() * totalPoints);
-    if (!indices.includes(idx)) {
+    // Avoid duplicates
+    while (usedIndices.has(idx) && idx < totalPoints - 1) {
+      idx++;
+    }
+    if (!usedIndices.has(idx)) {
       indices.push(idx);
+      usedIndices.add(idx);
     }
   }
 
@@ -174,6 +246,41 @@ export function parseFloat32ToArrays(
   }
 
   return { x, y, values, decimated, originalCount: totalPoints };
+}
+
+/**
+ * Hook to detect WebGL support
+ */
+export function useWebGLSupport(): { supported: boolean; checked: boolean } {
+  const [state, setState] = useState({ supported: false, checked: false });
+
+  useEffect(() => {
+    const checkWebGL = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        // Try WebGL 2 first, then WebGL 1
+        const gl = canvas.getContext('webgl2') ||
+                   canvas.getContext('webgl') ||
+                   canvas.getContext('experimental-webgl');
+
+        if (gl) {
+          // Additional check: try to create a simple program
+          const supported = typeof (gl as WebGLRenderingContext).getParameter === 'function';
+          setState({ supported, checked: true });
+        } else {
+          setState({ supported: false, checked: true });
+        }
+      } catch {
+        setState({ supported: false, checked: true });
+      }
+    };
+
+    // Small delay to ensure DOM is ready
+    const timer = setTimeout(checkWebGL, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return state;
 }
 
 /**
@@ -247,69 +354,5 @@ export function getOptimizedScatterTrace(
     name: options?.name || 'data'
   } as Plotly.Data;
 }
-
-/**
- * Hook to detect WebGL support
- */
-export function useWebGLSupport(): { supported: boolean; checked: boolean } {
-  const [state, setState] = useState({ supported: false, checked: false });
-
-  useEffect(() => {
-    try {
-      const canvas = document.createElement('canvas');
-      const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-      setState({ supported: !!gl, checked: true });
-    } catch {
-      setState({ supported: false, checked: true });
-    }
-  }, []);
-
-  return state;
-}
-
-/**
- * Optimized Plot wrapper component
- */
-interface OptimizedPlotProps extends React.ComponentProps<typeof Plot> {
-  /** Optimization options for scatter plots */
-  optimizationOptions?: ScatterOptimizationOptions;
-  /** Callback when data is decimated */
-  onDecimation?: (info: { originalCount: number; displayedCount: number }) => void;
-}
-
-export const OptimizedPlot: React.FC<OptimizedPlotProps> = ({
-  data,
-  layout,
-  config,
-  optimizationOptions,
-  onDecimation,
-  ...props
-}) => {
-  const webgl = useWebGLSupport();
-
-  // Apply SVG fallback if WebGL not supported and not already forcing SVG
-  const processedData = useMemo(() => {
-    if (!data) return data;
-
-    return data.map(trace => {
-      // If WebGL is not supported or force SVG is set, convert scattergl to scatter
-      if ((webgl.checked && !webgl.supported) || optimizationOptions?.forceSVG) {
-        if (trace.type === 'scattergl') {
-          return { ...trace, type: 'scatter' as const };
-        }
-      }
-      return trace;
-    });
-  }, [data, webgl.checked, webgl.supported, optimizationOptions?.forceSVG]);
-
-  return (
-    <Plot
-      data={processedData}
-      layout={layout}
-      config={config}
-      {...props}
-    />
-  );
-};
 
 export default Plot;
