@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import ReactECharts from 'echarts-for-react';
+import Plot from 'react-plotly.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,8 @@ import { useBrushSelection } from '@/hooks/useBrushSelection';
  * Brushed BoxPlot Component
  * Displays the currently selected brush data as a box plot
  * Uses BACKEND-COMPUTED statistics (no frontend calculation!)
+ *
+ * Migrated from ECharts to Plotly.js
  */
 const BrushedBoxPlot: React.FC = () => {
   const activeBrushSelection = useBrushSelection();
@@ -28,8 +30,8 @@ const BrushedBoxPlot: React.FC = () => {
     }
   }, [activeBrushSelection?.datasetId]); // Reset when dataset changes
 
-  // Generate box plot options from BACKEND-COMPUTED box plot data
-  const chartData = useMemo(() => {
+  // Generate box plot data from BACKEND-COMPUTED box plot data
+  const plotData = useMemo(() => {
     if (!activeBrushSelection?.statistics?.boxPlots) {
       return null;
     }
@@ -42,236 +44,129 @@ const BrushedBoxPlot: React.FC = () => {
       ? allBoxPlots.filter(bp => selectedColumns.includes(bp.column_name))
       : allBoxPlots;
 
-
     // Need at least one box plot
     if (!boxPlots || boxPlots.length === 0) {
       return null;
     }
 
+    // Create Plotly box traces - one trace per column
+    const traces: Plotly.Data[] = boxPlots.map((bp, index) => {
+      // Plotly box plot with precomputed statistics
+      return {
+        type: 'box',
+        name: bp.column_name,
+        // Use lowerfence/upperfence for whiskers, q1/median/q3 for box
+        lowerfence: [bp.min],
+        q1: [bp.q1],
+        median: [bp.median],
+        q3: [bp.q3],
+        upperfence: [bp.max],
+        mean: [bp.mean],
+        // Add outliers as separate points if any exist
+        ...(bp.outliers.length > 0 && {
+          // We need to create a separate scatter for outliers
+        }),
+        boxpoints: false, // Don't show underlying points
+        boxmean: 'sd', // Show mean and standard deviation
+        marker: {
+          color: `hsl(${(index * 137.5) % 360}, 70%, 50%)`,
+          outliercolor: '#ef4444',
+          size: 6
+        },
+        line: {
+          color: '#1e40af',
+          width: 2
+        },
+        fillcolor: `hsla(${(index * 137.5) % 360}, 70%, 50%, 0.3)`,
+        hoverinfo: 'all',
+        hovertemplate: `
+<b>${bp.column_name}</b><br>
+Máximo: ${bp.max.toFixed(4)}<br>
+Q3 (75%): ${bp.q3.toFixed(4)}<br>
+Mediana: ${bp.median.toFixed(4)}<br>
+Media: ${bp.mean.toFixed(4)}<br>
+Q1 (25%): ${bp.q1.toFixed(4)}<br>
+Mínimo: ${bp.min.toFixed(4)}<br>
+IQR: ${bp.iqr.toFixed(4)}<br>
+Outliers: ${bp.outliers.length}
+<extra></extra>`
+      } as Plotly.Data;
+    });
 
-    // All computation is done in backend - just use the data!
-    // Box plot data format: [min, Q1, median, Q3, max]
-    const boxplotData = boxPlots.map(bp => [
-      bp.min,
-      bp.q1,
-      bp.median,
-      bp.q3,
-      bp.max
-    ]);
+    // Add outlier scatter traces for each box plot that has outliers
+    boxPlots.forEach((bp, index) => {
+      if (bp.outliers.length > 0) {
+        traces.push({
+          type: 'scatter',
+          mode: 'markers',
+          name: `${bp.column_name} outliers`,
+          x: bp.outliers.map(() => bp.column_name),
+          y: bp.outliers,
+          marker: {
+            color: '#ef4444',
+            size: 6,
+            symbol: 'diamond',
+            opacity: 0.7
+          },
+          hovertemplate: `<b>Outlier</b><br>${bp.column_name}: %{y:.4f}<extra></extra>`,
+          showlegend: false
+        } as Plotly.Data);
+      }
+    });
 
-    // Outliers data: [columnIndex, outlierValue]
-    const outlierData = boxPlots.flatMap((bp, i) =>
-      bp.outliers.map(v => [i, v])
-    );
-
-    // Calculate smart zoom range based on IQR (excluding extreme outliers)
-    // This helps visualize the main distribution when outliers are far away
-    const allQ1 = boxPlots.map(bp => bp.q1);
-    const allQ3 = boxPlots.map(bp => bp.q3);
-
-    const minQ1 = Math.min(...allQ1);
-    const maxQ3 = Math.max(...allQ3);
-    const iqrRange = maxQ3 - minQ1;
-
-    // Extend the view by 50% of IQR on each side to show whiskers and some outliers
-    const viewMin = minQ1 - iqrRange * 0.5;
-    const viewMax = maxQ3 + iqrRange * 0.5;
-
-    // Get actual data range including outliers
-    const allMin = Math.min(...boxPlots.map(bp => bp.min), ...outlierData.map(d => d[1]));
-    const allMax = Math.max(...boxPlots.map(bp => bp.max), ...outlierData.map(d => d[1]));
-    const totalRange = allMax - allMin;
-
-    // Calculate start/end percentages for dataZoom
-    const startPercent = Math.max(0, ((viewMin - allMin) / totalRange) * 100);
-    const endPercent = Math.min(100, ((viewMax - allMin) / totalRange) * 100);
-
-
-    const chartOptions = {
-      animation: false,
+    const layout: Partial<Plotly.Layout> = {
       title: {
         text: 'Box Plot - Distribución Estadística',
-        left: 'center',
-        textStyle: {
-          fontSize: 14,
-          fontWeight: 'bold'
+        font: {
+          size: 14,
+          weight: 700
+        },
+        x: 0.5
+      },
+      xaxis: {
+        title: {
+          text: ''
+        },
+        tickangle: boxPlots.length > 10 ? -90 : (boxPlots.length > 5 ? -45 : 0),
+        tickfont: {
+          size: boxPlots.length > 20 ? 9 : (boxPlots.length > 10 ? 10 : 12)
         }
       },
-      tooltip: {
-        trigger: 'item',
-        axisPointer: {
-          type: 'shadow'
+      yaxis: {
+        title: {
+          text: 'Valores'
         },
-        formatter: function(params: any) {
-          if (params.componentSubType === 'boxplot') {
-            const bp = boxPlots[params.dataIndex];
-            return `
-              <strong>${bp.column_name}</strong><br/>
-              Máximo: ${bp.max.toFixed(4)}<br/>
-              Q3 (75%): ${bp.q3.toFixed(4)}<br/>
-              Mediana: ${bp.median.toFixed(4)}<br/>
-              Media: ${bp.mean.toFixed(4)}<br/>
-              Q1 (25%): ${bp.q1.toFixed(4)}<br/>
-              Mínimo: ${bp.min.toFixed(4)}<br/>
-              IQR: ${bp.iqr.toFixed(4)}<br/>
-              Outliers: ${bp.outliers.length}
-            `;
-          } else {
-            return `Outlier: ${params.data[1].toFixed(4)}`;
-          }
-        }
+        zeroline: false
       },
-      grid: {
-        left: '10%',
-        right: '5%',
-        top: '15%',
-        bottom: boxPlots.length > 10 ? '25%' : (boxPlots.length > 5 ? '20%' : '10%'), // More space for rotated labels
-        containLabel: true
+      margin: {
+        l: 60,
+        r: 30,
+        t: 50,
+        b: boxPlots.length > 10 ? 120 : (boxPlots.length > 5 ? 80 : 50)
       },
-      xAxis: {
-        type: 'category',
-        data: boxPlots.map(bp => bp.column_name),
-        boundaryGap: true,
-        nameGap: 30,
-        scale: true,
-        axisLabel: {
-          rotate: boxPlots.length > 10 ? 90 : (boxPlots.length > 5 ? 45 : 0), // 90° for >10 columns, 45° for >5, straight for ≤5
-          interval: 0, // Show ALL labels - never skip any
-          fontSize: boxPlots.length > 20 ? 9 : (boxPlots.length > 10 ? 10 : 12), // Smaller font for many columns
-          overflow: 'truncate', // Truncate long labels
-          width: boxPlots.length > 10 ? 100 : 120, // Width for truncation
-          ellipsis: '...', // Show ellipsis for truncated labels
-          align: boxPlots.length > 10 ? 'right' : 'center', // Right-align when rotated 90°
-          verticalAlign: boxPlots.length > 10 ? 'middle' : 'top' // Middle vertical align for 90° rotation
-        },
-        splitArea: {
-          show: false
-        },
-        splitLine: {
-          show: false
-        }
-      },
-      yAxis: {
-        type: 'value',
-        name: 'Valores',
-        nameLocation: 'middle',
-        nameGap: 50,
-        scale: true,
-        splitArea: {
-          show: true
-        }
-      },
-      dataZoom: [
-        {
-          type: 'slider',
-          yAxisIndex: 0,
-          show: true,
-          filterMode: 'none', // Show all data, just zoom the view
-          start: startPercent, // Smart zoom to IQR range
-          end: endPercent,
-          width: 20,
-          right: 10,
-          showDetail: true,
-          showDataShadow: true,
-          brushSelect: false,
-          backgroundColor: 'rgba(47, 69, 84, 0.1)',
-          dataBackground: {
-            lineStyle: {
-              color: '#3b82f6',
-              width: 1
-            },
-            areaStyle: {
-              color: 'rgba(59, 130, 246, 0.2)'
-            }
-          },
-          selectedDataBackground: {
-            lineStyle: {
-              color: '#1e40af'
-            },
-            areaStyle: {
-              color: 'rgba(59, 130, 246, 0.4)'
-            }
-          },
-          fillerColor: 'rgba(59, 130, 246, 0.15)',
-          borderColor: '#ccc',
-          handleSize: '80%',
-          handleStyle: {
-            color: '#3b82f6',
-            borderColor: '#1e40af'
-          },
-          textStyle: {
-            color: '#666'
-          }
-        },
-        {
-          type: 'inside',
-          yAxisIndex: 0,
-          filterMode: 'none',
-          start: startPercent, // Match slider zoom
-          end: endPercent,
-          zoomOnMouseWheel: 'shift', // Hold shift to zoom with mouse wheel
-          moveOnMouseMove: true,
-          moveOnMouseWheel: true
-        }
-      ],
-      toolbox: {
-        show: true,
-        feature: {
-          dataZoom: {
-            yAxisIndex: 'none',
-            title: {
-              zoom: 'Zoom',
-              back: 'Reset Zoom'
-            }
-          },
-          restore: {
-            title: 'Restaurar'
-          },
-          saveAsImage: {
-            title: 'Guardar como imagen',
-            pixelRatio: 2
-          }
-        },
-        right: 50,
-        top: 10
-      },
-      series: [
-        {
-          name: 'boxplot',
-          type: 'boxplot',
-          data: boxplotData,
-          itemStyle: {
-            color: '#3b82f6',
-            borderColor: '#1e40af'
-          },
-          emphasis: {
-            itemStyle: {
-              color: '#60a5fa',
-              borderColor: '#1e3a8a',
-              borderWidth: 2,
-              shadowBlur: 10,
-              shadowOffsetX: 0,
-              shadowOffsetY: 0,
-              shadowColor: 'rgba(0,0,0,0.3)'
-            }
-          }
-        },
-        {
-          name: 'outliers',
-          type: 'scatter',
-          data: outlierData,
-          itemStyle: {
-            color: '#ef4444',
-            opacity: 0.6
-          },
-          symbolSize: 6
-        }
-      ]
+      showlegend: false,
+      boxmode: 'group',
+      autosize: true,
+      hoverlabel: {
+        bgcolor: 'white',
+        font: { size: 11 }
+      }
     };
 
-    return chartOptions;
-  }, [activeBrushSelection, selectedColumns]);
+    const config: Partial<Plotly.Config> = {
+      responsive: true,
+      displayModeBar: true,
+      displaylogo: false,
+      modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+      toImageButtonOptions: {
+        format: 'png',
+        filename: 'boxplot',
+        scale: 2
+      }
+    };
 
+    return { data: traces, layout, config };
+  }, [activeBrushSelection, selectedColumns]);
 
   // No brush selection
   if (!activeBrushSelection) {
@@ -389,21 +284,24 @@ const BrushedBoxPlot: React.FC = () => {
         </Card>
       )}
 
-
       {/* Chart */}
-          {chartData ? (
-            <ReactECharts
-              option={chartData}
-              style={{ height: '100%', width: '100%', minHeight: '500px' }}
-              opts={{ renderer: 'canvas' }}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-muted-foreground">
-                ⚠️ No chart data available. Check console for details.
-              </p>
-            </div>
-          )}
+      <div className="flex-1" style={{ minHeight: '500px' }}>
+        {plotData ? (
+          <Plot
+            data={plotData.data}
+            layout={plotData.layout}
+            config={plotData.config}
+            style={{ width: '100%', height: '100%' }}
+            useResizeHandler={true}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-muted-foreground">
+              No hay datos disponibles para mostrar
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

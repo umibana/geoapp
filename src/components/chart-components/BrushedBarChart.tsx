@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import ReactECharts from 'echarts-for-react';
+import Plot from 'react-plotly.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -12,6 +12,8 @@ import { useBrushSelection } from '@/hooks/useBrushSelection';
  * Displays the currently selected brush data as a bar chart (histogram)
  * Shows distribution of values across bins
  * Allows selecting which column's histogram to display
+ *
+ * Migrated from ECharts to Plotly.js
  */
 const BrushedBarChart: React.FC = () => {
   const activeBrushSelection = useBrushSelection();
@@ -38,8 +40,8 @@ const BrushedBarChart: React.FC = () => {
     }
   }, [availableColumns, selectedColumn, activeBrushSelection?.columns?.value]);
 
-  // Generate bar chart options from BACKEND-COMPUTED histogram data
-  const chartOptions = useMemo(() => {
+  // Generate Plotly data and layout from BACKEND-COMPUTED histogram data
+  const plotData = useMemo(() => {
     // Check if we have backend statistics
     if (!activeBrushSelection?.statistics?.histograms) {
       return null;
@@ -47,7 +49,6 @@ const BrushedBarChart: React.FC = () => {
 
     // Use selected column, fallback to value column
     const columnToDisplay = selectedColumn || activeBrushSelection.columns.value;
-
     const histogram = activeBrushSelection.statistics.histograms[columnToDisplay];
 
     // If histogram for this column doesn't exist, return null
@@ -55,87 +56,84 @@ const BrushedBarChart: React.FC = () => {
       return null;
     }
 
+    // Create Plotly bar trace
+    const trace: Plotly.Data = {
+      type: 'bar',
+      x: histogram.bin_ranges,
+      y: histogram.bin_counts,
+      name: 'Frecuencia',
+      marker: {
+        color: '#3b82f6',
+        line: {
+          color: '#1d4ed8',
+          width: 1
+        }
+      },
+      hovertemplate: histogram.bin_ranges.map((range: string, i: number) => {
+        const count = histogram.bin_counts[i];
+        const percentage = ((count / histogram.total_count) * 100).toFixed(2);
+        return `<b>Rango: ${range}</b><br>Frecuencia: ${count} puntos<br>Porcentaje: ${percentage}%<extra></extra>`;
+      }),
+      text: histogram.bin_counts.map((count: number) => {
+        const percentage = ((count / histogram.total_count) * 100).toFixed(1);
+        return `${percentage}%`;
+      }),
+      textposition: 'outside',
+      textfont: {
+        size: 10
+      }
+    };
 
-    // All computation is done in backend - just use the data!
-    return {
-      animation: false,
+    const layout: Partial<Plotly.Layout> = {
       title: {
         text: `Histograma - ${columnToDisplay}`,
-        left: 'center',
-        textStyle: {
-          fontSize: 14,
-          fontWeight: 'bold'
-        }
-      },
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: {
-          type: 'shadow'
+        font: {
+          size: 14,
+          weight: 700
         },
-        formatter: function(params: any) {
-          const dataIndex = params[0].dataIndex;
-          const binRange = histogram.bin_ranges[dataIndex];
-          const count = histogram.bin_counts[dataIndex];
-          const percentage = ((count / histogram.total_count) * 100).toFixed(2);
-          return `
-            <strong>Rango: ${binRange}</strong><br/>
-            Frecuencia: ${count} puntos<br/>
-            Porcentaje: ${percentage}%
-          `;
-        }
+        x: 0.5
       },
-      grid: {
-        left: '10%',
-        right: '5%',
-        top: '15%',
-        bottom: '15%',
-        containLabel: true
-      },
-      xAxis: {
-        name: columnToDisplay,
-        type: 'category',
-        data: histogram.bin_ranges,
-        nameLocation: 'middle',
-        nameGap: 40,
-        axisLabel: {
-          rotate: 45,
-          fontSize: 10
-        }
-      },
-      yAxis: {
-        name: 'Frecuencia',
-        type: 'value',
-        nameLocation: 'middle',
-        nameGap: 50
-      },
-      dataZoom: [
-        {
-          type: 'inside',
-          xAxisIndex: 0,
-          filterMode: 'filter'
+      xaxis: {
+        title: {
+          text: columnToDisplay
         },
-        {
-          type: 'slider',
-          xAxisIndex: 0,
-          filterMode: 'filter',
-          bottom: '5%'
+        tickangle: -45,
+        tickfont: {
+          size: 10
         }
-      ],
-      series: [{
-        name: 'Frecuencia',
-        type: 'bar',
-        data: histogram.bin_counts,
-        itemStyle: {
-          color: '#3b82f6',
-          borderRadius: [4, 4, 0, 0]
-        },
-        emphasis: {
-          itemStyle: {
-            color: '#1d4ed8'
-          }
+      },
+      yaxis: {
+        title: {
+          text: 'Frecuencia'
         }
-      }]
+      },
+      margin: {
+        l: 60,
+        r: 30,
+        t: 50,
+        b: 80
+      },
+      bargap: 0.1,
+      hoverlabel: {
+        bgcolor: 'white',
+        font: { size: 12 }
+      },
+      autosize: true
     };
+
+    const config: Partial<Plotly.Config> = {
+      responsive: true,
+      displayModeBar: true,
+      displaylogo: false,
+      modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+      toImageButtonOptions: {
+        format: 'png',
+        filename: `histogram_${columnToDisplay}`,
+        scale: 2
+      }
+    };
+
+    return { data: [trace], layout, config };
   }, [activeBrushSelection, selectedColumn]);
 
   // No brush selection (no data!)
@@ -183,43 +181,45 @@ const BrushedBarChart: React.FC = () => {
       </div>
 
       {/* Info Card with Column Selector */}
-          {/* Column Selector */}
-          <div>
-            <Label htmlFor="column-select" className="text-sm font-medium">
-              Columna a visualizar
-            </Label>
-            <Select value={selectedColumn} onValueChange={setSelectedColumn}>
-              <SelectTrigger id="column-select" className="mt-1">
-                <SelectValue placeholder="Seleccionar columna" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableColumns.map((col) => (
-                  <SelectItem key={col} value={col}>
-                    {col}
-                    {col === activeBrushSelection.columns.xAxis && ' (X)'}
-                    {col === activeBrushSelection.columns.yAxis && ' (Y)'}
-                    {col === activeBrushSelection.columns.value && ' (Valor)'}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
+      <div>
+        <Label htmlFor="column-select" className="text-sm font-medium">
+          Columna a visualizar
+        </Label>
+        <Select value={selectedColumn} onValueChange={setSelectedColumn}>
+          <SelectTrigger id="column-select" className="mt-1">
+            <SelectValue placeholder="Seleccionar columna" />
+          </SelectTrigger>
+          <SelectContent>
+            {availableColumns.map((col) => (
+              <SelectItem key={col} value={col}>
+                {col}
+                {col === activeBrushSelection.columns.xAxis && ' (X)'}
+                {col === activeBrushSelection.columns.yAxis && ' (Y)'}
+                {col === activeBrushSelection.columns.value && ' (Valor)'}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
       {/* Chart */}
-          {chartOptions ? (
-            <ReactECharts
-              option={chartOptions}
-              style={{ height: '100%', width: '100%', minHeight: '300px' }}
-              opts={{ renderer: 'canvas' }}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-muted-foreground">
-                No hay datos disponibles para mostrar
-              </p>
-            </div>
-          )}
+      <div className="flex-1" style={{ minHeight: '300px' }}>
+        {plotData ? (
+          <Plot
+            data={plotData.data}
+            layout={plotData.layout}
+            config={plotData.config}
+            style={{ width: '100%', height: '100%' }}
+            useResizeHandler={true}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-muted-foreground">
+              No hay datos disponibles para mostrar
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

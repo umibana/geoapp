@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import ReactECharts from 'echarts-for-react';
+import Plot from 'react-plotly.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Brush, AlertCircle } from 'lucide-react';
@@ -9,13 +9,14 @@ import { useBrushSelection } from '@/hooks/useBrushSelection';
  * BrushedHeatmap Component
  * Displays the currently selected brush data as a 2D heatmap
  * Uses BACKEND-COMPUTED aggregation (no frontend binning!)
+ *
+ * Migrated from ECharts to Plotly.js
  */
 const BrushedHeatmap: React.FC = () => {
   const activeBrushSelection = useBrushSelection();
 
-  // Generate heatmap chart options from BACKEND-COMPUTED heatmap data
-  const chartOptions = useMemo(() => {
-
+  // Generate heatmap chart data from BACKEND-COMPUTED heatmap data
+  const plotData = useMemo(() => {
     // Check if we have backend statistics
     if (!activeBrushSelection?.statistics?.heatmap) {
       return null;
@@ -28,92 +29,128 @@ const BrushedHeatmap: React.FC = () => {
       return null;
     }
 
+    // Create a 2D array for the heatmap z values
+    // Initialize with null values
+    const zData: (number | null)[][] = Array.from(
+      { length: heatmap.grid_size_y },
+      () => Array(heatmap.grid_size_x).fill(null)
+    );
 
-    // All computation is done in backend - just use the data!
-    // Convert cells to ECharts format: [x_index, y_index, avg_value]
-    const heatmapData: [number, number, number][] = heatmap.cells.map(cell => [
-      cell.x_index,
-      cell.y_index,
-      cell.avg_value
-    ]);
+    // Fill in the values from cells
+    heatmap.cells.forEach((cell: { x_index: number; y_index: number; avg_value: number }) => {
+      if (cell.y_index < heatmap.grid_size_y && cell.x_index < heatmap.grid_size_x) {
+        zData[cell.y_index][cell.x_index] = cell.avg_value;
+      }
+    });
 
-    return {
-      animation: false,
+    // Create x and y axis labels (bin centers)
+    const xLabels = Array.from({ length: heatmap.grid_size_x }, (_, i) => {
+      const center = heatmap.min_x + (i + 0.5) * heatmap.x_bin_size;
+      return center.toFixed(4);
+    });
+
+    const yLabels = Array.from({ length: heatmap.grid_size_y }, (_, i) => {
+      const center = heatmap.min_y + (i + 0.5) * heatmap.y_bin_size;
+      return center.toFixed(4);
+    });
+
+    // Create custom hover text
+    const hoverText: string[][] = zData.map((row, yIdx) =>
+      row.map((val, xIdx) => {
+        const xCenter = heatmap.min_x + (xIdx + 0.5) * heatmap.x_bin_size;
+        const yCenter = heatmap.min_y + (yIdx + 0.5) * heatmap.y_bin_size;
+        return `<b>Celda [${xIdx}, ${yIdx}]</b><br>${heatmap.x_column}: ${xCenter.toFixed(4)}<br>${heatmap.y_column}: ${yCenter.toFixed(4)}<br>${heatmap.value_column} (avg): ${val !== null ? val.toFixed(4) : 'N/A'}`;
+      })
+    );
+
+    // Plotly heatmap trace
+    const trace: Plotly.Data = {
+      type: 'heatmap',
+      z: zData,
+      x: xLabels,
+      y: yLabels,
+      colorscale: [
+        [0, '#313695'],
+        [0.1, '#4575b4'],
+        [0.2, '#74add1'],
+        [0.3, '#abd9e9'],
+        [0.4, '#e0f3f8'],
+        [0.5, '#ffffbf'],
+        [0.6, '#fee090'],
+        [0.7, '#fdae61'],
+        [0.8, '#f46d43'],
+        [0.9, '#d73027'],
+        [1, '#a50026']
+      ],
+      zmin: heatmap.min_value,
+      zmax: heatmap.max_value,
+      colorbar: {
+        title: {
+          text: heatmap.value_column,
+          side: 'right'
+        },
+        thickness: 20,
+        len: 0.8
+      },
+      hovertemplate: '%{customdata}<extra></extra>',
+      customdata: hoverText as unknown as Plotly.Datum[][],
+      showscale: true
+    };
+
+    const layout: Partial<Plotly.Layout> = {
       title: {
         text: 'Heatmap - Datos Seleccionados',
-        left: 'center',
-        textStyle: {
-          fontSize: 14,
-          fontWeight: 'bold'
-        }
-      },
-      tooltip: {
-        position: 'top',
-        formatter: function(params: { data: [number, number, number] }) {
-          const [xBin, yBin, val] = params.data;
-          const xCenter = heatmap.min_x + (xBin + 0.5) * heatmap.x_bin_size;
-          const yCenter = heatmap.min_y + (yBin + 0.5) * heatmap.y_bin_size;
-          return `
-            <strong>Celda [${xBin}, ${yBin}]</strong><br/>
-            ${heatmap.x_column}: ${xCenter.toFixed(4)}<br/>
-            ${heatmap.y_column}: ${yCenter.toFixed(4)}<br/>
-            ${heatmap.value_column} (avg): ${val.toFixed(4)}
-          `;
-        }
-      },
-      grid: {
-        left: '10%',
-        right: '15%',
-        top: '15%',
-        bottom: '15%'
-      },
-      xAxis: {
-        name: heatmap.x_column,
-        type: 'category',
-        data: Array.from({ length: heatmap.grid_size_x }, (_, i) => i),
-        nameLocation: 'middle',
-        nameGap: 25,
-        splitArea: {
-          show: true
-        }
-      },
-      yAxis: {
-        name: heatmap.y_column,
-        type: 'category',
-        data: Array.from({ length: heatmap.grid_size_y }, (_, i) => i),
-        nameLocation: 'middle',
-        nameGap: 40,
-        splitArea: {
-          show: true
-        }
-      },
-      visualMap: {
-        min: heatmap.min_value,
-        max: heatmap.max_value,
-        calculable: true,
-        orient: 'vertical',
-        right: 10,
-        top: 'center',
-        inRange: {
-          color: ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#ffffbf', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026']
+        font: {
+          size: 14,
+          weight: 700
         },
-        textStyle: {
-          color: '#374151',
-          fontSize: 10
-        }
+        x: 0.5
       },
-      series: [{
-        name: heatmap.value_column,
-        type: 'heatmap',
-        data: heatmapData,
-        emphasis: {
-          itemStyle: {
-            shadowBlur: 10,
-            shadowColor: 'rgba(0, 0, 0, 0.5)'
-          }
-        }
-      }]
+      xaxis: {
+        title: {
+          text: heatmap.x_column
+        },
+        tickangle: -45,
+        tickfont: {
+          size: 10
+        },
+        showgrid: false
+      },
+      yaxis: {
+        title: {
+          text: heatmap.y_column
+        },
+        tickfont: {
+          size: 10
+        },
+        showgrid: false
+      },
+      margin: {
+        l: 80,
+        r: 80,
+        t: 50,
+        b: 80
+      },
+      autosize: true,
+      hoverlabel: {
+        bgcolor: 'white',
+        font: { size: 11 }
+      }
     };
+
+    const config: Partial<Plotly.Config> = {
+      responsive: true,
+      displayModeBar: true,
+      displaylogo: false,
+      modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+      toImageButtonOptions: {
+        format: 'png',
+        filename: 'heatmap',
+        scale: 2
+      }
+    };
+
+    return { data: [trace], layout, config };
   }, [activeBrushSelection]);
 
   // No brush selection
@@ -160,21 +197,24 @@ const BrushedHeatmap: React.FC = () => {
         </Badge>
       </div>
 
-
       {/* Chart */}
-          {chartOptions ? (
-            <ReactECharts
-              option={chartOptions}
-              style={{ height: '100%', width: '100%', minHeight: '300px' }}
-              opts={{ renderer: 'canvas' }}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-muted-foreground">
-                No hay datos disponibles para mostrar
-              </p>
-            </div>
-          )}
+      <div className="flex-1" style={{ minHeight: '300px' }}>
+        {plotData ? (
+          <Plot
+            data={plotData.data}
+            layout={plotData.layout}
+            config={plotData.config}
+            style={{ width: '100%', height: '100%' }}
+            useResizeHandler={true}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-muted-foreground">
+              No hay datos disponibles para mostrar
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
