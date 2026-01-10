@@ -38,6 +38,7 @@ import main_service_pb2_grpc
 from database import DatabaseManager
 from data_generation import DataGenerator
 from project_manager import ProjectManager
+from db_benchmark import DatabaseBenchmark
 
 
 class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
@@ -48,6 +49,7 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
         self.db = DatabaseManager()
         self.data_generator = DataGenerator()
         self.project_manager = ProjectManager(self.db)
+        self.database_benchmark = DatabaseBenchmark()
     
     """
     -------- Definición de métodos para probar conexión de gRPC -------- 
@@ -208,6 +210,14 @@ class GeospatialServicer(main_service_pb2_grpc.GeospatialServiceServicer):
     def DeleteDataset(self, request, context):
         return self.project_manager.delete_dataset(request)
 
+    # ---------- Benchmark de bases de datos ----------
+
+    def RunDatabaseBenchmark(self, request, context):
+        """
+        Ejecuta benchmark comparativo entre SQLite y DuckDB
+        """
+        return self.database_benchmark.run_benchmark(request)
+
 
 # =============================================================================
 # FLASK REST API SETUP
@@ -218,6 +228,31 @@ servicer_instance = None
 
 # Crear Flask app
 app = Flask(__name__)
+
+
+# =============================================================================
+# HELPER FUNCTIONS FOR REST API
+# =============================================================================
+
+def create_mock_context():
+    """Crea un contexto mock para llamadas gRPC desde REST"""
+    class MockContext:
+        def set_code(self, code):
+            pass
+        def set_details(self, details):
+            pass
+    return MockContext()
+
+
+def convert_protobuf_to_dict(proto_obj):
+    """
+    Convierte un objeto protobuf a diccionario Python.
+    Soporta campos repetidos, mapas y mensajes anidados.
+    """
+    from google.protobuf.json_format import MessageToDict
+    return MessageToDict(proto_obj, preserving_proto_field_name=True)
+
+
 CORS(app)  # Permitir CORS para desarrollo
 
 # Configure Flask for large payloads
@@ -423,6 +458,23 @@ def rest_process_dataset():
     return jsonify(convert_protobuf_to_dict(response))
 
 
+# =============================================================================
+# FLASK REST ENDPOINTS - DATABASE BENCHMARK
+# =============================================================================
+
+@app.route('/api/benchmark/database', methods=['POST'])
+def rest_run_database_benchmark():
+    """REST equivalent of RunDatabaseBenchmark - SQLite vs DuckDB comparison"""
+    data = request.get_json()
+    request_obj = geospatial_pb2.DatabaseBenchmarkRequest()
+    request_obj.num_rows = data.get('num_rows', 10000)
+    request_obj.seed = data.get('seed', 0)
+    request_obj.run_insert = data.get('run_insert', True)
+    request_obj.run_query = data.get('run_query', True)
+    request_obj.run_aggregation = data.get('run_aggregation', True)
+    request_obj.run_filter = data.get('run_filter', True)
+    response = servicer_instance.RunDatabaseBenchmark(request_obj, create_mock_context())
+    return jsonify(convert_protobuf_to_dict(response))
 
 
 def run_flask_server():

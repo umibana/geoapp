@@ -42,4 +42,7 @@ service GeospatialService {
   rpc AnalyzeCsvForProject(AnalyzeCsvForProjectRequest) returns (AnalyzeCsvForProjectResponse);
   rpc ProcessDataset(ProcessDatasetRequest) returns (ProcessDatasetResponse);
   rpc GetDatasetData(GetDatasetDataRequest) returns (GetDatasetDataResponse);
+
+  // Comparación de bases de datos: SQLite vs DuckDB
+  rpc RunDatabaseBenchmark(DatabaseBenchmarkRequest) returns (DatabaseBenchmarkResponse);
 }

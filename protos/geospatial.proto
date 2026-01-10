@@ -66,3 +66,47 @@ message GetColumnarDataResponse {
   map<string, Bounds> bounds = 3;
   int32 message_size_bytes = 7; // Size of complete serialized message for fair comparison
 }
+
+// =============================================================================
+// COMPARACIÓN DE BASES DE DATOS: SQLite vs DuckDB
+// =============================================================================
+
+// Solicitud para ejecutar benchmark de base de datos
+message DatabaseBenchmarkRequest {
+  int32 num_rows = 1;           // Número de filas a insertar/consultar
+  int32 seed = 2;               // Semilla para datos reproducibles
+  bool run_insert = 3;          // Ejecutar prueba de inserción
+  bool run_query = 4;           // Ejecutar prueba de consulta
+  bool run_aggregation = 5;     // Ejecutar prueba de agregación
+  bool run_filter = 6;          // Ejecutar prueba de filtrado
+}
+
+// Resultado individual de una operación de benchmark
+message BenchmarkOperation {
+  string operation_name = 1;    // Nombre de la operación (insert, query, etc.)
+  double sqlite_time_ms = 2;    // Tiempo en SQLite (milisegundos)
+  double duckdb_time_ms = 3;    // Tiempo en DuckDB (milisegundos)
+  int64 sqlite_rows_affected = 4;  // Filas afectadas en SQLite
+  int64 duckdb_rows_affected = 5;  // Filas afectadas en DuckDB
+  string winner = 6;            // "sqlite" o "duckdb"
+  double speedup_factor = 7;    // Factor de mejora del ganador
+}
+
+// Respuesta del benchmark de base de datos
+message DatabaseBenchmarkResponse {
+  bool success = 1;
+  string error_message = 2;
+  int32 num_rows = 3;           // Número de filas utilizadas
+  int32 seed = 4;               // Semilla utilizada
+  double generated_at = 5;      // Timestamp de generación
+  repeated BenchmarkOperation operations = 6;  // Resultados por operación
+
+  // Resumen general
+  double total_sqlite_time_ms = 7;
+  double total_duckdb_time_ms = 8;
+  string overall_winner = 9;
+
+  // Tamaños de base de datos
+  int64 sqlite_db_size_bytes = 10;
+  int64 duckdb_db_size_bytes = 11;
+}
