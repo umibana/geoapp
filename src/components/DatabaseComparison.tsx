@@ -34,7 +34,7 @@ interface DatabaseBenchmarkResult {
 export function DatabaseComparison() {
   const [results, setResults] = useState<DatabaseBenchmarkResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [numRows, setNumRows] = useState<number>(100000);
+  const [numRows, setNumRows] = useState<number>(500000);
   const [runInsert, setRunInsert] = useState(true);
   const [runQuery, setRunQuery] = useState(true);
   const [runAggregation, setRunAggregation] = useState(true);
@@ -139,18 +139,25 @@ export function DatabaseComparison() {
                     <span className="font-medium text-blue-800 dark:text-blue-200">SQLite</span>
                     <ul className="text-xs mt-1 space-y-1">
                       <li>Base de datos embebida ligera</li>
-                      <li>Optimizada para OLTP</li>
-                      <li>Transacciones ACID</li>
+                      <li>Optimizada para OLTP (escrituras)</li>
+                      <li>Mejor en: INSERT, datasets pequenos</li>
+                      <li>Transacciones ACID rapidas</li>
                     </ul>
                   </div>
                   <div className="bg-orange-100 dark:bg-orange-900 p-2 rounded">
                     <span className="font-medium text-orange-800 dark:text-orange-200">DuckDB</span>
                     <ul className="text-xs mt-1 space-y-1">
                       <li>Base de datos analitica columnar</li>
-                      <li>Optimizada para OLAP</li>
-                      <li>Vectorizacion SIMD</li>
+                      <li>Optimizada para OLAP (lecturas)</li>
+                      <li>Mejor en: agregaciones, percentiles, datasets grandes</li>
+                      <li>Vectorizacion SIMD para analisis</li>
                     </ul>
                   </div>
+                </div>
+
+                <div className="mt-3 p-2 bg-yellow-50 dark:bg-yellow-950 rounded text-xs">
+                  <strong>Nota:</strong> DuckDB brilla con datasets de 500K+ filas y consultas analiticas complejas.
+                  SQLite es mas rapido para operaciones transaccionales simples y datasets pequenos.
                 </div>
               </div>
 

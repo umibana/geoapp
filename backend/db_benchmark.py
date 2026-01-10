@@ -180,6 +180,29 @@ class DatabaseBenchmark:
         rows = cursor.fetchall()
         return len(rows)
 
+    def sqlite_complex_analytics(self, conn: sqlite3.Connection) -> int:
+        """Ejecuta consultas analíticas complejas en SQLite (sin window functions nativas)"""
+        # SQLite tiene soporte limitado para window functions (desde 3.25)
+        # Simulamos una consulta analítica compleja
+        cursor = conn.execute('''
+            SELECT
+                category,
+                AVG(elevation) as avg_elev,
+                MIN(temperature) as min_temp,
+                MAX(temperature) as max_temp,
+                AVG(temperature) as avg_temp,
+                SUM(pressure) as sum_pressure,
+                COUNT(*) as cnt,
+                AVG(humidity) as avg_humidity
+            FROM geospatial_data
+            WHERE elevation > (SELECT AVG(elevation) FROM geospatial_data)
+            GROUP BY category
+            HAVING COUNT(*) > 10
+            ORDER BY avg_elev DESC
+        ''')
+        rows = cursor.fetchall()
+        return len(rows)
+
     # =========================================================================
     # OPERACIONES DuckDB
     # =========================================================================
@@ -200,31 +223,27 @@ class DatabaseBenchmark:
         ''')
 
     def duckdb_insert_data(self, conn: duckdb.DuckDBPyConnection, data: Dict[str, np.ndarray]) -> int:
-        """Inserta datos en DuckDB usando inserción directa desde numpy"""
-        # DuckDB puede insertar directamente desde numpy arrays
-        conn.execute('''
-            INSERT INTO geospatial_data
-            SELECT * FROM (
-                SELECT
-                    unnest($1::INTEGER[]) as id,
-                    unnest($2::DOUBLE[]) as latitude,
-                    unnest($3::DOUBLE[]) as longitude,
-                    unnest($4::DOUBLE[]) as elevation,
-                    unnest($5::DOUBLE[]) as temperature,
-                    unnest($6::DOUBLE[]) as pressure,
-                    unnest($7::DOUBLE[]) as humidity,
-                    unnest($8::VARCHAR[]) as category
-            )
-        ''', [
-            data['id'].tolist(),
-            data['latitude'].tolist(),
-            data['longitude'].tolist(),
-            data['elevation'].tolist(),
-            data['temperature'].tolist(),
-            data['pressure'].tolist(),
-            data['humidity'].tolist(),
-            data['category'].tolist()
-        ])
+        """Inserta datos en DuckDB usando DataFrame - método óptimo para DuckDB"""
+        import pandas as pd
+
+        # Crear DataFrame desde los arrays numpy (DuckDB está optimizado para esto)
+        df = pd.DataFrame({
+            'id': data['id'],
+            'latitude': data['latitude'],
+            'longitude': data['longitude'],
+            'elevation': data['elevation'],
+            'temperature': data['temperature'],
+            'pressure': data['pressure'],
+            'humidity': data['humidity'],
+            'category': data['category']
+        })
+
+        # Registrar el DataFrame como tabla virtual y luego insertar
+        # Este es el método más eficiente para DuckDB
+        conn.register('temp_df', df)
+        conn.execute('INSERT INTO geospatial_data SELECT * FROM temp_df')
+        conn.unregister('temp_df')
+
         return len(data['id'])
 
     def duckdb_query_all(self, conn: duckdb.DuckDBPyConnection) -> int:
@@ -273,6 +292,29 @@ class DatabaseBenchmark:
             FROM geospatial_data
             GROUP BY category
             ORDER BY avg_elevation DESC
+        ''').fetchall()
+        return len(result)
+
+    def duckdb_complex_analytics(self, conn: duckdb.DuckDBPyConnection) -> int:
+        """Ejecuta consultas analíticas complejas en DuckDB con window functions"""
+        # DuckDB está optimizado para este tipo de consultas OLAP
+        result = conn.execute('''
+            SELECT
+                category,
+                AVG(elevation) as avg_elev,
+                MIN(temperature) as min_temp,
+                MAX(temperature) as max_temp,
+                AVG(temperature) as avg_temp,
+                SUM(pressure) as sum_pressure,
+                COUNT(*) as cnt,
+                AVG(humidity) as avg_humidity,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY elevation) as median_elevation,
+                PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY temperature) as p95_temp
+            FROM geospatial_data
+            WHERE elevation > (SELECT AVG(elevation) FROM geospatial_data)
+            GROUP BY category
+            HAVING COUNT(*) > 10
+            ORDER BY avg_elev DESC
         ''').fetchall()
         return len(result)
 
@@ -455,6 +497,33 @@ class DatabaseBenchmark:
                 total_duckdb_time += duckdb_time
 
                 print(f"   SQLite: {sqlite_time:.2f}ms ({sqlite_rows} filas), DuckDB: {duckdb_time:.2f}ms ({duckdb_rows} filas)")
+
+            # =====================================================================
+            # PRUEBA: ANÁLISIS COMPLEJO (donde DuckDB debería brillar)
+            # =====================================================================
+            if request.run_aggregation:
+                print("🧮 Prueba: Análisis complejo (subquery + percentiles)...")
+
+                sqlite_time, sqlite_rows = self._measure_time(
+                    lambda: self.sqlite_complex_analytics(sqlite_conn)
+                )
+                duckdb_time, duckdb_rows = self._measure_time(
+                    lambda: self.duckdb_complex_analytics(duckdb_conn)
+                )
+
+                op = geospatial_pb2.BenchmarkOperation()
+                op.operation_name = "COMPLEX ANALYTICS"
+                op.sqlite_time_ms = sqlite_time
+                op.duckdb_time_ms = duckdb_time
+                op.sqlite_rows_affected = sqlite_rows
+                op.duckdb_rows_affected = duckdb_rows
+                op.winner = "sqlite" if sqlite_time < duckdb_time else "duckdb"
+                op.speedup_factor = max(sqlite_time, duckdb_time) / max(min(sqlite_time, duckdb_time), 0.001)
+                operations.append(op)
+                total_sqlite_time += sqlite_time
+                total_duckdb_time += duckdb_time
+
+                print(f"   SQLite: {sqlite_time:.2f}ms, DuckDB: {duckdb_time:.2f}ms")
 
             # Cerrar conexiones
             sqlite_conn.close()
