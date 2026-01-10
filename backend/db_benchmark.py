@@ -56,26 +56,36 @@ class DatabaseBenchmark:
     def generate_test_data(self, num_rows: int, seed: int = None) -> Dict[str, np.ndarray]:
         """
         Genera datos de prueba sintéticos para el benchmark.
-        Similar al generador de datos geoespaciales pero optimizado para pruebas de BD.
+        Incluye 15 columnas con diferentes tipos de datos para pruebas realistas.
         """
         if seed is not None:
             np.random.seed(seed)
         else:
             np.random.seed(int(time.time() * 1000) % 2**32)
 
-        # Generar datos geoespaciales sintéticos
+        # === COLUMNAS NUMÉRICAS (10 columnas) ===
         ids = np.arange(num_rows)
         latitudes = np.random.uniform(-33.6, -33.3, num_rows).astype(np.float64)
         longitudes = np.random.uniform(-70.8, -70.5, num_rows).astype(np.float64)
 
-        # Valores derivados (similar a data_generation.py)
+        # Valores derivados con cálculos complejos
         elevations = 100 + 50 * np.sin(latitudes * 0.1) * np.cos(longitudes * 0.1)
         temperatures = 20 + 15 * np.sin(latitudes * 0.05) + np.random.uniform(-5, 5, num_rows)
         pressures = 1013 + 50 * np.cos(longitudes * 0.03) + np.random.uniform(-10, 10, num_rows)
         humidities = np.clip(50 + 30 * np.sin((latitudes + longitudes) * 0.02) + np.random.uniform(-10, 10, num_rows), 0, 100)
 
-        # Categorías aleatorias para pruebas de filtrado
+        # Columnas adicionales para más realismo
+        wind_speed = np.random.uniform(0, 50, num_rows).astype(np.float64)
+        precipitation = np.random.exponential(5, num_rows).astype(np.float64)
+        air_quality_index = np.random.randint(0, 500, num_rows).astype(np.int32)
+        population_density = np.random.lognormal(5, 2, num_rows).astype(np.float64)
+
+        # === COLUMNAS CATEGÓRICAS (5 columnas) ===
         categories = np.random.choice(['A', 'B', 'C', 'D', 'E'], num_rows)
+        regions = np.random.choice(['Norte', 'Sur', 'Este', 'Oeste', 'Centro'], num_rows)
+        status = np.random.choice(['activo', 'inactivo', 'pendiente', 'error'], num_rows)
+        priority = np.random.choice(['alta', 'media', 'baja'], num_rows)
+        sensor_type = np.random.choice(['tipo_1', 'tipo_2', 'tipo_3', 'tipo_4', 'tipo_5', 'tipo_6'], num_rows)
 
         return {
             'id': ids,
@@ -85,7 +95,15 @@ class DatabaseBenchmark:
             'temperature': temperatures,
             'pressure': pressures,
             'humidity': humidities,
-            'category': categories
+            'wind_speed': wind_speed,
+            'precipitation': precipitation,
+            'air_quality_index': air_quality_index,
+            'population_density': population_density,
+            'category': categories,
+            'region': regions,
+            'status': status,
+            'priority': priority,
+            'sensor_type': sensor_type
         }
 
     def _measure_time(self, func) -> Tuple[float, Any]:
@@ -100,7 +118,7 @@ class DatabaseBenchmark:
     # =========================================================================
 
     def sqlite_create_table(self, conn: sqlite3.Connection):
-        """Crea la tabla de prueba en SQLite"""
+        """Crea la tabla de prueba en SQLite con 15 columnas"""
         conn.execute('''
             CREATE TABLE IF NOT EXISTS geospatial_data (
                 id INTEGER PRIMARY KEY,
@@ -110,13 +128,21 @@ class DatabaseBenchmark:
                 temperature REAL,
                 pressure REAL,
                 humidity REAL,
-                category TEXT
+                wind_speed REAL,
+                precipitation REAL,
+                air_quality_index INTEGER,
+                population_density REAL,
+                category TEXT,
+                region TEXT,
+                status TEXT,
+                priority TEXT,
+                sensor_type TEXT
             )
         ''')
         conn.commit()
 
     def sqlite_insert_data(self, conn: sqlite3.Connection, data: Dict[str, np.ndarray]) -> int:
-        """Inserta datos en SQLite"""
+        """Inserta datos en SQLite con 15 columnas"""
         rows = list(zip(
             data['id'].tolist(),
             data['latitude'].tolist(),
@@ -125,13 +151,23 @@ class DatabaseBenchmark:
             data['temperature'].tolist(),
             data['pressure'].tolist(),
             data['humidity'].tolist(),
-            data['category'].tolist()
+            data['wind_speed'].tolist(),
+            data['precipitation'].tolist(),
+            data['air_quality_index'].tolist(),
+            data['population_density'].tolist(),
+            data['category'].tolist(),
+            data['region'].tolist(),
+            data['status'].tolist(),
+            data['priority'].tolist(),
+            data['sensor_type'].tolist()
         ))
 
         conn.executemany('''
             INSERT INTO geospatial_data
-            (id, latitude, longitude, elevation, temperature, pressure, humidity, category)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (id, latitude, longitude, elevation, temperature, pressure, humidity,
+             wind_speed, precipitation, air_quality_index, population_density,
+             category, region, status, priority, sensor_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', rows)
         conn.commit()
         return len(rows)
@@ -163,13 +199,17 @@ class DatabaseBenchmark:
         }
 
     def sqlite_filter(self, conn: sqlite3.Connection) -> int:
-        """Ejecuta consulta con filtros complejos en SQLite"""
+        """Ejecuta consulta con filtros complejos en SQLite usando múltiples columnas"""
         cursor = conn.execute('''
             SELECT * FROM geospatial_data
             WHERE temperature > 20
             AND humidity BETWEEN 40 AND 70
+            AND wind_speed < 30
+            AND air_quality_index < 200
             AND category IN ('A', 'B', 'C')
-            ORDER BY elevation DESC
+            AND region IN ('Norte', 'Sur', 'Centro')
+            AND status = 'activo'
+            ORDER BY elevation DESC, population_density DESC
         ''')
         rows = cursor.fetchall()
         return len(rows)
@@ -217,7 +257,7 @@ class DatabaseBenchmark:
     # =========================================================================
 
     def duckdb_create_table(self, conn: duckdb.DuckDBPyConnection):
-        """Crea la tabla de prueba en DuckDB"""
+        """Crea la tabla de prueba en DuckDB con 15 columnas"""
         conn.execute('''
             CREATE TABLE IF NOT EXISTS geospatial_data (
                 id INTEGER PRIMARY KEY,
@@ -227,7 +267,15 @@ class DatabaseBenchmark:
                 temperature DOUBLE,
                 pressure DOUBLE,
                 humidity DOUBLE,
-                category VARCHAR
+                wind_speed DOUBLE,
+                precipitation DOUBLE,
+                air_quality_index INTEGER,
+                population_density DOUBLE,
+                category VARCHAR,
+                region VARCHAR,
+                status VARCHAR,
+                priority VARCHAR,
+                sensor_type VARCHAR
             )
         ''')
 
@@ -244,7 +292,15 @@ class DatabaseBenchmark:
             'temperature': data['temperature'],
             'pressure': data['pressure'],
             'humidity': data['humidity'],
-            'category': data['category']
+            'wind_speed': data['wind_speed'],
+            'precipitation': data['precipitation'],
+            'air_quality_index': data['air_quality_index'],
+            'population_density': data['population_density'],
+            'category': data['category'],
+            'region': data['region'],
+            'status': data['status'],
+            'priority': data['priority'],
+            'sensor_type': data['sensor_type']
         })
 
         # Registrar el DataFrame como tabla virtual y luego insertar
@@ -280,13 +336,17 @@ class DatabaseBenchmark:
         }
 
     def duckdb_filter(self, conn: duckdb.DuckDBPyConnection) -> int:
-        """Ejecuta consulta con filtros complejos en DuckDB"""
+        """Ejecuta consulta con filtros complejos en DuckDB usando múltiples columnas"""
         result = conn.execute('''
             SELECT * FROM geospatial_data
             WHERE temperature > 20
             AND humidity BETWEEN 40 AND 70
+            AND wind_speed < 30
+            AND air_quality_index < 200
             AND category IN ('A', 'B', 'C')
-            ORDER BY elevation DESC
+            AND region IN ('Norte', 'Sur', 'Centro')
+            AND status = 'activo'
+            ORDER BY elevation DESC, population_density DESC
         ''').fetchall()
         return len(result)
 
