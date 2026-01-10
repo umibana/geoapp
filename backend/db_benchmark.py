@@ -28,19 +28,28 @@ class DatabaseBenchmark:
     """
 
     def __init__(self):
+        # Paths se crean frescos en cada run_benchmark()
+        self.temp_dir = None
+        self.sqlite_path = None
+        self.duckdb_path = None
+
+    def _create_temp_paths(self):
+        """Crea rutas temporales frescas para cada benchmark"""
         self.temp_dir = tempfile.mkdtemp(prefix="db_benchmark_")
         self.sqlite_path = os.path.join(self.temp_dir, "benchmark_sqlite.db")
         self.duckdb_path = os.path.join(self.temp_dir, "benchmark_duckdb.db")
+        print(f"📁 Creado directorio temporal: {self.temp_dir}")
 
     def cleanup(self):
         """Limpia los archivos de base de datos temporales"""
         try:
-            if os.path.exists(self.sqlite_path):
+            if self.sqlite_path and os.path.exists(self.sqlite_path):
                 os.remove(self.sqlite_path)
-            if os.path.exists(self.duckdb_path):
+            if self.duckdb_path and os.path.exists(self.duckdb_path):
                 os.remove(self.duckdb_path)
-            if os.path.exists(self.temp_dir):
+            if self.temp_dir and os.path.exists(self.temp_dir):
                 os.rmdir(self.temp_dir)
+            print(f"🧹 Limpiado directorio temporal")
         except Exception as e:
             print(f"⚠️ Error limpiando archivos temporales: {e}")
 
@@ -333,6 +342,9 @@ class DatabaseBenchmark:
             seed = request.seed if request.seed > 0 else None
 
             print(f"🏁 Iniciando benchmark: {num_rows:,} filas, seed={seed}")
+
+            # Crear rutas temporales frescas para este benchmark
+            self._create_temp_paths()
 
             # Generar datos de prueba
             print("📊 Generando datos de prueba...")
